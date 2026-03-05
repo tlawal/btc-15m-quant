@@ -34,7 +34,7 @@ class Config:
     LATE_CONVICTION_MIN_REM    = 3.0      # must be within last 3 min of window
     LATE_CONVICTION_POSTERIOR  = 0.93     # model must be ≥93% confident
     LATE_CONVICTION_DISTANCE   = 50.0     # price must be ≥$50 from strike
-    LATE_CONVICTION_EDGE       = 0.015    # relaxed edge requirement (1.5% instead of 3.5%)
+    LATE_CONVICTION_EDGE       = 0.025    # relaxed edge requirement (2.5% instead of 3.5%)
 
     # ── ADX trend filter (FIX #5) ─────────────────────────────────────────────
     ADX_TREND_THRESHOLD        = 20.0     # below = choppy, block directional entry

@@ -614,8 +614,8 @@ def compute_signals(
     if res.target_edge is None or res.target_edge < effective_required_edge:
         gates.append(f"edge_insufficient={res.target_edge or 0:.4f}_req={effective_required_edge:.3f}")
 
-    # Score gate (bypassed for late conviction trades)
-    if res.abs_score < res.min_score and not res.monster_signal and not is_late_conviction:
+    # Score gate
+    if res.abs_score < res.min_score and not res.monster_signal:
         gates.append(f"score_low={res.abs_score:.2f}_req={res.min_score:.1f}")
 
     # Early window guard (block non-monster trades in first N min)
