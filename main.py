@@ -165,14 +165,14 @@ class Engine:
         # ── Polymarket context (Phase 4: Latency track) ──────────────────────
         with Timer("fetch_polymarket", self.state.latencies):
             if self.pm.can_trade and not self.state.trading_halted:
-                ob, balance, positions = await asyncio.gather(
+                ob, margin, positions = await asyncio.gather(
                     self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id),
-                    self.pm.get_balance(),
+                    self.pm.get_margin(),
                     self.pm.get_positions(),
                 )
             else:
                 ob = await self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id)
-                balance = None
+                margin = {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
                 positions = []
 
         # ── Reconcile Pending Orders (Phase 3) ────────────────────────────────
@@ -195,6 +195,13 @@ class Engine:
         # bal_task = asyncio.create_task(self.pm.get_balance())
         # pos_task = asyncio.create_task(self.pm.get_positions())
         # ob, balance, positions = await asyncio.gather(ob_task, bal_task, pos_task)
+
+        if self.pm.can_trade and not self.state.trading_halted:
+            balance = (margin or {}).get("available_usdc")
+            if balance is None:
+                balance = (margin or {}).get("balance_usdc")
+        else:
+            balance = None
 
         balance = balance or 0.0
         if ob.yes_mid:  self.state.last_pm_px_yes = ob.yes_mid

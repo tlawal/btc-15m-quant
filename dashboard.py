@@ -11,23 +11,33 @@ log = logging.getLogger("dashboard")
 
 app = FastAPI()
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_TEMPLATES_DIR_CANDIDATES = [
-    os.path.join(_HERE, "templates"),
-    os.path.join(os.getcwd(), "templates"),
-]
-_templates_dir = next((p for p in _TEMPLATES_DIR_CANDIDATES if os.path.isdir(p)), None)
-templates = Jinja2Templates(directory=_templates_dir or "templates")
+_templates_dir = os.path.join(_HERE, "templates")
+templates = Jinja2Templates(directory=_templates_dir)
+
+try:
+    log.info(
+        "Dashboard templates: dir=%s exists=%s files=%s",
+        _templates_dir,
+        os.path.isdir(_templates_dir),
+        os.listdir(_templates_dir) if os.path.isdir(_templates_dir) else None,
+    )
+except Exception:
+    log.exception("Failed to inspect templates directory")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 # Shared state reference set by the Engine
 engine = None
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    if _templates_dir:
-        try:
-            return templates.TemplateResponse("index.html", {"request": request})
-        except Exception:
-            log.exception("Failed to render index.html from templates dir %s", _templates_dir)
+    try:
+        return templates.TemplateResponse("index.html", {"request": request})
+    except Exception:
+        log.exception("Failed to render index.html from templates dir %s", _templates_dir)
     return HTMLResponse(
         "<html><body>"
         "<h2>Dashboard template missing</h2>"
@@ -35,6 +45,22 @@ async def read_root(request: Request):
         "<p>Try visiting <code>/api/metrics</code> instead, or ensure the templates folder is deployed.</p>"
         "</body></html>"
     )
+
+
+@app.get("/debug/templates")
+async def debug_templates():
+    info = {
+        "cwd": os.getcwd(),
+        "here": _HERE,
+        "templates_dir": _templates_dir,
+        "templates_dir_exists": os.path.isdir(_templates_dir),
+        "index_exists": os.path.exists(os.path.join(_templates_dir, "index.html")),
+    }
+    try:
+        info["templates_dir_files"] = os.listdir(_templates_dir)
+    except Exception as e:
+        info["templates_dir_files_error"] = str(e)
+    return info
 
 @app.get("/api/metrics")
 async def get_metrics():

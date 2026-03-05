@@ -127,6 +127,25 @@ class PolymarketClient:
         except Exception as e:
             log.error(f"ensure_approvals failed: {e}")
 
+    def _get_auth_headers_best_effort(self) -> dict:
+        """Best-effort extraction of auth headers for direct REST calls.
+
+        py-clob-client exposes slightly different helpers across versions.
+        We probe a few common method/property names so the bot keeps working
+        across library upgrades.
+        """
+        try:
+            for name in ("get_auth_headers", "create_auth_headers", "auth_headers"):
+                attr = getattr(self.client, name, None)
+                if callable(attr):
+                    h = attr()
+                    return h if isinstance(h, dict) else {}
+                if isinstance(attr, dict):
+                    return attr
+        except Exception:
+            return {}
+        return {}
+
     # ── Market discovery ──────────────────────────────────────────────────────
 
     async def search_market_by_slug(self, slug: str) -> Optional[MarketInfo]:
@@ -267,22 +286,68 @@ class PolymarketClient:
             result = await loop.run_in_executor(
                 None, lambda: self.client.get_balance_allowance(params)
             )
-            # result is a dict like {"balance": "123456789", ...}
-            # Polygon USDC always uses 6 decimals — raw value is always in micro-USDC
+            # Typical result is a dict like {"balance": "123456789", "allowance": "..."}
+            # Polygon USDC uses 6 decimals (micro-USDC). We defensively probe common keys.
             if isinstance(result, dict):
-                raw_bal = float(result.get("balance", 0))
-                bal = raw_bal / 1_000_000.0  # Always 6 decimals on Polygon
-                log.debug(f"get_balance: raw={raw_bal} parsed=${bal:.6f}")
+                raw = (
+                    result.get("balance")
+                    or result.get("available")
+                    or result.get("availableBalance")
+                    or result.get("collateral")
+                    or 0
+                )
+                try:
+                    raw_bal = float(raw)
+                except (TypeError, ValueError):
+                    raw_bal = 0.0
+                bal = raw_bal / 1_000_000.0
+                log.debug("get_balance: result=%s raw=%s parsed_usdc=%.6f", result, raw_bal, bal)
                 return bal
-            raw_bal = float(result) if result is not None else None
-            if raw_bal is None:
+
+            if result is None:
                 return None
-            bal = raw_bal / 1_000_000.0  # Always 6 decimals on Polygon
-            log.debug(f"get_balance: raw={raw_bal} parsed=${bal:.6f}")
+            try:
+                raw_bal = float(result)
+            except (TypeError, ValueError):
+                raw_bal = 0.0
+            bal = raw_bal / 1_000_000.0
+            log.debug("get_balance: raw=%s parsed_usdc=%.6f", raw_bal, bal)
             return bal
         except Exception as e:
             log.warning(f"get_balance: {e}")
             return None
+
+    async def get_margin(self) -> dict:
+        """Return collateral info as {balance_usdc, allowance_usdc, available_usdc} when possible."""
+        if not self.can_trade:
+            self._warn_no_creds_once("get_margin")
+            return {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
+        try:
+            loop = asyncio.get_event_loop()
+            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+            result = await loop.run_in_executor(
+                None, lambda: self.client.get_balance_allowance(params)
+            )
+            if not isinstance(result, dict):
+                bal = await self.get_balance()
+                return {"balance_usdc": bal, "allowance_usdc": None, "available_usdc": bal}
+
+            def _parse_usdc(x):
+                try:
+                    return float(x) / 1_000_000.0
+                except (TypeError, ValueError):
+                    return None
+
+            bal = _parse_usdc(result.get("balance"))
+            allowance = _parse_usdc(result.get("allowance") or result.get("approved") or result.get("spend"))
+            available = _parse_usdc(result.get("available") or result.get("availableBalance"))
+            if available is None:
+                available = bal
+            return {"balance_usdc": bal, "allowance_usdc": allowance, "available_usdc": available}
+        except Exception as e:
+            log.warning("get_margin: %s", e)
+            bal = await self.get_balance()
+            return {"balance_usdc": bal, "allowance_usdc": None, "available_usdc": bal}
 
     # ── Positions ─────────────────────────────────────────────────────────────
 
@@ -290,13 +355,40 @@ class PolymarketClient:
         """Fetch positions via CLOB REST API (no SDK method in 0.34.x)."""
         try:
             url = f"{POLYMARKET_HOST}/positions"
-            async with self.session.get(url) as r:
+            headers = {}
+            if self.can_trade:
+                headers = self._get_auth_headers_best_effort()
+            async with self.session.get(url, headers=headers or None) as r:
                 if r.status != 200:
+                    if r.status in (401, 403) and self.can_trade:
+                        log.warning("get_positions: unauthorized (%s) — missing/invalid auth headers", r.status)
                     return []
                 return await r.json()
         except Exception as e:
             log.warning(f"get_positions: {e}")
             return []
+
+    @staticmethod
+    def summarize_exposure(positions: list[dict], condition_id: Optional[str] = None) -> dict:
+        """Return lightweight exposure metrics from the positions payload."""
+        exposure_usd = 0.0
+        open_positions = 0
+        for p in positions or []:
+            try:
+                cid = p.get("conditionId") or p.get("condition_id")
+                if condition_id and cid and cid != condition_id:
+                    continue
+                bal = float(p.get("balance") or 0)
+                if bal <= 0:
+                    continue
+                # CLOB positions commonly represent share count; notional is share * avg_price.
+                avg_px = float(p.get("averagePrice") or p.get("avgPrice") or p.get("avg_price") or 0)
+                if avg_px > 0:
+                    exposure_usd += bal * avg_px
+                open_positions += 1
+            except Exception:
+                continue
+        return {"open_positions": open_positions, "exposure_usd": exposure_usd}
 
     # ── Open orders / cancel ──────────────────────────────────────────────────
 
