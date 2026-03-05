@@ -194,6 +194,10 @@ class Engine:
         # Compute indicators locally
         indic = compute_local_indicators(k5m, k1m)
 
+        # Dedicated ATR override (fixes 0.0 ATR from pandas pipeline)
+        if indic.atr14 is None or indic.atr14 <= 0:
+            indic.atr14 = await self.feeds.calculate_atr_binance()
+
         # Cache market info
         self.state.last_market_slug      = market_info.slug
         self.state.last_condition_id     = market_info.condition_id

@@ -636,6 +636,11 @@ def compute_signals(
     if indic.bb_width is not None and indic.bb_width < 0.003 and not res.monster_signal:
         gates.append(f"bb_squeeze={indic.bb_width:.4f}")
 
+    # === VOLUME CONFIRMATION FOR EXTREMES ===
+    if best_posterior > 0.95 and cvd_total_vol <= 8.0:
+        gates.append("low_volume_on_sure_thing")
+        log.info(f"LOW_VOLUME_BLOCK: volume={cvd_total_vol:.1f} on 95%+ conviction")
+
     res.skip_gates = gates
 
     p_up_str = f"{res.posterior_final_up:.4f}" if res.posterior_final_up else "N/A"

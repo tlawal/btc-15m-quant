@@ -378,6 +378,37 @@ class DataFeeds:
             is_stale       = False,
         )
 
+    # ── Dedicated ATR from Binance 5m klines ──────────────────────────────────
+
+    async def calculate_atr_binance(self, periods: int = 14) -> float:
+        """
+        Compute ATR from Binance 5m klines directly.
+        Returns a safe fallback (150.0) if insufficient data.
+        """
+        try:
+            klines = await self.get_klines("BTCUSDT", "5m", periods + 1)
+            if not klines or len(klines) < periods + 1:
+                return 150.0  # safe fallback
+
+            highs  = [c.high for c in klines]
+            lows   = [c.low for c in klines]
+            closes = [c.close for c in klines]
+
+            tr = [
+                max(
+                    highs[i] - lows[i],
+                    abs(highs[i] - closes[i - 1]),
+                    abs(lows[i] - closes[i - 1])
+                )
+                for i in range(1, len(klines))
+            ]
+            atr = sum(tr[-periods:]) / periods
+            return atr
+        except Exception as e:
+            log.warning(f"ATR calculation failed: {e}")
+            return 150.0  # safe fallback
+
+
     # ── Simple price fallback ─────────────────────────────────────────────────
 
     async def get_btc_price(self) -> Optional[float]:
