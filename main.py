@@ -206,22 +206,16 @@ class Engine:
         # ob, balance, positions = await asyncio.gather(ob_task, bal_task, pos_task)
 
         if self.pm.can_trade and not self.state.trading_halted:
-            balance = (margin or {}).get("available_usdc")
-            if balance is None:
+            # Priority: direct on-chain wallet > CLOB margin available > CLOB margin balance
+            balance = wallet_usdc
+            if balance is None or balance <= 1e-6:
+                balance = (margin or {}).get("available_usdc")
+            if balance is None or balance <= 1e-6:
                 balance = (margin or {}).get("balance_usdc")
-            if balance is None:
+            if balance is None or balance <= 1e-6:
                 log.warning(
-                    "Polymarket margin unavailable (can_trade=%s halted=%s margin=%s) — showing balance as 0.0",
-                    self.pm.can_trade,
-                    self.state.trading_halted,
-                    margin,
-                )
-            elif balance <= 1e-6:
-                log.warning(
-                    "Polymarket balance parsed as 0.0 (can_trade=%s halted=%s margin=%s) — verify wallet has USDC on Polygon and creds are correct",
-                    self.pm.can_trade,
-                    self.state.trading_halted,
-                    margin,
+                    "Balance resolved as %.6f (wallet_usdc=%s margin=%s) — verify POLYGON_RPC_URL is set and wallet has USDC on Polygon",
+                    balance or 0, wallet_usdc, margin,
                 )
         else:
             balance = None
@@ -608,7 +602,23 @@ class Engine:
         if self.state.held_position.side is not None:
             return   # already holding
 
+        # ── Hard capital protections ──────────────────────────────────────────
+        if Config.KILL_SWITCH:
+            log.warning("KILL_SWITCH is active — no new entries")
+            return
+
         if self.state.trades_this_window >= Config.MAX_TRADES_PER_WINDOW and not sig.monster_signal:
+            return
+
+        # Daily loss limit: sum realized losses from today's trades
+        today_start = int(time.time()) - 86400
+        daily_loss = sum(
+            abs(t.pnl or 0) * (t.entry_price or 0) * (getattr(t, 'size', 0) or 1)
+            for t in self.state.trade_history
+            if t.ts >= today_start and t.outcome == "LOSS" and t.pnl is not None
+        )
+        if daily_loss >= Config.DAILY_LOSS_LIMIT_USD:
+            log.warning("Daily loss limit reached ($%.2f >= $%.2f) — no new entries", daily_loss, Config.DAILY_LOSS_LIMIT_USD)
             return
 
         if sig.skip_gates:

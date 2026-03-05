@@ -251,8 +251,6 @@ class StateManager:
             "last_posterior_down":    state.last_posterior_down,
             "prev_cycle_score":       state.prev_cycle_score,
             "prev_cycle_price":       state.prev_cycle_price,
-            "prev_x":                 state.prev_x,
-            "latencies":              state.latencies,
         }
         async with self._session_factory() as session:
             async with session.begin():

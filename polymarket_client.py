@@ -148,16 +148,26 @@ class PolymarketClient:
         return {}
 
     @staticmethod
-    def _parse_usdc_auto(raw) -> Optional[float]:
+    def _parse_usdc(raw, decimals: int = 6) -> Optional[float]:
+        """Parse raw USDC value from CLOB/on-chain.
+
+        py-clob-client's get_balance_allowance returns the raw balanceOf
+        value which uses 6 decimals (micro-USDC).  Values ≥ 1_000_000 are
+        almost certainly raw on-chain units; values < 100 are likely
+        already in USDC.  We use a conservative threshold to decide.
+        """
         try:
             x = float(raw)
         except (TypeError, ValueError):
             return None
         if x < 0:
             return None
-        # Heuristic: some endpoints return base units (micro-USDC), others return USDC.
-        # If the magnitude is large, treat as micro-USDC; otherwise treat as already-decimal.
-        return x / 1_000_000.0 if x >= 1000.0 else x
+        # Threshold: if >= 1e5, treat as raw micro-USDC (i.e. ≥ $0.10 in raw units).
+        # This safely handles balances from $0.10 up to billions.
+        if x >= 1e5:
+            return x / (10 ** decimals)
+        # Small values are ambiguous but more often already USDC.
+        return x
 
     # ── Market discovery ──────────────────────────────────────────────────────
 
@@ -214,11 +224,11 @@ class PolymarketClient:
         """Multi-pass market discovery with caching."""
         window_end = window_start + Config.WINDOW_SEC
 
-        # Cache hit
+        # Cache hit — verify it still matches the current window AND is accepting orders
         if cached_condition_id and cached_expiry:
-            if abs(cached_expiry - window_end) <= 180:
+            if abs(cached_expiry - window_end) <= 60:
                 m = await self.get_market_by_condition(cached_condition_id)
-                if m:
+                if m and m.accepting_orders:
                     return m
 
         # Try exact slug
@@ -233,11 +243,11 @@ class PolymarketClient:
         if m and m.accepting_orders:
             return m
 
-        # Fallback: ending_soon scan
+        # Fallback: ending_soon scan — tight tolerance to avoid matching wrong contract
         candidates = await self.list_ending_soon()
         for m in candidates:
             if m.slug.startswith(BTC_PREFIX) and m.accepting_orders:
-                if abs(m.expiry_ts - window_end) <= 3600:
+                if abs(m.expiry_ts - window_end) <= 120:
                     return m
 
         return None
@@ -309,13 +319,13 @@ class PolymarketClient:
                     or result.get("collateral")
                     or 0
                 )
-                bal = self._parse_usdc_auto(raw)
+                bal = self._parse_usdc(raw)
                 log.debug("get_balance: result=%s raw=%s parsed_usdc=%s", result, raw, bal)
                 return bal or 0.0
 
             if result is None:
                 return None
-            bal = self._parse_usdc_auto(result)
+            bal = self._parse_usdc(result)
             log.debug("get_balance: raw=%s parsed_usdc=%s", result, bal)
             return bal
         except Exception as e:
@@ -341,9 +351,9 @@ class PolymarketClient:
             allowance_raw = result.get("allowance") or result.get("approved") or result.get("spend")
             available_raw = result.get("available") or result.get("availableBalance")
 
-            bal = self._parse_usdc_auto(bal_raw)
-            allowance = self._parse_usdc_auto(allowance_raw)
-            available = self._parse_usdc_auto(available_raw)
+            bal = self._parse_usdc(bal_raw)
+            allowance = self._parse_usdc(allowance_raw)
+            available = self._parse_usdc(available_raw)
 
             log.debug(
                 "get_margin: result=%s parsed={balance:%s allowance:%s available:%s}",

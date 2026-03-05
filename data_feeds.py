@@ -223,15 +223,18 @@ class DataFeeds:
                 trades = await r.json()
             
             # Coinbase format: [{"time": "...", "trade_id": ..., "price": "...", "size": "...", "side": "buy"|"sell"}, ...]
+            # IMPORTANT: Coinbase "side" = maker's side. Taker (aggressor) is the opposite.
+            #   side="sell" → maker was seller → taker BOUGHT (buy aggressor)
+            #   side="buy"  → maker was buyer → taker SOLD (sell aggressor)
             buy_vol = sell_vol = 0.0
             found = 0
             for t in trades:
                 ts = int(datetime.fromisoformat(t["time"].replace("Z", "+00:00")).timestamp() * 1000)
                 if start_ms <= ts <= end_ms:
                     qty = float(t["size"])
-                    if t["side"] == "buy": # buyer aggressor
+                    if t["side"] == "sell":  # maker was seller → taker bought
                         buy_vol += qty
-                    else:
+                    else:                    # maker was buyer → taker sold
                         sell_vol += qty
                     found += 1
             
@@ -253,8 +256,9 @@ class DataFeeds:
         # Add 1s buffer for Binance clock skew
         end_ms -= 1000
         url = f"{BINANCE_REST}/api/v3/aggTrades?symbol=BTCUSDT&startTime={start_ms}&endTime={end_ms}&limit=1000"
+        alt = url.replace(BINANCE_REST, BINANCE_ALT)
         try:
-            raw = await self._fetch_json_with_fallback(url, BINANCE_ALT)
+            raw = await self._fetch_json_with_fallback(url, alt)
             if not raw:
                 return CVDResult(0.0, 0.0, 0.0)
 

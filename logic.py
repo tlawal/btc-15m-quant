@@ -729,7 +729,8 @@ def compute_position_size(
 
     # Position = fraction of bankroll to bet, capped at risk budget
     position_usd = balance * quarter_kelly
-    position_usd = min(position_usd, max_loss_usd)  # Never exceed risk budget
+    position_usd = min(position_usd, max_loss_usd)        # Never exceed risk budget
+    position_usd = min(position_usd, Config.MAX_TRADE_USD) # Absolute per-trade cap
 
     log.debug(f"sizing info: posterior={posterior:.4f} px={entry_price:.4f} bal={balance:.2f} riskPct={risk_pct:.4f} streak={loss_streak} -> {position_usd:.2f} usd")
     if position_usd < Config.MIN_TRADE_USD:

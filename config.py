@@ -62,6 +62,14 @@ class Config:
     MAX_TRADES_PER_WINDOW      = 3
     STREAK_HALT_AT             = 3        # halt trading after N consecutive losses
 
+    # ── Hard capital protections ──────────────────────────────────────────────
+    MAX_TRADE_USD              = 50.0     # absolute max per single trade
+    MAX_TRADES_PER_HOUR        = 8        # hourly trade limit
+    DAILY_LOSS_LIMIT_USD       = 25.0     # stop if daily realized loss exceeds this
+    DAILY_LOSS_LIMIT_PCT       = 0.10     # stop if daily loss > 10% of starting balance
+    MAX_EXPOSURE_USD           = 100.0    # total notional across all positions
+    KILL_SWITCH                = os.getenv("KILL_SWITCH", "false").lower() == "true"
+
     # ── Strike resolution priority (FIX #2) ──────────────────────────────────
     # 1. Binance 15m kline open
     # 2. Coinbase 15m kline open (NEW fallback)

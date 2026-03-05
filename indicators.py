@@ -106,8 +106,9 @@ def compute_local_indicators(
     raw_money_flow = typical_price * df5['volume']
     positive_flow = raw_money_flow.where(typical_price > typical_price.shift(), 0)
     negative_flow = raw_money_flow.where(typical_price < typical_price.shift(), 0)
-    m_ratio = positive_flow.rolling(window=14).sum() / negative_flow.rolling(window=14).sum()
-    res.mfi14 = 100 - (100 / (1 + m_ratio)).iloc[-1]
+    m_ratio = positive_flow.rolling(window=14).sum() / negative_flow.rolling(window=14).sum().replace(0, float('nan'))
+    mfi_val = 100 - (100 / (1 + m_ratio)).iloc[-1]
+    res.mfi14 = mfi_val if pd.notna(mfi_val) and not np.isinf(mfi_val) else None
 
     # ADX — corrected directional movement with Wilder's smoothing
     up_move = df5['high'].diff()
@@ -149,10 +150,9 @@ def compute_local_indicators(
     if len(obv) >= 5:
         res.obv_slope = obv.iloc[-1] - obv.iloc[-5]
 
-    # Price Slope (matching FIX #6 logic)
-    # EMA9 - Price from 5 units ago (approx)
-    if len(df5) >= 5:
-        res.price_slope = res.ema9 - df5['close'].iloc[-5]
+    # Price Slope — use 1m data (same timeframe as OBV) for apples-to-apples divergence
+    if len(df1) >= 5:
+        res.price_slope = df1['close'].iloc[-1] - df1['close'].iloc[-5]
 
     return res
 

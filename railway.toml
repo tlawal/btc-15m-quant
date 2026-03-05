@@ -8,6 +8,6 @@ maxRestartCount = 3
 
 [service]
 tcp_proxy_port = 8000
-healthcheck_path = "/"
+healthcheck_path = "/health"
 healthcheck_timeout = 5
 healthcheck_interval = 30
