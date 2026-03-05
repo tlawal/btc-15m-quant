@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 BINANCE_REST    = "https://api.binance.com"
 BINANCE_ALT     = "https://api1.binance.com"   # fallback mirror
 BINANCE_ALT2    = "https://api2.binance.com"   # fallback mirror 2
+BYBIT_REST      = "https://api.bybit.com"       # secondary source (US-friendly)
 COINBASE_REST   = "https://api.exchange.coinbase.com"
 
 
@@ -174,22 +175,72 @@ class DataFeeds:
     # ── Klines ────────────────────────────────────────────────────────────────
 
     async def get_klines(self, symbol: str, interval: str, limit: int) -> list[Candle]:
+        """Fetch klines with 3-tier fallback: Binance → Bybit → Coinbase."""
+        # Priority 1: Binance (works from NL Railway)
         url = f"{BINANCE_REST}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
         alt = f"{BINANCE_ALT}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
         raw = await self._fetch_json_with_fallback(url, alt)
-        if not raw:
+        if raw:
+            return [
+                Candle(
+                    ts_ms=int(row[0]),
+                    open=float(row[1]),
+                    high=float(row[2]),
+                    low=float(row[3]),
+                    close=float(row[4]),
+                    volume=float(row[5]),
+                )
+                for row in raw
+            ]
+
+        # Priority 2: Bybit REST (US-friendly)
+        bybit_candles = await self._get_bybit_klines(symbol, interval, limit)
+        if bybit_candles:
+            return bybit_candles
+
+        # Priority 3: Coinbase
+        cb_interval = interval  # "5m" or "1m"
+        cb_candles = await self.get_coinbase_klines(cb_interval, limit)
+        if cb_candles:
+            return cb_candles
+
+        log.warning(f"All kline sources failed for {symbol} {interval}")
+        return []
+
+    async def _get_bybit_klines(self, symbol: str, interval: str, limit: int) -> list[Candle]:
+        """Fetch klines from Bybit v5 public API."""
+        # Bybit interval format: "5" for 5m, "1" for 1m, "15" for 15m
+        bybit_interval = interval.replace("m", "").replace("h", "0")
+        bybit_symbol = symbol  # BTCUSDT works on Bybit too
+        url = (
+            f"{BYBIT_REST}/v5/market/kline"
+            f"?category=linear&symbol={bybit_symbol}&interval={bybit_interval}&limit={limit}"
+        )
+        try:
+            async with self.session.get(url) as r:
+                if r.status != 200:
+                    return []
+                data = await r.json()
+                result = data.get("result", {}).get("list", [])
+                if not result:
+                    return []
+                # Bybit format: [startTime, open, high, low, close, volume, turnover]
+                # Bybit returns newest first, so reverse
+                candles = [
+                    Candle(
+                        ts_ms=int(row[0]),
+                        open=float(row[1]),
+                        high=float(row[2]),
+                        low=float(row[3]),
+                        close=float(row[4]),
+                        volume=float(row[5]),
+                    )
+                    for row in reversed(result)
+                ]
+                return candles
+        except Exception as e:
+            log.debug(f"Bybit klines error: {e}")
             return []
-        return [
-            Candle(
-                ts_ms=int(row[0]),
-                open=float(row[1]),
-                high=float(row[2]),
-                low=float(row[3]),
-                close=float(row[4]),
-                volume=float(row[5]),
-            )
-            for row in raw
-        ]
 
     # ── Strike price (FIX #2) ─────────────────────────────────────────────────
     # Priority: Binance 15m open → Coinbase 15m open → Binance mid → None
