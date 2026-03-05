@@ -108,6 +108,47 @@ class SignalResult:
     price_delta:          Optional[float] = None
     yes_mid:              Optional[float] = None
     no_mid:               Optional[float] = None
+    model_score:          Optional[float] = None    # Phase 5: ML probability of UP
+
+    def to_feature_dict(self) -> dict:
+        """Phase 5: Convert signal results to a flat dict for ML logging."""
+        d = {
+            "atr14":              self.atr14,
+            "expected_move":      self.expected_move,
+            "z_score":            self.z_score,
+            "posterior_fair_up":  self.posterior_fair_up,
+            "posterior_final_up": self.posterior_final_up,
+            "sigma_b":            self.sigma_b,
+            "bvol_multiplier":    self.bvol_multiplier,
+            "signed_score":       self.signed_score,
+            "ema_score":          self.ema_score,
+            "vwap_score":         self.vwap_score,
+            "rsi_score":          self.rsi_score,
+            "atr_score":          self.atr_score,
+            "macd_score":         self.macd_score,
+            "stoch_score":        self.stoch_score,
+            "mfi_score":          self.mfi_score,
+            "obv_score":          self.obv_score,
+            "cvd_score":          self.cvd_score,
+            "ofi_score":          self.ofi_score,
+            "imbalance_score":    self.imbalance_score,
+            "flow_accel_score":   self.flow_accel_score,
+            "liq_vacuum_score":   self.liq_vacuum_score,
+            "bb_position_score":  self.bb_position_score,
+            "cross_exch_score":   self.cross_exch_score,
+            "accum_ofi_score":    self.accum_ofi_score,
+            "misprice_score":     self.misprice_score,
+            "mtf_momentum_score": self.mtf_momentum_score,
+            "vpin_proxy":         self.vpin_proxy,
+            "deep_imbalance":     self.deep_imbalance,
+            "deep_ofi":           self.deep_ofi,
+            "cvd":                self.cvd,
+            "obi":                self.obi,
+            "yes_mid":            self.yes_mid,
+            "no_mid":             self.no_mid,
+        }
+        # Filter out Nones
+        return {k: v for k, v in d.items() if v is not None}
 
 
 def compute_signals(
@@ -142,6 +183,8 @@ def compute_signals(
     no_ask:           Optional[float],
     total_bid_size:   float,
     total_ask_size:   float,
+    # Phase 5
+    inference_engine: Optional[object] = None,
 ) -> SignalResult:
 
     res = SignalResult()
@@ -461,6 +504,19 @@ def compute_signals(
 
     res.signed_score = signed
     res.abs_score    = abs(signed)
+
+    # ── Phase 5: ML Inference ────────────────────────────────────────────────
+    if inference_engine:
+        feats = res.to_feature_dict()
+        res.model_score = inference_engine.predict_up_prob(feats)
+        if res.model_score is not None:
+            log.info(f"ML Inference UP probability: {res.model_score:.4f}")
+            # Optional: Blend into signed_score or use as a hard filter
+            # For now, we just record it. We can add a Config gate later.
+            if res.model_score > 0.8:
+                res.signed_score += 1.0  # Boost confident model signals
+            elif res.model_score < 0.2:
+                res.signed_score -= 1.0
 
     # Delta tracking for reporting
     if state.prev_cycle_score is not None:

@@ -26,6 +26,7 @@ from data_feeds import DataFeeds
 from polymarket_client import PolymarketClient
 from indicators import compute_local_indicators
 from logic import compute_signals, evaluate_exit, compute_position_size
+from inference import InferenceEngine
 from utils import (
     setup_logging, send_telegram, Timer,
     fmt_entry, fmt_exit, fmt_halt, fmt_status, fmt_engine_block, fmt_pnl_dashboard,
@@ -45,6 +46,8 @@ class Engine:
         self.state: Optional[EngineState] = None
         self._running  = True
         self._status_counter = 0   # send Telegram status every N cycles
+        self._last_exit_reason = "HOLD"
+        self.inference = InferenceEngine()  # Phase 5: ML inference engine
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -245,6 +248,7 @@ class Engine:
             no_ask            = ob.no_ask,
             total_bid_size    = ob.total_bid_size,
             total_ask_size    = ob.total_ask_size,
+            inference_engine  = self.inference,
         )
 
         # Store CVD total vol for next cycle's volume-weighted scoring
@@ -314,12 +318,22 @@ class Engine:
         runtime_ms = int(time.time() * 1000) - start_time_ms
         self.state.latencies["total_cycle"] = runtime_ms
         
+        # Phase 5: Log features for ML training every cycle
+        await self._log_cycle_features(sig, btc_price, min_rem, now_ts)
+
         # PnL Dashboard (console only)
         if self._status_counter % 4 == 0: # Print every ~1 min
             print(fmt_pnl_dashboard(self.state.trade_history, balance))
 
         # Heartbeat file
         await self._write_heartbeat(now_ts, balance, runtime_ms)
+
+        # ── Outcome logging for previous window ───────────────────────────────
+        if win_rolled:
+            # We just moved into a new window; log the outcome of the one that just finished
+            # Using prev_win_start which we should track
+            prev_win = win_start - Config.WINDOW_SEC
+            asyncio.create_task(self._log_window_outcome(prev_win))
 
         # Calculate sizing for reporting if flat
         if not self.state.held_position.side:
@@ -625,11 +639,50 @@ class Engine:
                 self.state.last_window_start_sec or 0, balance,
             )
         )
-        log.info(
-            f"ENTRY: {side_name} @ {entry_px:.4f} "
-            f"shares={shares:.2f} usd=${position_usd:.2f} "
-            f"score={sig.signed_score:.2f} post={posterior:.4f}"
-        )
+    async def _log_cycle_features(self, sig, btc_price: float, min_rem: float, ts: int):
+        """Phase 5: Log all signals/features to JSONL every cycle."""
+        try:
+            feats = sig.to_feature_dict()
+            feats.update({
+                "ts":         ts,
+                "btc_price":  round(btc_price, 2),
+                "min_rem":    round(min_rem, 2),
+                "window":     self.state.last_window_start_sec,
+                "strike":     self.state.locked_strike_price,
+            })
+            log_dir = "/data" if os.path.exists("/data") else "./logs"
+            os.makedirs(log_dir, exist_ok=True)
+            async with aiofiles.open(f"{log_dir}/features.jsonl", mode='a') as f:
+                await f.write(json.dumps(feats) + "\n")
+        except Exception as e:
+            log.debug(f"Feature logging error: {e}")
+
+    async def _log_window_outcome(self, win_start: int):
+        """Phase 5: Record the final BTC price at window end for labeling."""
+        try:
+            # Wait 30s for the candle to definitely settle
+            await asyncio.sleep(30)
+            
+            # Fetch the candle that just closed (starting at win_start, ending +15m)
+            # Binance klines are inclusive of start
+            cand = await self.feeds.get_binance_15m_open(win_start * 1000)
+            if not cand:
+                # Fallback to 1m kline to find close at win_start + 15m
+                k1m = await self.feeds.get_klines("BTCUSDT", "1m", 1)
+                if k1m: cand = k1m[0].close
+            
+            if cand:
+                outcome_data = {
+                    "window_start": win_start,
+                    "btc_close":    round(cand, 2),
+                    "ts_logged":    int(time.time()),
+                }
+                log_dir = "/data" if os.path.exists("/data") else "./logs"
+                async with aiofiles.open(f"{log_dir}/outcomes.jsonl", mode='a') as f:
+                    await f.write(json.dumps(outcome_data) + "\n")
+                log.info(f"Outcome logged for window {win_start}: BTC closed at {cand:.2f}")
+        except Exception as e:
+            log.debug(f"Outcome logging error: {e}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

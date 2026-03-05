@@ -10,3 +10,8 @@ venv/
 *.egg-info/
 dist/
 build/
+logs/
+data/
+*.jsonl
+*.joblib
+*.pkl
