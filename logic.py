@@ -77,6 +77,7 @@ class SignalResult:
     accum_ofi_score:      float  = 0.0
     misprice_score:       float  = 0.0
     mtf_momentum_score:   float  = 0.0
+    adx_stoch_boost:      float  = 0.0
 
     # Edge
     edge_up:              Optional[float] = None
@@ -139,6 +140,7 @@ class SignalResult:
             "accum_ofi_score":    self.accum_ofi_score,
             "misprice_score":     self.misprice_score,
             "mtf_momentum_score": self.mtf_momentum_score,
+            "adx_stoch_boost": self.adx_stoch_boost,
             "vpin_proxy":         self.vpin_proxy,
             "deep_imbalance":     self.deep_imbalance,
             "deep_ofi":           self.deep_ofi,
@@ -489,6 +491,17 @@ def compute_signals(
         # If they disagree, no score (conflicting signals)
     res.mtf_momentum_score = mtf_momentum_score
     signed += mtf_momentum_score * 0.6
+
+    # 7. ADX + Stochastic Momentum Boost (±1)
+    #    Strong trend (ADX > 25) + Stoch crossover confirmation = extra push.
+    adx_stoch_boost = 0.0
+    if indic.adx14 is not None and indic.stoch_k is not None and indic.stoch_d is not None:
+        if indic.adx14 > 25 and indic.stoch_k > indic.stoch_d and indic.stoch_k < 80:
+            adx_stoch_boost = 1.0   # strong uptrend confirmed
+        elif indic.adx14 > 25 and indic.stoch_k < indic.stoch_d and indic.stoch_k > 20:
+            adx_stoch_boost = -1.0  # strong downtrend confirmed
+    res.adx_stoch_boost = adx_stoch_boost
+    signed += adx_stoch_boost
 
     # Stale micro penalty (mild, only for weak signals)
     if is_stale_micro and abs(signed) < 5.0:
