@@ -394,8 +394,8 @@ class Engine:
             px_up = ob.yes_ask or 0.99
             px_dn = ob.no_ask or 0.99
             
-            s_up = compute_position_size(posterior=p_up, entry_price=px_up, balance=balance, loss_streak=self.state.loss_streak) or 0.0
-            s_down = compute_position_size(posterior=p_dn, entry_price=px_dn, balance=balance, loss_streak=self.state.loss_streak) or 0.0
+            s_up = compute_position_size(posterior=p_up, entry_price=px_up, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal) or 0.0
+            s_down = compute_position_size(posterior=p_dn, entry_price=px_dn, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal) or 0.0
             sig.sizing = max(s_up, s_down)
         else:
             sig.sizing = self.state.held_position.size_usd or 0.0
@@ -724,6 +724,7 @@ class Engine:
             entry_price = entry_px,
             balance     = balance,
             loss_streak = self.state.loss_streak,
+            monster_signal = sig.monster_signal,
         )
         if not position_usd:
             log.info(f"Position size below minimum (bal={balance:.2f})")

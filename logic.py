@@ -734,11 +734,19 @@ def compute_position_size(
     entry_price:    float,
     balance:        float,
     loss_streak:    int,
+    monster_signal: bool = False,
 ) -> Optional[float]:
     """
     Returns position size in USD, or None if below minimum.
     Uses quarter-Kelly with tiered risk_pct cap (FIX #8: no more 1.0 ruin bet).
     """
+    # === MONSTER SIZING OVERRIDE (fixes $10 balance deadlock) ===
+    is_monster = monster_signal and posterior >= 0.90
+
+    if is_monster and balance >= 6.00:
+        log.info(f"MONSTER_FORCE_MIN: forced $6.00 on 90%%+ conviction (balance=${balance:.2f})")
+        return 6.00
+
     risk_pct = Config.get_risk_pct(balance)
     max_loss_usd = balance * risk_pct
 
