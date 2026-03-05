@@ -27,6 +27,7 @@ from polymarket_client import PolymarketClient
 from indicators import compute_local_indicators
 from logic import compute_signals, evaluate_exit, compute_position_size
 from inference import InferenceEngine
+from dashboard import run_dashboard
 from utils import (
     setup_logging, send_telegram, Timer,
     fmt_entry, fmt_exit, fmt_halt, fmt_status, fmt_engine_block, fmt_pnl_dashboard,
@@ -48,6 +49,7 @@ class Engine:
         self._status_counter = 0   # send Telegram status every N cycles
         self._last_exit_reason = "HOLD"
         self.inference = InferenceEngine()  # Phase 5: ML inference engine
+        self._dashboard_task = None         # Phase 6: Dashboard task handle
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -57,12 +59,23 @@ class Engine:
         self.state = await self.state_mgr.load()
         log.info("Engine started. Ensuring Polymarket approvals...")
         await self.pm.ensure_approvals()
+
+        # Phase 6: Start Dashboard in background
+        self._dashboard_task = asyncio.create_task(run_dashboard(self))
+        log.info("Dashboard server started on port 8000")
+
         log.info("Ready. Starting main loop.")
 
     async def stop(self):
         self._running = False
         if self.state:
             await self.state_mgr.save(self.state)
+        
+        if self._dashboard_task:
+            self._dashboard_task.cancel()
+            try: await self._dashboard_task
+            except asyncio.CancelledError: pass
+
         await self.feeds.close()
         await self.pm.close()
         log.info("Engine stopped.")

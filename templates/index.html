@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Predi-Quant | Institutional Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #0c0e12; color: #e2e8f0; }
+        .glass { background: rgba(23, 27, 34, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.05); }
+        .accent-gradient { background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%); }
+    </style>
+</head>
+<body class="p-6">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-8">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">
+                    PREDI-QUANT ENGINE
+                </h1>
+                <p class="text-slate-500 text-sm mt-1">Institutional-Grade BTC 15m Scalper</p>
+            </div>
+            <div id="status-badge" class="px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-green-500/10 text-green-400 border border-green-500/20">
+                System Healthy
+            </div>
+        </header>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            <div class="glass p-5 rounded-2xl">
+                <p class="text-slate-500 text-xs font-medium uppercase tracking-wider mb-2">Available Balance</p>
+                <h2 id="balance" class="text-2xl font-bold">$0.00</h2>
+            </div>
+            <div class="glass p-5 rounded-2xl">
+                <p class="text-slate-500 text-xs font-medium uppercase tracking-wider mb-2">Current Position</p>
+                <h2 id="position" class="text-2xl font-bold text-blue-400">FLAT</h2>
+            </div>
+            <div class="glass p-5 rounded-2xl">
+                <p class="text-slate-500 text-xs font-medium uppercase tracking-wider mb-2">15m Trade Vol</p>
+                <h2 id="vol" class="text-2xl font-bold">0</h2>
+            </div>
+            <div class="glass p-5 rounded-2xl">
+                <p class="text-slate-500 text-xs font-medium uppercase tracking-wider mb-2">Loss Streak</p>
+                <h2 id="streak" class="text-2xl font-bold">0</h2>
+            </div>
+        </div>
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left: Equity Chart -->
+            <div class="lg:col-span-2 glass p-6 rounded-2xl">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="font-semibold text-lg">Performance Analytics</h3>
+                    <div class="text-xs text-slate-500">Live Equity Monitoring</div>
+                </div>
+                <div class="h-64">
+                    <canvas id="equityChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Right: Real-time Model Confidence -->
+            <div class="glass p-6 rounded-2xl">
+                <h3 class="font-semibold text-lg mb-6">Model Confidence</h3>
+                <div class="space-y-6">
+                    <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <span class="text-slate-400">Bayesian Posterior (UP)</span>
+                            <span id="postUp" class="font-semibold">0%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-2">
+                            <div id="postUpBar" class="accent-gradient h-2 rounded-full" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-sm mb-1">
+                            <span class="text-slate-400">Network Latency (Avg)</span>
+                            <span id="avgLatency" class="font-semibold">0ms</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-2">
+                            <div id="latencyBar" class="bg-slate-600 h-2 rounded-full" style="width: 40%"></div>
+                        </div>
+                    </div>
+                    <div class="pt-4 border-t border-slate-800">
+                        <p class="text-slate-500 text-xs italic">
+                            Market: <a id="polylink" href="#" target="_blank" class="text-blue-400 hover:underline">Viewing Active Polymarket...</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom: Trade History -->
+            <div class="lg:col-span-3 glass p-6 rounded-2xl">
+                <h3 class="font-semibold text-lg mb-6">Recent Trade Activity</h3>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead>
+                            <tr class="text-slate-500 border-b border-slate-800">
+                                <th class="pb-3 px-2">Timestamp</th>
+                                <th class="pb-3 px-2">Side</th>
+                                <th class="pb-3 px-2">Entry</th>
+                                <th class="pb-3 px-2">Exit</th>
+                                <th class="pb-3 px-2">PnL (%)</th>
+                                <th class="pb-3 px-2">Outcome</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradeHistory">
+                            <!-- Rows injected by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let equityChart;
+        function updateUI() {
+            fetch('/api/metrics')
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'loading') return;
+
+                    // Header & Stats
+                    document.getElementById('balance').innerText = `$${data.balance.toLocaleString()}`;
+                    document.getElementById('position').innerText = data.position;
+                    document.getElementById('position').className = `text-2xl font-bold ${data.position === 'YES' ? 'text-green-400' : data.position === 'NO' ? 'text-red-400' : 'text-blue-400'}`;
+                    document.getElementById('vol').innerText = data.trades_15m;
+                    document.getElementById('streak').innerText = data.loss_streak;
+                    
+                    if (data.halted) {
+                        const b = document.getElementById('status-badge');
+                        b.innerText = 'TRADING HALTED';
+                        b.className = 'px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider bg-red-500/10 text-red-500 border border-red-500/20';
+                    }
+
+                    // Confidence
+                    const upPct = Math.round((data.last_posterior_up || 0.5) * 100);
+                    document.getElementById('postUp').innerText = `${upPct}%`;
+                    document.getElementById('postUpBar').style.width = `${upPct}%`;
+
+                    // Latencies
+                    const latValues = Object.values(data.latencies);
+                    const avgLat = latValues.length ? Math.round(latValues.reduce((a, b) => a + b, 0) / latValues.length) : 0;
+                    document.getElementById('avgLatency').innerText = `${avgLat}ms`;
+
+                    // Market Link
+                    if (data.last_market_slug) {
+                        document.getElementById('polylink').href = `https://polymarket.com/event/${data.last_market_slug}`;
+                        document.getElementById('polylink').innerText = `Active Market: ${data.last_market_slug.split('/')[0]}`;
+                    }
+
+                    // Table
+                    const historyHtml = data.recent_trades.reverse().map(t => {
+                        const date = new Date(t.ts * 1000).toLocaleTimeString();
+                        const pnlColor = t.pnl > 0 ? 'text-green-400' : t.pnl < 0 ? 'text-red-400' : '';
+                        const pnlText = t.pnl ? `${(t.pnl * 100).toFixed(1)}%` : 'OPEN';
+                        return `
+                            <tr class="border-b border-slate-800/50 hover:bg-slate-800/20 transition-colors">
+                                <td class="py-4 px-2 opacity-60">${date}</td>
+                                <td class="py-4 px-2 font-semibold ${t.side === 'YES' ? 'text-green-400' : 'text-red-400'}">${t.side}</td>
+                                <td class="py-4 px-2">${t.entry.toFixed(3)}</td>
+                                <td class="py-4 px-2">${t.exit ? t.exit.toFixed(3) : '—'}</td>
+                                <td class="py-4 px-2 font-medium ${pnlColor}">${pnlText}</td>
+                                <td class="py-4 px-2">
+                                    <span class="px-2 py-0.5 rounded text-[10px] ${t.outcome === 'WIN' ? 'bg-green-500/10 text-green-400' : t.outcome === 'LOSS' ? 'bg-red-500/10 text-red-400' : 'bg-blue-500/10 text-blue-400'}">
+                                        ${t.outcome}
+                                    </span>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('');
+                    document.getElementById('tradeHistory').innerHTML = historyHtml;
+
+                    // Chart Update (Simplified implementation)
+                    const labels = data.recent_trades.map((_, i) => i);
+                    const pnlData = data.recent_trades.map(t => t.pnl || 0);
+                    if (equityChart) {
+                        equityChart.data.labels = labels;
+                        equityChart.data.datasets[0].data = pnlData;
+                        equityChart.update();
+                    }
+                });
+        }
+
+        // Initialize Chart
+        const ctx = document.getElementById('equityChart').getContext('2d');
+        equityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Trade PnL %',
+                    data: [],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#3b82f6'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { grid: { color: '#1f2937' }, ticks: { color: '#94a3b8' } },
+                    x: { grid: { display: false }, ticks: { display: false } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+
+        setInterval(updateUI, 5000);
+        updateUI();
+    </script>
+</body>
+</html>
