@@ -157,6 +157,13 @@ class Engine:
             self.state.strike_source       = strike_info["source"]
             cvd_res, cvd_bin, cvd_cb = cvd_data_combined
 
+        if self.state.locked_strike_price is None:
+            log.warning(
+                "Strike unresolved for window_start=%s (source=%s) — posteriors/edge will be N/A",
+                win_start,
+                self.state.strike_source,
+            )
+
         if not market_info:
             log.warning("No market info available — skipping cycle")
             await self.state_mgr.save(self.state)
@@ -200,6 +207,13 @@ class Engine:
             balance = (margin or {}).get("available_usdc")
             if balance is None:
                 balance = (margin or {}).get("balance_usdc")
+            if balance is None:
+                log.warning(
+                    "Polymarket margin unavailable (can_trade=%s halted=%s margin=%s) — showing balance as 0.0",
+                    self.pm.can_trade,
+                    self.state.trading_halted,
+                    margin,
+                )
         else:
             balance = None
 

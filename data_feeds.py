@@ -108,16 +108,42 @@ class DataFeeds:
 
     async def get_binance_15m_open(self, window_start_ms: int) -> Optional[float]:
         """Priority 1: Binance 15m kline open at window start."""
+        # Binance can occasionally return an empty set when queried with an exact boundary.
+        # Query a small lookback window and select the exact candle by openTime.
+        lookback_ms = 15 * 60 * 1000
+        start_ms = max(0, window_start_ms - lookback_ms)
         url = (
             f"{BINANCE_REST}/api/v3/klines"
             f"?symbol=BTCUSDT&interval=15m"
-            f"&startTime={window_start_ms}&limit=1"
+            f"&startTime={start_ms}&limit=3"
         )
         alt = url.replace(BINANCE_REST, BINANCE_ALT)
         try:
             raw = await self._fetch_json_with_fallback(url, alt)
             if raw and len(raw) > 0:
-                open_price = float(raw[0][1])
+                chosen = None
+                for row in raw:
+                    try:
+                        if int(row[0]) == int(window_start_ms):
+                            chosen = row
+                            break
+                    except Exception:
+                        continue
+
+                # Fallback: if we didn't get the exact openTime, take the latest returned candle.
+                if chosen is None:
+                    chosen = raw[-1]
+                    try:
+                        log.debug(
+                            "Binance 15m open: exact candle not found (wanted=%s got=%s..%s)",
+                            window_start_ms,
+                            raw[0][0],
+                            raw[-1][0],
+                        )
+                    except Exception:
+                        pass
+
+                open_price = float(chosen[1])
                 if open_price > 0:
                     return open_price
         except Exception as e:
