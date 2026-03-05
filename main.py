@@ -165,6 +165,10 @@ class Engine:
 
         log.info(f"Data Sources: klines={k_source} cvd={cvd_source} (v={max(bin_k_vol, cb_k_vol):.1f}/{max(bin_cvd_vol, cb_cvd_vol):.3f})")
 
+        # ── Reconcile Pending Orders (Phase 3) ────────────────────────────────
+        if self.state.held_position.is_pending and self.state.held_position.order_id:
+            await self._reconcile_pending_order()
+
         # Compute indicators locally
         indic = compute_local_indicators(k5m, k1m)
 
@@ -269,12 +273,14 @@ class Engine:
         # Store CVD total vol for next cycle's volume-weighted scoring
         self.state.prev_cvd_total_vol = cvd_total_vol
 
-        # Update micro score memory
+        # Update score/posterior memory
         if not is_stale:
             self.state.last_cvd_score        = sig.cvd_score
             self.state.last_ofi_score        = sig.ofi_score
             self.state.last_imbalance_score  = sig.imbalance_score
             self.state.last_flow_accel_score = sig.flow_accel_score
+            self.state.last_posterior_up     = sig.posterior_final_up
+            self.state.last_posterior_down   = sig.posterior_final_down
 
         # Update price/indicator memory (shift back)
         self.state.prev_price3 = self.state.prev_price2
@@ -288,8 +294,9 @@ class Engine:
         self.state.prev_ofi_recent = book.deep_ofi
 
         # ── Exit handling ─────────────────────────────────────────────────────
+        # Phase 3: pass CVD and posteriors for new exit types
         exit_executed = await self._handle_exits(
-            sig, ob, market_info, min_rem, btc_price, balance
+            sig, ob, market_info, min_rem, btc_price, balance, cvd_res.cvd_delta
         )
 
         # ── Entry handling ─────────────────────────────────────────────────────
@@ -410,15 +417,52 @@ class Engine:
 
         return book
 
+    async def _reconcile_pending_order(self):
+        """Phase 3: Verify if a pending order has filled."""
+        pos = self.state.held_position
+        if not pos.order_id:
+            return
+
+        status = await self.pm.get_order_status(pos.order_id)
+        if not status:
+            return
+
+        st = status.get("status")
+        matched = status.get("size_matched", 0)
+
+        if st == "FILLED":
+            log.info(f"PENDING ORDER FILLED: {pos.order_id} ({matched} shares)")
+            pos.is_pending = False
+        elif st == "CANCELED" or st == "EXPIRED":
+            if matched > 0:
+                log.info(f"PENDING ORDER {st} PARTIALLY: {matched}/{pos.size} shares filled")
+                pos.size = matched
+                pos.is_pending = False
+            else:
+                log.info(f"PENDING ORDER {st}: clearing position state")
+                self.state.held_position = HeldPosition()
+        elif matched > 0 and matched >= pos.size:
+            # Fallback for status strings that might differ
+            log.info(f"PENDING ORDER MATCHED: {matched} shares")
+            pos.is_pending = False
+
     # ── Exit handler ──────────────────────────────────────────────────────────
 
-    async def _handle_exits(self, sig, ob, market_info, min_rem, btc_price, balance) -> bool:
+    async def _handle_exits(self, sig, ob, market_info, min_rem, btc_price, balance, cvd_delta=0.0) -> bool:
         pos = self.state.held_position
         if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
             return False
 
+        # Phase 3: Don't exit while pending (wait for fill/cancel)
+        if pos.is_pending:
+            return False
+
         current_px = ob.yes_mid if pos.side == "YES" else ob.no_mid
         entry_px   = pos.avg_entry_price or pos.entry_price or (current_px or 0)
+
+        # Get previous posterior for decay detection
+        prev_post = self.state.last_posterior_up if pos.side == "YES" else self.state.last_posterior_down
+        curr_post = sig.posterior_final_up if pos.side == "YES" else sig.posterior_final_down
 
         reason = evaluate_exit(
             held_side         = pos.side,
@@ -428,6 +472,9 @@ class Engine:
             signed_score      = sig.signed_score,
             entry_score       = pos.entry_signed_score or 0.0,
             distance          = sig.distance,
+            cvd_delta         = cvd_delta,
+            posterior         = curr_post,
+            prev_posterior    = prev_post,
         )
         if not reason:
             return False
@@ -494,16 +541,16 @@ class Engine:
         if sig.direction == "NEUTRAL":
             return
 
-        # Determine token + price
+        # Determine token + price (Phase 3: Smart Pricing)
         if sig.direction == "UP":
             token_id  = market_info.yes_token_id
             side_name = "YES"
-            entry_px  = ob.yes_ask or 0.0
+            entry_px  = self.pm.smart_entry_price(ob.yes_bid, ob.yes_ask) or 0.0
             posterior = sig.posterior_final_up or 0.5
         else:
             token_id  = market_info.no_token_id
             side_name = "NO"
-            entry_px  = ob.no_ask or 0.0
+            entry_px  = self.pm.smart_entry_price(ob.no_bid, ob.no_ask) or 0.0
             posterior = sig.posterior_final_down or 0.5
 
         if entry_px <= 0 or entry_px >= 1.0:
@@ -534,7 +581,7 @@ class Engine:
             log.error("Entry order failed")
             return
 
-        # Record position — but mark as PENDING until fill confirmed
+        # Phase 3: record as PENDING and track order_id
         self.state.held_position = HeldPosition(
             side               = side_name,
             token_id           = token_id,
@@ -544,12 +591,13 @@ class Engine:
             size_usd           = position_usd,
             entry_signed_score = sig.signed_score,
             condition_id       = market_info.condition_id,
+            order_id           = order_id,
+            is_pending         = True,
+            placed_at_ts       = int(time.time()),
         )
         self.state.trades_this_window += 1
 
-        # Quick fill verification — check if order appears in positions
-        # (Best-effort; next cycle will reconcile from API anyway)
-        log.info(f"Order placed: {order_id} — position recorded (will reconcile next cycle)")
+        log.info(f"Order placed: {order_id} — waiting for fill confirmation.")
 
         # Record trade history
         self.state.trade_history.append(TradeRecord(

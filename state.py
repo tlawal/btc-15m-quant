@@ -123,6 +123,8 @@ class EngineState:
     last_pm_px_yes: Optional[float]       = None
     last_pm_px_no: Optional[float]        = None
     last_sizing: float                    = 0.0
+    last_posterior_up: Optional[float]    = None
+    last_posterior_down: Optional[float]  = None
 
     # ── Delta tracking ────────────────────────────────────────────────────────
     prev_cycle_score: Optional[float]     = None
@@ -241,6 +243,8 @@ class StateManager:
             "last_pm_px_yes":         state.last_pm_px_yes,
             "last_pm_px_no":          state.last_pm_px_no,
             "last_sizing":            state.last_sizing,
+            "last_posterior_up":      state.last_posterior_up,
+            "last_posterior_down":    state.last_posterior_down,
             "prev_cycle_score":       state.prev_cycle_score,
             "prev_cycle_price":       state.prev_cycle_price,
             "prev_x":                 state.prev_x,

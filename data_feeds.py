@@ -17,8 +17,9 @@ from config import Config
 
 log = logging.getLogger(__name__)
 
-BINANCE_REST    = "https://api.binance.us"
-BINANCE_ALT     = "https://api1.binance.us"   # fallback mirror
+BINANCE_REST    = "https://api.binance.com"
+BINANCE_ALT     = "https://api1.binance.com"   # fallback mirror
+BINANCE_ALT2    = "https://api2.binance.com"   # fallback mirror 2
 COINBASE_REST   = "https://api.exchange.coinbase.com"
 
 
