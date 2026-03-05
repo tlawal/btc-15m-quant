@@ -8,6 +8,8 @@ Architecture:
   - Graceful shutdown on SIGINT/SIGTERM
 """
 
+BUILD_VERSION = "v2.1-USDC-E-FIX"
+
 import asyncio
 import aiofiles
 import json
@@ -58,6 +60,7 @@ class Engine:
         await self.pm.start()
         self.state = await self.state_mgr.load()
         if self.pm.can_trade:
+            print(f"ENGINE START BUILD={BUILD_VERSION} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS}", flush=True)
             log.info("Engine started. Ensuring Polymarket approvals...")
             await self.pm.ensure_approvals()
         else:
@@ -207,10 +210,7 @@ class Engine:
 
         if self.pm.can_trade and not self.state.trading_halted:
             # Priority: direct on-chain wallet > CLOB margin available > CLOB margin balance
-            log.warning(
-                "BALANCE_DEBUG: wallet_usdc=%s margin=%s POLYGON_RPC_URL_SET=%s USDC_CONTRACT=%s",
-                wallet_usdc, margin, bool(Config.POLYGON_RPC_URL), Config.POLYGON_USDC_ADDRESS,
-            )
+            print(f"BALANCE_DEBUG: wallet_usdc={wallet_usdc} margin={margin} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS} BUILD={BUILD_VERSION}", flush=True)
             balance = wallet_usdc
             if balance is None or balance <= 1e-6:
                 balance = (margin or {}).get("available_usdc")
