@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from typing import Optional
 import aiohttp
 
+from web3 import Web3
+
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import (
     ApiCreds, AssetType, BalanceAllowanceParams,
@@ -358,6 +360,51 @@ class PolymarketClient:
             log.warning("get_margin: %s", e)
             bal = await self.get_balance()
             return {"balance_usdc": bal, "allowance_usdc": None, "available_usdc": bal}
+
+    async def get_wallet_usdc_balance(self) -> Optional[float]:
+        """Fetch ERC20 USDC balance for the trading wallet directly from Polygon RPC."""
+        if not Config.POLYGON_RPC_URL:
+            return None
+        if not Config.POLYMARKET_PRIVATE_KEY:
+            return None
+        try:
+            w3 = Web3(Web3.HTTPProvider(Config.POLYGON_RPC_URL, request_kwargs={"timeout": 6}))
+            if not w3.is_connected():
+                return None
+
+            acct = w3.eth.account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+            wallet = acct.address
+            token = Web3.to_checksum_address(Config.POLYGON_USDC_ADDRESS)
+
+            # Minimal ERC20 ABI for balanceOf/decimals
+            abi = [
+                {
+                    "name": "balanceOf",
+                    "type": "function",
+                    "stateMutability": "view",
+                    "inputs": [{"name": "owner", "type": "address"}],
+                    "outputs": [{"name": "balance", "type": "uint256"}],
+                },
+                {
+                    "name": "decimals",
+                    "type": "function",
+                    "stateMutability": "view",
+                    "inputs": [],
+                    "outputs": [{"name": "decimals", "type": "uint8"}],
+                },
+            ]
+            c = w3.eth.contract(address=token, abi=abi)
+            bal_raw = c.functions.balanceOf(wallet).call()
+            try:
+                dec = int(c.functions.decimals().call())
+            except Exception:
+                dec = 6
+            if dec <= 0:
+                dec = 6
+            return float(bal_raw) / (10 ** dec)
+        except Exception as e:
+            log.debug("get_wallet_usdc_balance: %s", e)
+            return None
 
     # ── Positions ─────────────────────────────────────────────────────────────
 

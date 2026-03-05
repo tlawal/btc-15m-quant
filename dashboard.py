@@ -82,6 +82,10 @@ async def get_metrics():
     # We can get these from the state's memory variables
     return {
         "balance": hb.get("balance", 0.0),
+        "wallet_usdc": hb.get("wallet_usdc"),
+        "pm_collateral_usdc": hb.get("pm_collateral_usdc"),
+        "pm_available_usdc": hb.get("pm_available_usdc"),
+        "pm_allowance_usdc": hb.get("pm_allowance_usdc"),
         "position": state.held_position.side or "FLAT",
         "entry_price": state.held_position.avg_entry_price,
         "latencies": state.latencies,

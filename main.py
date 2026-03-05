@@ -172,14 +172,16 @@ class Engine:
         # ── Polymarket context (Phase 4: Latency track) ──────────────────────
         with Timer("fetch_polymarket", self.state.latencies):
             if self.pm.can_trade and not self.state.trading_halted:
-                ob, margin, positions = await asyncio.gather(
+                ob, margin, wallet_usdc, positions = await asyncio.gather(
                     self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id),
                     self.pm.get_margin(),
+                    self.pm.get_wallet_usdc_balance(),
                     self.pm.get_positions(),
                 )
             else:
                 ob = await self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id)
                 margin = {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
+                wallet_usdc = None
                 positions = []
 
         # ── Reconcile Pending Orders (Phase 3) ────────────────────────────────
@@ -379,7 +381,7 @@ class Engine:
             print(fmt_pnl_dashboard(self.state.trade_history, balance))
 
         # Heartbeat file
-        await self._write_heartbeat(now_ts, balance, runtime_ms)
+        await self._write_heartbeat(now_ts, balance, runtime_ms, margin=margin, wallet_usdc=wallet_usdc)
 
         # ── Outcome logging for previous window ───────────────────────────────
         if win_rolled:
@@ -498,12 +500,16 @@ class Engine:
             log.info(f"PENDING ORDER MATCHED: {matched} shares")
             pos.is_pending = False
 
-    async def _write_heartbeat(self, ts: int, balance: float, runtime_ms: int):
+    async def _write_heartbeat(self, ts: int, balance: float, runtime_ms: int, margin: dict | None = None, wallet_usdc: float | None = None):
         """Phase 4: Structured heartbeat for external health monitoring."""
         hb = {
             "ts": ts,
             "status": "HEALTHY",
             "balance": balance,
+            "wallet_usdc": wallet_usdc,
+            "pm_collateral_usdc": (margin or {}).get("balance_usdc") if isinstance(margin, dict) else None,
+            "pm_available_usdc": (margin or {}).get("available_usdc") if isinstance(margin, dict) else None,
+            "pm_allowance_usdc": (margin or {}).get("allowance_usdc") if isinstance(margin, dict) else None,
             "position": self.state.held_position.side or "FLAT",
             "runtime_ms": runtime_ms,
             "latencies": self.state.latencies,
