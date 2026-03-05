@@ -131,6 +131,8 @@ async def get_metrics():
         "last_posterior_down": state.last_posterior_down,
         "last_market_slug": state.last_market_slug,
         "signal": hb.get("signal", {}),
+        "performance": hb.get("performance", {}),
+        "events": hb.get("events", []),
         "recent_trades": [
             {
                 "ts": t.ts,

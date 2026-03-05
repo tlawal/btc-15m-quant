@@ -596,8 +596,9 @@ def compute_signals(
     if res.abs_score < res.min_score and not res.monster_signal:
         gates.append(f"score_low={res.abs_score:.2f}_req={res.min_score:.1f}")
 
-    # Early window guard (first 6 min = rem > 9 min in 15m window)
-    if minutes_remaining > 9.0 and not res.monster_signal:
+    # Early window guard (block non-monster trades in first N min)
+    early_rem_threshold = (Config.WINDOW_SEC / 60.0) - Config.EARLY_WINDOW_GUARD_MIN
+    if minutes_remaining > early_rem_threshold and not res.monster_signal:
         if res.abs_score < 7.0 and chosen_posterior < 0.90:
             gates.append(f"early_window_rem={minutes_remaining:.1f}min")
 

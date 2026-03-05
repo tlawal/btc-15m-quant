@@ -210,17 +210,15 @@ class Engine:
 
         if self.pm.can_trade and not self.state.trading_halted:
             # Priority: direct on-chain wallet > CLOB margin available > CLOB margin balance
-            print(f"BALANCE_DEBUG: wallet_usdc={wallet_usdc} margin={margin} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS} BUILD={BUILD_VERSION}", flush=True)
             balance = wallet_usdc
             if balance is None or balance <= 1e-6:
                 balance = (margin or {}).get("available_usdc")
-                log.warning("BALANCE_DEBUG: wallet_usdc was None/0, trying margin.available_usdc=%s", balance)
             if balance is None or balance <= 1e-6:
                 balance = (margin or {}).get("balance_usdc")
-                log.warning("BALANCE_DEBUG: available_usdc was None/0, trying margin.balance_usdc=%s", balance)
             if balance is None or balance <= 1e-6:
                 log.warning(
-                    "BALANCE_ZERO: All sources returned 0 — verify POLYGON_RPC_URL is set in Railway env vars and wallet has USDC.e on Polygon",
+                    "BALANCE_ZERO: wallet_usdc=%s margin=%s — check POLYGON_RPC_URL and USDC.e on Polygon",
+                    wallet_usdc, margin,
                 )
         else:
             balance = None
@@ -525,9 +523,66 @@ class Engine:
             hb["signal"]["required_edge"] = sig.required_edge
             hb["signal"]["min_score"] = sig.min_score
             hb["signal"]["skip_gates"] = sig.skip_gates
-            # include active strike/distance
             hb["signal"]["strike_price"] = sig.strike_price
             hb["signal"]["distance"] = sig.distance
+            # Raw micro values for dashboard (continuous, not discretized)
+            hb["signal"]["raw_deep_ofi"] = sig.deep_ofi
+            hb["signal"]["raw_cvd"] = sig.cvd
+            hb["signal"]["raw_vpin"] = sig.vpin_proxy
+            hb["signal"]["raw_deep_imbalance"] = sig.deep_imbalance
+            hb["signal"]["raw_obi"] = sig.obi
+            hb["signal"]["monster_signal"] = sig.monster_signal
+            hb["signal"]["posterior_final_up"] = sig.posterior_final_up
+            hb["signal"]["posterior_final_down"] = sig.posterior_final_down
+
+        # ── Real performance metrics from trade history ──────────────
+        trades = self.state.trade_history
+        total_trades = len(trades)
+        closed = [t for t in trades if t.outcome in ("WIN", "LOSS")]
+        wins = [t for t in closed if t.outcome == "WIN"]
+        losses = [t for t in closed if t.outcome == "LOSS"]
+        win_rate = len(wins) / len(closed) if closed else 0.0
+        pnl_list = [t.pnl for t in closed if t.pnl is not None]
+        avg_pnl = sum(pnl_list) / len(pnl_list) if pnl_list else 0.0
+        total_pnl = sum(pnl_list)
+        # Sharpe: mean(pnl) / std(pnl) * sqrt(N)  (annualization not meaningful for 15m)
+        import statistics
+        sharpe = 0.0
+        if len(pnl_list) >= 2:
+            try:
+                sharpe = (statistics.mean(pnl_list) / statistics.stdev(pnl_list)) * (len(pnl_list) ** 0.5)
+            except (ZeroDivisionError, statistics.StatisticsError):
+                sharpe = 0.0
+        gross_profit = sum(p for p in pnl_list if p > 0)
+        gross_loss = abs(sum(p for p in pnl_list if p < 0))
+        profit_factor = gross_profit / gross_loss if gross_loss > 0 else 0.0
+
+        hb["performance"] = {
+            "total_trades": total_trades,
+            "closed_trades": len(closed),
+            "wins": len(wins),
+            "losses": len(losses),
+            "win_rate": round(win_rate, 4),
+            "avg_pnl": round(avg_pnl, 6),
+            "total_pnl": round(total_pnl, 6),
+            "sharpe": round(sharpe, 2),
+            "profit_factor": round(profit_factor, 2),
+            "loss_streak": self.state.loss_streak,
+        }
+
+        # ── Recent events for the event stream ──────────────────────
+        recent_events = []
+        for t in reversed(trades[-10:]):
+            from datetime import datetime, timezone
+            ts_str = datetime.fromtimestamp(t.ts, tz=timezone.utc).strftime("%H:%M:%S")
+            if t.outcome:
+                pnl_str = f"{(t.pnl or 0)*100:.2f}%" if t.pnl else "0.00%"
+                recent_events.append({
+                    "ts": ts_str,
+                    "type": "trade",
+                    "msg": f"Trade {t.side} closed: {t.outcome} | Entry={t.entry_price:.3f} Exit={t.exit_price:.3f} PnL={pnl_str}"
+                })
+        hb["events"] = recent_events
 
         try:
             # Write to /data if on Railway, otherwise local

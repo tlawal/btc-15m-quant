@@ -7,7 +7,7 @@ class Config:
     # ── Timing ────────────────────────────────────────────────────────────────
     LOOP_INTERVAL_SEC          = 15       # inner loop cadence
     WINDOW_SEC                 = 900      # 15-minute binary window
-    EARLY_WINDOW_GUARD_MIN     = 6.0      # block non-monster trades in first 6 min
+    EARLY_WINDOW_GUARD_MIN     = 4.0      # block non-monster trades in first 4 min
     BELIEF_VOL_LOOKBACK_SEC    = 180      # rolling σ_B window (3 min)
     BELIEF_VOL_DEFAULT         = 0.15
     BELIEF_VOL_MULT_MIN        = 0.70
@@ -19,9 +19,9 @@ class Config:
     ATR_LOW_THRESHOLD          = 80.0
     ATR_HIGH_THRESHOLD         = 200.0
     # Min score by regime
-    MIN_SCORE_LOW_VOL          = 5.0
-    MIN_SCORE_NORMAL           = 4.0
-    MIN_SCORE_HIGH_VOL         = 3.0
+    MIN_SCORE_LOW_VOL          = 3.0
+    MIN_SCORE_NORMAL           = 2.5
+    MIN_SCORE_HIGH_VOL         = 2.0
     # Required edge by regime
     REQUIRED_EDGE_LOW          = 0.050
     REQUIRED_EDGE_NORMAL       = 0.035
@@ -32,8 +32,8 @@ class Config:
     ADX_TREND_THRESHOLD        = 20.0     # below = choppy, block directional entry
 
     # ── OFI / microstructure ─────────────────────────────────────────────────
-    OFI_STRONG                 = 15.0
-    OFI_15M                    = 30.0
+    OFI_STRONG                 = 5.0
+    OFI_15M                    = 15.0
     VPIN_BLOCK_THRESHOLD       = 0.70     # block entry if vpin > this AND score weak
 
     # ── Scoring constants ─────────────────────────────────────────────────────

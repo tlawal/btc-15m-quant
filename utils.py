@@ -162,7 +162,7 @@ def fmt_engine_block(
     
     # Micro components formatted
     micro_line = (
-        f"Micro: conv={res.cvd_score:.1f} | cvd={res.cvd:.0f} | "
+        f"Micro: cvdS={res.cvd_score:.1f} | cvd={res.cvd:.0f} | "
         f"obi={getattr(res, 'obi', 0.0):.4f} | "
         f"vpinProxy={res.vpin_proxy:.4f} | deepImb={res.deep_imbalance:.4f} | "
         f"macd={res.macd_score:.1f}"
