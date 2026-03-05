@@ -275,11 +275,10 @@ class Engine:
         if ws_total > 0:
             # WebSocket has data — use it as the primary source
             self.state.cvd = ws_cvd
-            self.state.prev_cvd_slope = ws_cvd - (self.state.prev_cycle_cvd or 0.0)
-            self.state.prev_cycle_cvd = ws_cvd
+            self.state.prev_cvd_slope = self.cvd_ws.get_cvd_slope()
             cvd_total_vol = ws_total
             cvd_delta_for_signals = self.state.prev_cvd_slope
-            log.debug(f"CVD_WS: cvd={ws_cvd:.2f} buy={ws_buy:.2f} sell={ws_sell:.2f}")
+            log.debug(f"CVD_WS: cvd={ws_cvd:.2f} slope={self.state.prev_cvd_slope:.2f} buy={ws_buy:.2f} sell={ws_sell:.2f}")
         else:
             # Fallback to REST-based CVD
             self.state.cvd         += cvd_res.cvd_delta

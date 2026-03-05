@@ -75,6 +75,7 @@ class BinanceCVDWebsocket:
         self.last_price = None
         self.running = False
         self._task = None
+        self.cvd_history = []  # rolling buffer for slope calculation
 
     async def start(self):
         """Start the WebSocket in the background with auto-reconnect."""
@@ -91,7 +92,6 @@ class BinanceCVDWebsocket:
             try:
                 async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as ws:
                     log.info("Bybit CVD WebSocket connected (high volume)")
-                    # Subscribe to BTCUSDT public trades
                     await ws.send(_json.dumps({
                         "op": "subscribe",
                         "args": ["publicTrade.BTCUSDT"]
@@ -110,6 +110,11 @@ class BinanceCVDWebsocket:
                                     self.cvd -= qty
                                     self.sell_vol += qty
                                 self.last_price = float(trade["p"])
+
+                                # Update rolling history for slope
+                                self.cvd_history.append(self.cvd)
+                                if len(self.cvd_history) > 10:
+                                    self.cvd_history.pop(0)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -120,6 +125,12 @@ class BinanceCVDWebsocket:
         """Return current cumulative volume delta."""
         return self.cvd
 
+    def get_cvd_slope(self) -> float:
+        """Return simple 2-step slope from rolling CVD history."""
+        if len(self.cvd_history) < 3:
+            return 0.0
+        return self.cvd_history[-1] - self.cvd_history[-3]
+
     def get_volumes(self) -> tuple:
         """Return (cvd, buy_vol, sell_vol)."""
         return self.cvd, self.buy_vol, self.sell_vol
@@ -129,6 +140,7 @@ class BinanceCVDWebsocket:
         self.cvd = 0.0
         self.buy_vol = 0.0
         self.sell_vol = 0.0
+        self.cvd_history.clear()
 
     def stop(self):
         self.running = False
