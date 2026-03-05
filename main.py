@@ -380,7 +380,7 @@ class Engine:
             print(fmt_pnl_dashboard(self.state.trade_history, balance))
 
         # Heartbeat file
-        await self._write_heartbeat(now_ts, balance, runtime_ms, margin=margin, wallet_usdc=wallet_usdc)
+        await self._write_heartbeat(now_ts, balance, runtime_ms, margin=margin, wallet_usdc=wallet_usdc, sig=sig)
 
         # ── Outcome logging for previous window ───────────────────────────────
         if win_rolled:
@@ -499,7 +499,7 @@ class Engine:
             log.info(f"PENDING ORDER MATCHED: {matched} shares")
             pos.is_pending = False
 
-    async def _write_heartbeat(self, ts: int, balance: float, runtime_ms: int, margin: dict | None = None, wallet_usdc: float | None = None):
+    async def _write_heartbeat(self, ts: int, balance: float, runtime_ms: int, margin: dict | None = None, wallet_usdc: float | None = None, sig = None):
         """Phase 4: Structured heartbeat for external health monitoring."""
         hb = {
             "ts": ts,
@@ -514,6 +514,21 @@ class Engine:
             "latencies": self.state.latencies,
             "trades_15m": self.state.trades_this_window,
         }
+        if sig:
+            hb["signal"] = sig.to_feature_dict()
+            hb["signal"]["regime"] = sig.regime
+            hb["signal"]["direction"] = sig.direction
+            hb["signal"]["edge_up"] = sig.edge_up
+            hb["signal"]["edge_down"] = sig.edge_down
+            hb["signal"]["target_edge"] = sig.target_edge
+            hb["signal"]["target_side"] = sig.target_side
+            hb["signal"]["required_edge"] = sig.required_edge
+            hb["signal"]["min_score"] = sig.min_score
+            hb["signal"]["skip_gates"] = sig.skip_gates
+            # include active strike/distance
+            hb["signal"]["strike_price"] = sig.strike_price
+            hb["signal"]["distance"] = sig.distance
+
         try:
             # Write to /data if on Railway, otherwise local
             hb_path = "/data/heartbeat.json" if os.path.exists("/data") else "heartbeat.json"
