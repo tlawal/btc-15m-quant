@@ -27,7 +27,42 @@ except Exception:
 
 @app.get("/health")
 async def health():
-    return {"status": "ok"}
+    from main import BUILD_VERSION
+    return {"status": "ok", "build": BUILD_VERSION}
+
+@app.get("/api/debug")
+async def debug_balance():
+    """Live debug: check balance in real-time and show env config."""
+    from config import Config
+    try:
+        from main import BUILD_VERSION
+    except:
+        BUILD_VERSION = "unknown"
+
+    result = {
+        "build_version": BUILD_VERSION,
+        "polygon_rpc_url_set": bool(Config.POLYGON_RPC_URL),
+        "polygon_rpc_url_preview": (Config.POLYGON_RPC_URL[:40] + "...") if Config.POLYGON_RPC_URL else "NOT SET",
+        "usdc_contract": Config.POLYGON_USDC_ADDRESS,
+        "private_key_set": bool(Config.POLYMARKET_PRIVATE_KEY),
+        "can_trade": engine.pm.can_trade if engine else None,
+        "trading_halted": engine.state.trading_halted if engine and engine.state else None,
+    }
+
+    # Try live balance fetch
+    if engine and engine.pm:
+        try:
+            wallet = await engine.pm.get_wallet_usdc_balance()
+            result["live_wallet_usdc"] = wallet
+        except Exception as e:
+            result["live_wallet_usdc_error"] = str(e)
+        try:
+            margin = await engine.pm.get_margin()
+            result["live_margin"] = margin
+        except Exception as e:
+            result["live_margin_error"] = str(e)
+
+    return result
 
 # Shared state reference set by the Engine
 engine = None
