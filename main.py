@@ -138,7 +138,7 @@ class Engine:
             # 4. CVD (parallel sources)
             cvd_task = asyncio.create_task(self.feeds.get_cvd_with_cb_fallback())
             # 5. Micro book
-            book_task = asyncio.create_task(self._fetch_micro_data())
+            book_task = asyncio.create_task(self._fetch_binance_book())
 
             # Wait for all
             (market_info, strike_info, k5m, k1m, 
