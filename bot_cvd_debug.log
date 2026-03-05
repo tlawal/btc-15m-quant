@@ -1,0 +1,1217 @@
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing <function connect.<locals>.connector at 0x10fcfa340>
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation <function connect.<locals>.connector at 0x10fcfa340> completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x10fcf2110>, 'regexp', 2, <function SQLiteDialect_pysqlite.on_connect.<locals>.regexp at 0x10fcf94e0>, deterministic=True)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x10fcf2110>, 'regexp', 2, <function SQLiteDialect_pysqlite.on_connect.<locals>.regexp at 0x10fcf94e0>, deterministic=True) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method create_function of sqlite3.Connection object at 0x10fcf2110>, 'floor', 1, <built-in function floor>, deterministic=True)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method create_function of sqlite3.Connection object at 0x10fcf2110>, 'floor', 1, <built-in function floor>, deterministic=True) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd004c0>, 'PRAGMA read_uncommitted', [])
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd004c0>, 'PRAGMA read_uncommitted', []) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x10fd004c0>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x10fd004c0>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd004c0>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd004c0>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd007c0>, 'CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)', ())
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd007c0>, 'CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)', ()) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd007c0>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd007c0>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method commit of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method commit of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:20  INFO      state  State DB initialised
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd00b40>, 'SELECT key, value FROM kv', ())
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd00b40>, 'SELECT key, value FROM kv', ()) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x10fd00b40>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method fetchall of sqlite3.Cursor object at 0x10fd00b40>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd00b40>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd00b40>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:20  DEBUG     aiosqlite  executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:20  DEBUG     aiosqlite  operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:20  INFO      state  State loaded: streak=0 halted=False position=FLAT
+2026-03-04T23:19:20  INFO      engine  Engine started. Ensuring Polymarket approvals...
+2026-03-04T23:19:20  DEBUG     httpcore.connection  connect_tcp.started host='clob.polymarket.com' port=443 local_address=None timeout=5.0 socket_options=None
+2026-03-04T23:19:20  DEBUG     httpcore.connection  connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x10e4189b0>
+2026-03-04T23:19:20  DEBUG     httpcore.connection  start_tls.started ssl_context=<ssl.SSLContext object at 0x10d0214d0> server_hostname='clob.polymarket.com' timeout=5.0
+2026-03-04T23:19:20  DEBUG     httpcore.connection  start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x10fcd7cb0>
+2026-03-04T23:19:20  DEBUG     httpcore.http2  send_connection_init.started request=<Request [b'GET']>
+2026-03-04T23:19:20  DEBUG     httpcore.http2  send_connection_init.complete
+2026-03-04T23:19:20  DEBUG     httpcore.http2  send_request_headers.started request=<Request [b'GET']> stream_id=1
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b':method', b'GET') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 2 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b':authority', b'clob.polymarket.com') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 1 with 6 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 14 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b':scheme', b'https') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 7 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b':path', b'/balance-allowance/update?asset_type=COLLATERAL&signature_type=0') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 4 with 6 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 47 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b'poly_address', b'0xE97898EDd2210Dd2E59A71742c6785F969734F7B') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 9 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 32 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b'poly_signature', b'X2AsqTojAjslYAG1gebpF1R0lL7T05xaDO_ZT3O8ktc=') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 10 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 34 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b'poly_timestamp', b'1772684360') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 10 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 8 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b'poly_api_key', b'27bebf28-664f-3123-97cc-2234f343cb6d') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 9 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 26 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b'poly_passphrase', b'8dc4783703028826d629d1ab41004266254bb23b722d465b8b5ce97395c82bac') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 11 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 46 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b'user-agent', b'py_clob_client') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 58 with 6 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 10 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b'accept', b'*/*') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 19 with 6 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 3 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b'content-type', b'application/json') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 31 with 6 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 11 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Adding (b'accept-encoding', b'gzip') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 16 with 6 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoding 3 with 7 bits
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Encoded header block to b"\x82A\x8e%\x07\x8dz\xcfG\xaaGgR\xa5r\x1e\x9f\x87D\xafb1\xd0:\x88U\x87E\x07\xf0:\x88V-\xaeA\xa4\xbf\xe0\xd0\x82\xa6$\xfa\xac\xb0^\xd5\x9f<;\xf0m\x87?\xc2\r5CM\xb6\x16$\xfa\xac\xb0\x03@\x89\xac\xf4z\x88rIaP\x8f\xa0\x07\x9c\x0f\xba\xf3\xef`\xbf \x84\x10_\x90X\x1b~\x17B\xebB#\x8e\xbc\xde\x17\xdc}\xd6Z\xc2\xed\xdf@\x8a\xac\xf4z\x89\x06\x9a\xa1\xa6\xdb\x0b\xa2\xfc\x14(\xed\xbc\xfd!\xe8\x8a9\xc3\x883\x16:\xf0\x87h(\xce\xee\xf07\xe4w\xf5E\xfb\xbd\x9dOuI @\x8a\xac\xf4z\x89&\xa4\xa8H\xe9\xaf\x88\x0b\xae\x89\xc7\x9ae\xc0\x7f@\x89\xac\xf4z\x88u\x9a.\xa5\xf5\x9a\x13\xb1\x969D\xf2\xce8\xd4\xab2\x112\xb3\xee\x90\x8b\x08L\xb5+-2H\xdc\x93@\x8b\xac\xf4z\x8a\xb1\xa1\x15\xcf`\xd0_\xaezB4\xeb\xcc\xba\x06@'\x9e\x13\x928'\xe4\x08\xe3h \x03Bq\xc16\xd4q\x89\x98\xdd\x10\xa4i\xc6\xe3z6\xc8W\xdde\xf6\xc8\xf0\xa3\x19?z\x8a\xaf\xd4D\xa0\xf1\xc4J\x0cZ\x93S\x83\xf9c\xe7_\x8b\x1du\xd0b\r&=LtA\xeaP\x83\x9b\xd9\xab"
+2026-03-04T23:19:20  DEBUG     httpcore.http2  send_request_headers.complete
+2026-03-04T23:19:20  DEBUG     httpcore.http2  send_request_body.started request=<Request [b'GET']> stream_id=1
+2026-03-04T23:19:20  DEBUG     httpcore.http2  send_request_body.complete
+2026-03-04T23:19:20  DEBUG     httpcore.http2  receive_response_headers.started request=<Request [b'GET']> stream_id=1
+2026-03-04T23:19:20  DEBUG     httpcore.http2  receive_remote_settings.started
+2026-03-04T23:19:20  DEBUG     httpcore.http2  receive_remote_settings.complete return_value=<RemoteSettingsChanged changed_settings:{ChangedSetting(setting=3, original_value=None, new_value=100), ChangedSetting(setting=4, original_value=65535, new_value=65536), ChangedSetting(setting=5, original_value=16384, new_value=16777215)}>
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoding b'?\xe1\x1f\x88a\x96\xdf=\xbfJ\x01\xb54\x0e\xc5\x04\x018\xa0\x1a\xb8\x17\xee\x08\nb\xd1\xbf\\\x010@\x85$\xabX?_\x8f~G\\lN:\x12\xb2\x08\xc0\xf3kC\xbf?{\x85\xd5a\xa65_@\x8a$\xab\x10d\x9c\xab!#M\xa8\x86\xbf\xcfL:2^w\xffZ\x8a"K\x14t\xc0\xcf\x9d\xb959\x92\xee\xfeZ\x91\xd9\xbc\x94S\xa2N\xf7\\e\xb7\xb6\xed\xbd\x93\x1f/f\xd7\xde\xa8\xfa\xbfNm\xb3,\x17]\x13\x8f4\xcb\x80X+\x81p\xae\x15\xa5\x88<\xbf\x10\xf29\xefu\x91\xdb\xc2\x1e\xba\x17\x13\xbf\xb9g\xe1<\xf5\xf1\x7f,\xc5\x158A\x88\xb8\xb9\xb3\xc7\x0b\xf3\xa5\x02\xebO\\\xd7i\xbf\x936\xff3U\x87\'\t\xb3y\x97H\xc8\xe8\xa1o\xa7}\xd4\xea\xe3\x95\xec\x19\xd7\xdf\x92\x9e\xf5]\xe3\xa6mr\x16\xce\xb9C\x93~>\x1fjV4\xcf\x03\x1fj\x17\xcdf\xb0\xa8\x83|\xf6\xfd(\x06\xd6\xd0;\x16\x13\x8a\x01\xab\x8d?p@S\x16\x8d\xffjHzFj\xa0^\xb3\xd1\xea\x91\xd9\xd4\xa9\\\x87\xa7\xedLiMz\xaa\xa3\xd7\xda\x9b\x8aKl/\xda\x9b\x87Iw\x19%\x83I\xea/x\x99\xa4~V\x1c\xc5\x81\xd7]p\x00\x07\xda\x86\xa8\x94[!w[\x1d\xf3\xd23T\x8fv\x87%\x07\xb6Ih\x1d\x85@\x85\x1d\tY\x1d\xc9\x90\x9d\x98?\x9b\x8d4\xcf\xf3\xf6\xa5#\x81\xe7\x1a\x00?'
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 4096, consumed 3 bytes
+2026-03-04T23:19:20  DEBUG     hpack.table  Resizing header table to 4096 from 4096
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 8, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b':status', b'200'), consumed 1
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 33, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 22, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b'date', b'Thu, 05 Mar 2026 04:19:20 GMT'), total consumed 24 bytes, indexed True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 28, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 1, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b'content-length', <memory at 0x10fc9d0c0>), total consumed 3 bytes, indexed True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 5, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 15, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b'cf-ray', b'9d7652671e30b085-ATL'), total consumed 23 bytes, indexed True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 59, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 5, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b'vary', b'Origin'), total consumed 7 bytes, indexed True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 10, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 6, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b'cf-cache-status', b'DYNAMIC'), total consumed 19 bytes, indexed True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 55, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 217, consumed 2 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b'set-cookie', b'__cf_bm=3xRIO6IBTWOsq5IlmMdvB6358RRCIHWziPvnbk9mKRg-1772684360-1.0.1.1-f_1WXs8sYT73auUAkM.27ZJhUhhpV9Jge2mF0GeGY3VF9hts2kmkKBmDIKTxgnFIUgKxfNac72A5jvSmOVJ8EL.TImvnBVNgPderkJ1ITHU; path=/; expires=Thu, 05-Mar-26 04:49:20 GMT; domain=.polymarket.com; HttpOnly; Secure; SameSite=None'), total consumed 220 bytes, indexed True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 56, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 25, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b'strict-transport-security', b'max-age=7776000; includeSubDomains'), total consumed 27 bytes, indexed True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 54, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 7, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b'server', b'cloudflare'), total consumed 9 bytes, indexed True
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 5, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded 16, consumed 1 bytes
+2026-03-04T23:19:20  DEBUG     hpack.hpack  Decoded (b'alt-svc', b'h3=":443"; ma=86400'), total consumed 24 bytes, indexed True
+2026-03-04T23:19:20  DEBUG     httpcore.http2  receive_response_headers.complete return_value=(200, [(b'date', b'Thu, 05 Mar 2026 04:19:20 GMT'), (b'content-length', b'0'), (b'cf-ray', b'9d7652671e30b085-ATL'), (b'vary', b'Origin'), (b'cf-cache-status', b'DYNAMIC'), (b'set-cookie', b'__cf_bm=3xRIO6IBTWOsq5IlmMdvB6358RRCIHWziPvnbk9mKRg-1772684360-1.0.1.1-f_1WXs8sYT73auUAkM.27ZJhUhhpV9Jge2mF0GeGY3VF9hts2kmkKBmDIKTxgnFIUgKxfNac72A5jvSmOVJ8EL.TImvnBVNgPderkJ1ITHU; path=/; expires=Thu, 05-Mar-26 04:49:20 GMT; domain=.polymarket.com; HttpOnly; Secure; SameSite=None'), (b'strict-transport-security', b'max-age=7776000; includeSubDomains'), (b'server', b'cloudflare'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-03-04T23:19:20  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance/update?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-04T23:19:20  DEBUG     httpcore.http2  receive_response_body.started request=<Request [b'GET']> stream_id=1
+2026-03-04T23:19:20  DEBUG     httpcore.http2  receive_response_body.complete
+2026-03-04T23:19:20  DEBUG     httpcore.http2  response_closed.started stream_id=1
+2026-03-04T23:19:20  DEBUG     httpcore.http2  response_closed.complete
+2026-03-04T23:19:20  INFO      polymarket_client  Polymarket approvals OK
+2026-03-04T23:19:20  INFO      engine  Ready. Starting main loop.
+2026-03-04T23:19:22  DEBUG     httpcore.http2  send_request_headers.started request=<Request [b'GET']> stream_id=3
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b':method', b'GET') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 2 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b':authority', b'clob.polymarket.com') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 72 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b':scheme', b'https') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 7 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b':path', b'/balance-allowance?asset_type=COLLATERAL&signature_type=0') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 4 with 6 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 42 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'poly_address', b'0xE97898EDd2210Dd2E59A71742c6785F969734F7B') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 71 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'poly_signature', b'HZ9YuRl5Q7gbZEsGz-UBBXor1S_5zccnufMOf7U5XUI=') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 70 with 6 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 36 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'poly_timestamp', b'1772684362') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 70 with 6 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 8 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'poly_api_key', b'27bebf28-664f-3123-97cc-2234f343cb6d') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 70 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'poly_passphrase', b'8dc4783703028826d629d1ab41004266254bb23b722d465b8b5ce97395c82bac') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 69 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'user-agent', b'py_clob_client') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 68 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'accept', b'*/*') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 67 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'content-type', b'application/json') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 66 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'accept-encoding', b'gzip') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 65 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Adding (b'cookie', b'__cf_bm=3xRIO6IBTWOsq5IlmMdvB6358RRCIHWziPvnbk9mKRg-1772684360-1.0.1.1-f_1WXs8sYT73auUAkM.27ZJhUhhpV9Jge2mF0GeGY3VF9hts2kmkKBmDIKTxgnFIUgKxfNac72A5jvSmOVJ8EL.TImvnBVNgPderkJ1ITHU') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 32 with 6 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoding 141 with 7 bits
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Encoded header block to b'\x82\xc8\x87D\xaab1\xd0:\x88U\x87E\x07\xf0:\x88_\xf0hAS\x12}VX/j\xcf\x9e\x1d\xf86\xc3\x9f\xe1\x06\x9a\xa1\xa6\xdb\x0b\x12}VX\x01\xc7\x7f\x07\xa4\xc7\xfa\xff;v\xd0\xde\xc7f\x8f\xf7\x021{[\x85\xdb\xbf\x87\xb0;\xa2o\xd9\tU\xb2\xe8\xd5+\xbc\x1b\xfc\xe1\x92\x0f\x7f\x07\x88\x0b\xae\x89\xc7\x9ae\xc1\x7f\xc6\xc5\xc4\xc3\xc2\xc1`\xff\x0e\x8a"K\x14t\xc0\xcf\x9d\xb959\x92\xee\xfeZ\x91\xd9\xbc\x94S\xa2N\xf7\\e\xb7\xb6\xed\xbd\x93\x1f/f\xd7\xde\xa8\xfa\xbfNm\xb3,\x17]\x13\x8f4\xcb\x80X+\x81p\xae\x15\xa5\x88<\xbf\x10\xf29\xefu\x91\xdb\xc2\x1e\xba\x17\x13\xbf\xb9g\xe1<\xf5\xf1\x7f,\xc5\x158A\x88\xb8\xb9\xb3\xc7\x0b\xf3\xa5\x02\xebO\\\xd7i\xbf\x936\xff3U\x87\'\t\xb3y\x97H\xc8\xe8\xa1o\xa7}\xd4\xea\xe3\x95\xec\x19\xd7\xdf\x92\x9e\xf5]\xe3\xa6mr\x16\xce\xb9C\x93~>\x1f'
+2026-03-04T23:19:22  DEBUG     httpcore.http2  send_request_headers.complete
+2026-03-04T23:19:22  DEBUG     httpcore.http2  send_request_body.started request=<Request [b'GET']> stream_id=3
+2026-03-04T23:19:22  DEBUG     httpcore.http2  send_request_body.complete
+2026-03-04T23:19:22  DEBUG     httpcore.http2  receive_response_headers.started request=<Request [b'GET']> stream_id=3
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoding b'\x88a\x96\xdf=\xbfJ\x01\xb54\x0e\xc5\x04\x018\xa0\x1a\xb8\x17\xee\x08Jb\xd1\xbf_\x8b\x1du\xd0b\r&=LtA\xeaZ\x83\x9b\xd9\xab\xc6\xc5\xc3\xc2\x7f\x08\x8f~G\\lN\x81\xe9@\xfc`y\xb5\xa1\xdf\x9f\xc2'
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 8, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b':status', b'200'), consumed 1
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 33, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 22, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b'date', b'Thu, 05 Mar 2026 04:19:22 GMT'), total consumed 24 bytes, indexed True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 31, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 11, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b'content-type', b'application/json'), total consumed 13 bytes, indexed True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 26, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 3, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b'content-encoding', b'gzip'), total consumed 5 bytes, indexed True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 70, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b'vary', b'Origin'), consumed 1
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 69, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b'cf-cache-status', b'DYNAMIC'), consumed 1
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 67, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b'strict-transport-security', b'max-age=7776000; includeSubDomains'), consumed 1
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 66, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b'server', b'cloudflare'), consumed 1
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 71, consumed 2 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 15, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b'cf-ray', b'9d7652708f09b085-ATL'), total consumed 18 bytes, indexed True
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded 66, consumed 1 bytes
+2026-03-04T23:19:22  DEBUG     hpack.hpack  Decoded (b'alt-svc', b'h3=":443"; ma=86400'), consumed 1
+2026-03-04T23:19:22  DEBUG     httpcore.http2  receive_response_headers.complete return_value=(200, [(b'date', b'Thu, 05 Mar 2026 04:19:22 GMT'), (b'content-type', b'application/json'), (b'content-encoding', b'gzip'), (b'vary', b'Origin'), (b'cf-cache-status', b'DYNAMIC'), (b'strict-transport-security', b'max-age=7776000; includeSubDomains'), (b'server', b'cloudflare'), (b'cf-ray', b'9d7652708f09b085-ATL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-03-04T23:19:22  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-04T23:19:22  DEBUG     httpcore.http2  receive_response_body.started request=<Request [b'GET']> stream_id=3
+2026-03-04T23:19:22  DEBUG     httpcore.http2  receive_response_body.complete
+2026-03-04T23:19:22  DEBUG     httpcore.http2  response_closed.started stream_id=3
+2026-03-04T23:19:22  DEBUG     httpcore.http2  response_closed.complete
+2026-03-04T23:19:22  DEBUG     polymarket_client  get_balance: raw=14210.0 parsed=0.01421
+2026-03-04T23:19:22  DEBUG     polymarket_client  Polymarket OB 9332501044466030933971394629104143870483318933803478324662737288081843650429: 64 bids, 35 asks
+2026-03-04T23:19:22  DEBUG     polymarket_client  Polymarket OB 32527383172436386398886645353770751024887699567725460559560393133744610217755: 35 bids, 64 asks
+2026-03-04T23:19:22  INFO      logic  signal: score=-6.00 dir=DOWN postUp=0.2921 edge=0.0579 regime=normal monster=False gates=['early_window_rem=10.7min']
+2026-03-04T23:19:22  DEBUG     engine  Entry blocked: ['early_window_rem=10.7min']
+2026-03-04T23:19:22  DEBUG     logic  sizing info: posterior=0.2921 px=0.3600 bal=0.01 riskPct=0.2500 streak=0 -> 0.00 usd
+2026-03-04T23:19:22  DEBUG     logic  sizing info: posterior=0.7079 px=0.6500 bal=0.01 riskPct=0.2500 streak=0 -> 0.00 usd
+2026-03-04T23:19:22  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772684362 | window=1772684100-1772685000 | rem=10.7min
+Strike=72668.42 | Price=72606.77 | Dist=-61.6
+StrikeSource: binance_15m_open (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772684100
+Vol: ATR5m=117.6 Regime=normal ExpMove=171.7 MinRem=10.7
+Bayesian: z=-0.3590 PostUp=0.2921 PostDown=0.7079
+Market: YES=0.35 NO=0.65
+Final: Up=0.2921 Down=0.7079
+Edge: 0.0579 (Min Req: 0.035)
+SignedScore: -6.0 (-4.5) (Min Req: 4).
+ScoreDelta: -4.462004345761417
+PriceDelta: 26.660000000003492
+Balance: USDC=0.01
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: conv=0.0 | cvd=0 | obi=-0.1084 | vpinProxy=0.7570 | deepImb=0.8785 | macd=1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: early_window_rem=10.7min
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 1585ms
+
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_window_start_sec', '1772684100'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_window_start_sec', '1772684100')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_slug', '"btc-updown-15m-1772684100"'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_slug', '"btc-updown-15m-1772684100"')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_condition_id', '"0x563a0e23fd0eca5131d87bd7d8eb9adfac3a85d76a45faa0c4c633cfcd663b7f"'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_condition_id', '"0x563a0e23fd0eca5131d87bd7d8eb9adfac3a85d76a45faa0c4c633cfcd663b7f"')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_expiry', '1772685000'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_expiry', '1772685000')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trades_this_window', '0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trades_this_window', '0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('locked_strike_price', '72668.42'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('locked_strike_price', '72668.42')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_source', '"binance_15m_open"'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_source', '"binance_15m_open"')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_window_start', '1772684100'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_window_start', '1772684100')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('loss_streak', '0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('loss_streak', '0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trading_halted', 'false'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trading_halted', 'false')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('held_position', '{"side": null, "token_id": null, "entry_price": null, "avg_entry_price": null, "size": null, "size_usd": null, "entry_signed_score": null, "condition_id": null}'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('held_position', '{"side": null, "token_id": null, "entry_price": null, "avg_entry_price": null, "size": null, "size_usd": null, "entry_signed_score": null, "condition_id": null}')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trade_history', '[]'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trade_history', '[]')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('belief_vol_samples', '[{"delta_x": -0.30518863698341125, "ts": 1772684182}, {"delta_x": -0.04615880099856906, "ts": 1772684197}, {"delta_x": 0.18980936158135142, "ts": 1772684212}, {"delta_x": -0.001765561256415249, "ts": 1772684227}, {"delta_x": -0.06274628654714853, "ts": 1772684242}, {"delta_x": -0.16472671702527875, "ts": 1772684257}, {"delta_x": 0.10972233681212662, "ts": 1772684272}, {"delta_x": -0.26131708051268165, "ts": 1772684287}, {"delta_x": 0.003091020565946012, "ts": 1772684302}, {"delta_x": -0.4063993753228252, "ts": 1772684317}, {"delta_x": 0.0061457896077643515, "ts": 1772684332}, {"delta_x": 0.03971068039223291, "ts": 1772684347}, {"delta_x": 0.545869863072384, "ts": 1772684360}]'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('belief_vol_samples', '[{"delta_x": -0.30518863698341125, "ts": 1772684182}, {"delta_x": -0.04615880099856906, "ts": 1772684197}, {"delta_x": 0.18980936158135142, "ts": 1772684212}, {"delta_x": -0.001765561256415249, "ts": 1772684227}, {"delta_x": -0.06274628654714853, "ts": 1772684242}, {"delta_x": -0.16472671702527875, "ts": 1772684257}, {"delta_x": 0.10972233681212662, "ts": 1772684272}, {"delta_x": -0.26131708051268165, "ts": 1772684287}, {"delta_x": 0.003091020565946012, "ts": 1772684302}, {"delta_x": -0.4063993753228252, "ts": 1772684317}, {"delta_x": 0.0061457896077643515, "ts": 1772684332}, {"delta_x": 0.03971068039223291, "ts": 1772684347}, {"delta_x": 0.545869863072384, "ts": 1772684360}]')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_depth20', '5.08473'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_depth20', '5.08473')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_depth20', '0.70311'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_depth20', '0.70311')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_deep_imbalance', '0.878519447669597'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_deep_imbalance', '0.878519447669597')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_vpin_proxy', '0.757038895339194'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_vpin_proxy', '0.757038895339194')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_px', '72606.76'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_px', '72606.76')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_px', '72606.77'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_px', '72606.77')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_sz', '4.31146'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_sz', '4.31146')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_sz', '0.65804'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_sz', '0.65804')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_hl_fetch_ts', '1772684361'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_hl_fetch_ts', '1772684361')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_hl_mid', '72606.765'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_hl_mid', '72606.765')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ofi_recent', '3.12974'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ofi_recent', '3.12974')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('ofi_15m_by_window', '{}'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('ofi_15m_by_window', '{}')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('zero_ofi_cycles', '0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('zero_ofi_cycles', '0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_cvd_score', '0.0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_cvd_score', '0.0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_ofi_score', '1.0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_ofi_score', '1.0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_imbalance_score', '1.0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_imbalance_score', '1.0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_flow_accel_score', '-1.0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_flow_accel_score', '-1.0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('cvd', '0.0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('cvd', '0.0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cvd_slope', '0.0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cvd_slope', '0.0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price', '72606.77'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price', '72606.77')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price2', '72580.11'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price2', '72580.11')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price3', '72581.71'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price3', '72581.71')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_volume_1m', 'null'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_volume_1m', 'null')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv', '220.89484'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv', '220.89484')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv2', '218.56249'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv2', '218.56249')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv3', '209.98128000000003'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv3', '209.98128000000003')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv4', '210.45948'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv4', '210.45948')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_mfi', '34.96717413991814'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_mfi', '34.96717413991814')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_yes', '0.355'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_yes', '0.355')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_no', '0.645'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_no', '0.645')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_sizing', '0.0'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_sizing', '0.0')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_score', '-6.001306605306922'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_score', '-6.001306605306922')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_price', '72606.77'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_price', '72606.77')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_x', '-0.8852217079817778'))
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fcbdb40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_x', '-0.8852217079817778')) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fcbdb40>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method commit of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method commit of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:22  DEBUG     aiosqlite  executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:22  DEBUG     aiosqlite  operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     httpcore.connection  close.started
+2026-03-04T23:19:36  DEBUG     httpcore.connection  close.complete
+2026-03-04T23:19:36  DEBUG     httpcore.connection  connect_tcp.started host='clob.polymarket.com' port=443 local_address=None timeout=5.0 socket_options=None
+2026-03-04T23:19:36  DEBUG     httpcore.connection  connect_tcp.complete return_value=<httpcore._backends.sync.SyncStream object at 0x10f41ec00>
+2026-03-04T23:19:36  DEBUG     httpcore.connection  start_tls.started ssl_context=<ssl.SSLContext object at 0x10d0214d0> server_hostname='clob.polymarket.com' timeout=5.0
+2026-03-04T23:19:36  DEBUG     httpcore.connection  start_tls.complete return_value=<httpcore._backends.sync.SyncStream object at 0x10fd74530>
+2026-03-04T23:19:36  DEBUG     httpcore.http2  send_connection_init.started request=<Request [b'GET']>
+2026-03-04T23:19:36  DEBUG     httpcore.http2  send_connection_init.complete
+2026-03-04T23:19:36  DEBUG     httpcore.http2  send_request_headers.started request=<Request [b'GET']> stream_id=1
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b':method', b'GET') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 2 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b':authority', b'clob.polymarket.com') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 1 with 6 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 14 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b':scheme', b'https') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 7 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b':path', b'/balance-allowance?asset_type=COLLATERAL&signature_type=0') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 4 with 6 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 42 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'poly_address', b'0xE97898EDd2210Dd2E59A71742c6785F969734F7B') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 9 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 32 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'poly_signature', b'zydLteanG_CIAZ4K6j80AhOAR_ZUZ7t25Cc4UJEVhc8=') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 10 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 35 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'poly_timestamp', b'1772684376') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 10 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 8 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'poly_api_key', b'27bebf28-664f-3123-97cc-2234f343cb6d') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 9 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 26 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'poly_passphrase', b'8dc4783703028826d629d1ab41004266254bb23b722d465b8b5ce97395c82bac') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 11 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 46 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'user-agent', b'py_clob_client') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 58 with 6 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 10 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'accept', b'*/*') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 19 with 6 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 3 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'content-type', b'application/json') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 31 with 6 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 11 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'accept-encoding', b'gzip') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 16 with 6 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 3 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Adding (b'cookie', b'__cf_bm=3xRIO6IBTWOsq5IlmMdvB6358RRCIHWziPvnbk9mKRg-1772684360-1.0.1.1-f_1WXs8sYT73auUAkM.27ZJhUhhpV9Jge2mF0GeGY3VF9hts2kmkKBmDIKTxgnFIUgKxfNac72A5jvSmOVJ8EL.TImvnBVNgPderkJ1ITHU') to the header table, sensitive:False, huffman:True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 32 with 6 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoding 141 with 7 bits
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Encoded header block to b'\x82A\x8e%\x07\x8dz\xcfG\xaaGgR\xa5r\x1e\x9f\x87D\xaab1\xd0:\x88U\x87E\x07\xf0:\x88_\xf0hAS\x12}VX/j\xcf\x9e\x1d\xf86\xc3\x9f\xe1\x06\x9a\xa1\xa6\xdb\x0b\x12}VX\x01@\x89\xac\xf4z\x88rIaP\x8f\xa0\x07\x9c\x0f\xba\xf3\xef`\xbf \x84\x10_\x90X\x1b~\x17B\xebB#\x8e\xbc\xde\x17\xdc}\xd6Z\xc2\xed\xdf@\x8a\xac\xf4z\x89\x06\x9a\xa1\xa6\xdb\x0b\xa3\xf7\xeaL\xe9(\xea\xc5\x15\xec\x90\xfe\xb5\x99\xce\x8f\x02\x19\xf5C\xb6/\xde\x1f\xae\xa4M\xde#\\2\xe0\xe39\x1e\x83@\x8a\xac\xf4z\x89&\xa4\xa8H\xe9\xaf\x88\x0b\xae\x89\xc7\x9ae\xd7?@\x89\xac\xf4z\x88u\x9a.\xa5\xf5\x9a\x13\xb1\x969D\xf2\xce8\xd4\xab2\x112\xb3\xee\x90\x8b\x08L\xb5+-2H\xdc\x93@\x8b\xac\xf4z\x8a\xb1\xa1\x15\xcf`\xd0_\xaezB4\xeb\xcc\xba\x06@\'\x9e\x13\x928\'\xe4\x08\xe3h \x03Bq\xc16\xd4q\x89\x98\xdd\x10\xa4i\xc6\xe3z6\xc8W\xdde\xf6\xc8\xf0\xa3\x19?z\x8a\xaf\xd4D\xa0\xf1\xc4J\x0cZ\x93S\x83\xf9c\xe7_\x8b\x1du\xd0b\r&=LtA\xeaP\x83\x9b\xd9\xab`\xff\x0e\x8a"K\x14t\xc0\xcf\x9d\xb959\x92\xee\xfeZ\x91\xd9\xbc\x94S\xa2N\xf7\\e\xb7\xb6\xed\xbd\x93\x1f/f\xd7\xde\xa8\xfa\xbfNm\xb3,\x17]\x13\x8f4\xcb\x80X+\x81p\xae\x15\xa5\x88<\xbf\x10\xf29\xefu\x91\xdb\xc2\x1e\xba\x17\x13\xbf\xb9g\xe1<\xf5\xf1\x7f,\xc5\x158A\x88\xb8\xb9\xb3\xc7\x0b\xf3\xa5\x02\xebO\\\xd7i\xbf\x936\xff3U\x87\'\t\xb3y\x97H\xc8\xe8\xa1o\xa7}\xd4\xea\xe3\x95\xec\x19\xd7\xdf\x92\x9e\xf5]\xe3\xa6mr\x16\xce\xb9C\x93~>\x1f'
+2026-03-04T23:19:36  DEBUG     httpcore.http2  send_request_headers.complete
+2026-03-04T23:19:36  DEBUG     httpcore.http2  send_request_body.started request=<Request [b'GET']> stream_id=1
+2026-03-04T23:19:36  DEBUG     httpcore.http2  send_request_body.complete
+2026-03-04T23:19:36  DEBUG     httpcore.http2  receive_response_headers.started request=<Request [b'GET']> stream_id=1
+2026-03-04T23:19:36  DEBUG     httpcore.http2  receive_remote_settings.started
+2026-03-04T23:19:36  DEBUG     httpcore.http2  receive_remote_settings.complete return_value=<RemoteSettingsChanged changed_settings:{ChangedSetting(setting=3, original_value=None, new_value=100), ChangedSetting(setting=4, original_value=65535, new_value=65536), ChangedSetting(setting=5, original_value=16384, new_value=16777215)}>
+2026-03-04T23:19:36  DEBUG     polymarket_client  Polymarket OB 32527383172436386398886645353770751024887699567725460559560393133744610217755: 48 bids, 51 asks
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoding b'?\xe1\x1f\x88a\x96\xdf=\xbfJ\x01\xb54\x0e\xc5\x04\x018\xa0\x1a\xb8\x17\xee2\xe2\x98\xb4o_\x8b\x1du\xd0b\r&=LtA\xeaZ\x83\x9b\xd9\xab{\x85\xd5a\xa65_@\x8a$\xab\x10d\x9c\xab!#M\xa8\x86\xbf\xcfL:2^x\x99\xa4~V\x1c\xc5\x81\xd7]p\x00\x07\xda\x86\xa8\x94[!w[\x1d\xf3\xd23T\x8fv\x87%\x07\xb6Ih\x1d\x85@\x85$\xabX?_\x8f~G\\lD}\xf7\xc2\xf8\x9bm\xd5\xa1\xdf\x9f@\x85\x1d\tY\x1d\xc9\x90\x9d\x98?\x9b\x8d4\xcf\xf3\xf6\xa5#\x81\xe7\x1a\x00?'
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 4096, consumed 3 bytes
+2026-03-04T23:19:36  DEBUG     hpack.table  Resizing header table to 4096 from 4096
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 8, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b':status', b'200'), consumed 1
+2026-03-04T23:19:36  DEBUG     polymarket_client  Polymarket OB 9332501044466030933971394629104143870483318933803478324662737288081843650429: 51 bids, 48 asks
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 33, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 22, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b'date', b'Thu, 05 Mar 2026 04:19:36 GMT'), total consumed 24 bytes, indexed True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 31, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 11, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b'content-type', b'application/json'), total consumed 13 bytes, indexed True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 26, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 3, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b'content-encoding', b'gzip'), total consumed 5 bytes, indexed True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 59, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 5, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b'vary', b'Origin'), total consumed 7 bytes, indexed True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 10, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 6, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b'cf-cache-status', b'DYNAMIC'), total consumed 19 bytes, indexed True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 56, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 25, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b'strict-transport-security', b'max-age=7776000; includeSubDomains'), total consumed 27 bytes, indexed True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 54, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 7, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b'server', b'cloudflare'), total consumed 9 bytes, indexed True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 5, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 15, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b'cf-ray', b'9d7652c999192557-ATL'), total consumed 23 bytes, indexed True
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 5, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded 16, consumed 1 bytes
+2026-03-04T23:19:36  DEBUG     hpack.hpack  Decoded (b'alt-svc', b'h3=":443"; ma=86400'), total consumed 24 bytes, indexed True
+2026-03-04T23:19:36  DEBUG     httpcore.http2  receive_response_headers.complete return_value=(200, [(b'date', b'Thu, 05 Mar 2026 04:19:36 GMT'), (b'content-type', b'application/json'), (b'content-encoding', b'gzip'), (b'vary', b'Origin'), (b'cf-cache-status', b'DYNAMIC'), (b'strict-transport-security', b'max-age=7776000; includeSubDomains'), (b'server', b'cloudflare'), (b'cf-ray', b'9d7652c999192557-ATL'), (b'alt-svc', b'h3=":443"; ma=86400')])
+2026-03-04T23:19:36  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-04T23:19:36  DEBUG     httpcore.http2  receive_response_body.started request=<Request [b'GET']> stream_id=1
+2026-03-04T23:19:36  DEBUG     httpcore.http2  receive_response_body.complete
+2026-03-04T23:19:36  DEBUG     httpcore.http2  response_closed.started stream_id=1
+2026-03-04T23:19:36  DEBUG     httpcore.http2  response_closed.complete
+2026-03-04T23:19:36  DEBUG     polymarket_client  get_balance: raw=14210.0 parsed=0.01421
+2026-03-04T23:19:36  INFO      logic  signal: score=0.00 dir=DOWN postUp=0.4695 edge=0.0105 regime=normal monster=False gates=['vpin_toxic=0.909', 'edge_insufficient=0.0105_req=0.035', 'score_low=0.00_req=4.0', 'early_window_rem=10.4min']
+2026-03-04T23:19:36  DEBUG     engine  Entry blocked: ['vpin_toxic=0.909', 'edge_insufficient=0.0105_req=0.035', 'score_low=0.00_req=4.0', 'early_window_rem=10.4min']
+2026-03-04T23:19:36  DEBUG     logic  sizing info: posterior=0.4695 px=0.4900 bal=0.01 riskPct=0.2500 streak=0 -> 0.00 usd
+2026-03-04T23:19:36  DEBUG     logic  sizing info: posterior=0.5305 px=0.5200 bal=0.01 riskPct=0.2500 streak=0 -> 0.00 usd
+2026-03-04T23:19:36  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772684376 | window=1772684100-1772685000 | rem=10.4min
+Strike=72668.42 | Price=72655.22 | Dist=-13.2
+StrikeSource: binance_15m_open (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772684100
+Vol: ATR5m=117.6 Regime=normal ExpMove=169.7 MinRem=10.4
+Bayesian: z=-0.0778 PostUp=0.4695 PostDown=0.5305
+Market: YES=0.48 NO=0.52
+Final: Up=0.4695 Down=0.5305
+Edge: 0.0105 (Min Req: 0.035)
+SignedScore: 0.0 (+6.0) (Min Req: 4).
+ScoreDelta: 6.001306605306922
+PriceDelta: 48.44999999999709
+Balance: USDC=0.01
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: conv=0.0 | cvd=0 | obi=0.0776 | vpinProxy=0.9093 | deepImb=0.9546 | macd=1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: vpin_toxic=0.909, edge_insufficient=0.0105_req=0.035, score_low=0.00_req=4.0, early_window_rem=10.4min
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 732ms
+
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_window_start_sec', '1772684100'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_window_start_sec', '1772684100')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_slug', '"btc-updown-15m-1772684100"'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_slug', '"btc-updown-15m-1772684100"')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_condition_id', '"0x563a0e23fd0eca5131d87bd7d8eb9adfac3a85d76a45faa0c4c633cfcd663b7f"'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_condition_id', '"0x563a0e23fd0eca5131d87bd7d8eb9adfac3a85d76a45faa0c4c633cfcd663b7f"')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_expiry', '1772685000'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_expiry', '1772685000')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trades_this_window', '0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trades_this_window', '0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('locked_strike_price', '72668.42'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('locked_strike_price', '72668.42')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_source', '"binance_15m_open"'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_source', '"binance_15m_open"')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_window_start', '1772684100'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_window_start', '1772684100')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('loss_streak', '0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('loss_streak', '0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trading_halted', 'false'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trading_halted', 'false')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('held_position', '{"side": null, "token_id": null, "entry_price": null, "avg_entry_price": null, "size": null, "size_usd": null, "entry_signed_score": null, "condition_id": null}'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('held_position', '{"side": null, "token_id": null, "entry_price": null, "avg_entry_price": null, "size": null, "size_usd": null, "entry_signed_score": null, "condition_id": null}')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trade_history', '[]'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trade_history', '[]')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('belief_vol_samples', '[{"delta_x": -0.04615880099856906, "ts": 1772684197}, {"delta_x": 0.18980936158135142, "ts": 1772684212}, {"delta_x": -0.001765561256415249, "ts": 1772684227}, {"delta_x": -0.06274628654714853, "ts": 1772684242}, {"delta_x": -0.16472671702527875, "ts": 1772684257}, {"delta_x": 0.10972233681212662, "ts": 1772684272}, {"delta_x": -0.26131708051268165, "ts": 1772684287}, {"delta_x": 0.003091020565946012, "ts": 1772684302}, {"delta_x": -0.4063993753228252, "ts": 1772684317}, {"delta_x": 0.0061457896077643515, "ts": 1772684332}, {"delta_x": 0.03971068039223291, "ts": 1772684347}, {"delta_x": 0.545869863072384, "ts": 1772684360}, {"delta_x": 0.7631313784473576, "ts": 1772684375}]'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('belief_vol_samples', '[{"delta_x": -0.04615880099856906, "ts": 1772684197}, {"delta_x": 0.18980936158135142, "ts": 1772684212}, {"delta_x": -0.001765561256415249, "ts": 1772684227}, {"delta_x": -0.06274628654714853, "ts": 1772684242}, {"delta_x": -0.16472671702527875, "ts": 1772684257}, {"delta_x": 0.10972233681212662, "ts": 1772684272}, {"delta_x": -0.26131708051268165, "ts": 1772684287}, {"delta_x": 0.003091020565946012, "ts": 1772684302}, {"delta_x": -0.4063993753228252, "ts": 1772684317}, {"delta_x": 0.0061457896077643515, "ts": 1772684332}, {"delta_x": 0.03971068039223291, "ts": 1772684347}, {"delta_x": 0.545869863072384, "ts": 1772684360}, {"delta_x": 0.7631313784473576, "ts": 1772684375}]')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_depth20', '3.40809'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_depth20', '3.40809')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_depth20', '0.16198'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_depth20', '0.16198')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_deep_imbalance', '0.9546283406207721'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_deep_imbalance', '0.9546283406207721')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_vpin_proxy', '0.9092566812415441'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_vpin_proxy', '0.9092566812415441')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_px', '72655.22'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_px', '72655.22')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_px', '72655.23'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_px', '72655.23')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_sz', '3.09668'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_sz', '3.09668')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_sz', '0.15084'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_sz', '0.15084')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_hl_fetch_ts', '1772684376'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_hl_fetch_ts', '1772684376')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_hl_mid', '72655.225'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_hl_mid', '72655.225')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ofi_recent', '-1.1355100000000005'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ofi_recent', '-1.1355100000000005')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('ofi_15m_by_window', '{}'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('ofi_15m_by_window', '{}')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('zero_ofi_cycles', '0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('zero_ofi_cycles', '0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_cvd_score', '0.0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_cvd_score', '0.0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_ofi_score', '-1.0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_ofi_score', '-1.0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_imbalance_score', '1.0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_imbalance_score', '1.0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_flow_accel_score', '-1.0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_flow_accel_score', '-1.0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('cvd', '0.0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('cvd', '0.0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cvd_slope', '0.0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cvd_slope', '0.0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price', '72655.22'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price', '72655.22')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price2', '72606.77'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price2', '72606.77')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price3', '72580.11'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price3', '72580.11')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_volume_1m', 'null'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_volume_1m', 'null')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv', '223.27249'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv', '223.27249')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv2', '220.89484'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv2', '220.89484')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv3', '218.56249'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv3', '218.56249')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv4', '209.98128000000003'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv4', '209.98128000000003')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_mfi', '34.846785902711744'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_mfi', '34.846785902711744')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_yes', '0.485'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_yes', '0.485')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_no', '0.515'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_no', '0.515')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_sizing', '0.0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_sizing', '0.0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_score', '0.0'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_score', '0.0')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_price', '72655.22'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_price', '72655.22')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_x', '-0.12209032953442023'))
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10d11dbc0>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_x', '-0.12209032953442023')) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10d11dbc0>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method commit of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method commit of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:36  DEBUG     aiosqlite  executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:36  DEBUG     aiosqlite  operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:49  INFO      engine  Received signal 15 — shutting down...
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_window_start_sec', '1772684100'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_window_start_sec', '1772684100')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_slug', '"btc-updown-15m-1772684100"'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_slug', '"btc-updown-15m-1772684100"')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_condition_id', '"0x563a0e23fd0eca5131d87bd7d8eb9adfac3a85d76a45faa0c4c633cfcd663b7f"'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_condition_id', '"0x563a0e23fd0eca5131d87bd7d8eb9adfac3a85d76a45faa0c4c633cfcd663b7f"')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_expiry', '1772685000'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_market_expiry', '1772685000')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trades_this_window', '0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trades_this_window', '0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('locked_strike_price', '72668.42'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('locked_strike_price', '72668.42')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_source', '"binance_15m_open"'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_source', '"binance_15m_open"')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_window_start', '1772684100'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('strike_window_start', '1772684100')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('loss_streak', '0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('loss_streak', '0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trading_halted', 'false'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trading_halted', 'false')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('held_position', '{"side": null, "token_id": null, "entry_price": null, "avg_entry_price": null, "size": null, "size_usd": null, "entry_signed_score": null, "condition_id": null}'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('held_position', '{"side": null, "token_id": null, "entry_price": null, "avg_entry_price": null, "size": null, "size_usd": null, "entry_signed_score": null, "condition_id": null}')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trade_history', '[]'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('trade_history', '[]')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('belief_vol_samples', '[{"delta_x": -0.04615880099856906, "ts": 1772684197}, {"delta_x": 0.18980936158135142, "ts": 1772684212}, {"delta_x": -0.001765561256415249, "ts": 1772684227}, {"delta_x": -0.06274628654714853, "ts": 1772684242}, {"delta_x": -0.16472671702527875, "ts": 1772684257}, {"delta_x": 0.10972233681212662, "ts": 1772684272}, {"delta_x": -0.26131708051268165, "ts": 1772684287}, {"delta_x": 0.003091020565946012, "ts": 1772684302}, {"delta_x": -0.4063993753228252, "ts": 1772684317}, {"delta_x": 0.0061457896077643515, "ts": 1772684332}, {"delta_x": 0.03971068039223291, "ts": 1772684347}, {"delta_x": 0.545869863072384, "ts": 1772684360}, {"delta_x": 0.7631313784473576, "ts": 1772684375}]'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('belief_vol_samples', '[{"delta_x": -0.04615880099856906, "ts": 1772684197}, {"delta_x": 0.18980936158135142, "ts": 1772684212}, {"delta_x": -0.001765561256415249, "ts": 1772684227}, {"delta_x": -0.06274628654714853, "ts": 1772684242}, {"delta_x": -0.16472671702527875, "ts": 1772684257}, {"delta_x": 0.10972233681212662, "ts": 1772684272}, {"delta_x": -0.26131708051268165, "ts": 1772684287}, {"delta_x": 0.003091020565946012, "ts": 1772684302}, {"delta_x": -0.4063993753228252, "ts": 1772684317}, {"delta_x": 0.0061457896077643515, "ts": 1772684332}, {"delta_x": 0.03971068039223291, "ts": 1772684347}, {"delta_x": 0.545869863072384, "ts": 1772684360}, {"delta_x": 0.7631313784473576, "ts": 1772684375}]')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_depth20', '3.40809'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_depth20', '3.40809')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_depth20', '0.16198'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_depth20', '0.16198')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_deep_imbalance', '0.9546283406207721'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_deep_imbalance', '0.9546283406207721')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_vpin_proxy', '0.9092566812415441'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_vpin_proxy', '0.9092566812415441')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_px', '72655.22'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_px', '72655.22')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_px', '72655.23'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_px', '72655.23')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_sz', '3.09668'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_bid_sz', '3.09668')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_sz', '0.15084'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ask_sz', '0.15084')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_hl_fetch_ts', '1772684376'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_hl_fetch_ts', '1772684376')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_hl_mid', '72655.225'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_hl_mid', '72655.225')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ofi_recent', '-1.1355100000000005'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_ofi_recent', '-1.1355100000000005')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('ofi_15m_by_window', '{}'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('ofi_15m_by_window', '{}')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('zero_ofi_cycles', '0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('zero_ofi_cycles', '0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_cvd_score', '0.0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_cvd_score', '0.0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_ofi_score', '-1.0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_ofi_score', '-1.0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_imbalance_score', '1.0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_imbalance_score', '1.0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_flow_accel_score', '-1.0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_flow_accel_score', '-1.0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('cvd', '0.0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('cvd', '0.0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cvd_slope', '0.0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cvd_slope', '0.0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price', '72655.22'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price', '72655.22')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price2', '72606.77'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price2', '72606.77')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price3', '72580.11'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_price3', '72580.11')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_volume_1m', 'null'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_volume_1m', 'null')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv', '223.27249'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv', '223.27249')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv2', '220.89484'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv2', '220.89484')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv3', '218.56249'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv3', '218.56249')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv4', '209.98128000000003'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_obv4', '209.98128000000003')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_mfi', '34.846785902711744'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_mfi', '34.846785902711744')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_yes', '0.485'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_yes', '0.485')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_no', '0.515'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_pm_px_no', '0.515')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_sizing', '0.0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('last_sizing', '0.0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_score', '0.0'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_score', '0.0')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_price', '72655.22'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_cycle_price', '72655.22')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method cursor of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_x', '-0.12209032953442023'))
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method execute of sqlite3.Cursor object at 0x10fd64d40>, 'INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)', ('prev_x', '-0.12209032953442023')) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method close of sqlite3.Cursor object at 0x10fd64d40>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method commit of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method commit of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  DEBUG     aiosqlite  executing functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>)
+2026-03-04T23:19:50  DEBUG     aiosqlite  operation functools.partial(<built-in method rollback of sqlite3.Connection object at 0x10fcf2110>) completed
+2026-03-04T23:19:50  INFO      engine  Engine stopped.
