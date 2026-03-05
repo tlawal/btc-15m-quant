@@ -17,8 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional
 import aiohttp
-
-from web3 import Web3
+from eth_account import Account
 
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import (
@@ -368,40 +367,39 @@ class PolymarketClient:
         if not Config.POLYMARKET_PRIVATE_KEY:
             return None
         try:
-            w3 = Web3(Web3.HTTPProvider(Config.POLYGON_RPC_URL, request_kwargs={"timeout": 6}))
-            if not w3.is_connected():
+            acct = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+            wallet = acct.address
+
+            def _pad32(hex_no_0x: str) -> str:
+                return hex_no_0x.rjust(64, "0")
+
+            # ERC20 balanceOf(address): 0x70a08231 + leftpad(address)
+            owner = wallet.lower().replace("0x", "")
+            token = Config.POLYGON_USDC_ADDRESS.lower()
+            if not token.startswith("0x") or len(token) != 42:
                 return None
 
-            acct = w3.eth.account.from_key(Config.POLYMARKET_PRIVATE_KEY)
-            wallet = acct.address
-            token = Web3.to_checksum_address(Config.POLYGON_USDC_ADDRESS)
+            data = "0x70a08231" + _pad32(owner)
+            payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_call",
+                "params": [
+                    {"to": token, "data": data},
+                    "latest",
+                ],
+            }
 
-            # Minimal ERC20 ABI for balanceOf/decimals
-            abi = [
-                {
-                    "name": "balanceOf",
-                    "type": "function",
-                    "stateMutability": "view",
-                    "inputs": [{"name": "owner", "type": "address"}],
-                    "outputs": [{"name": "balance", "type": "uint256"}],
-                },
-                {
-                    "name": "decimals",
-                    "type": "function",
-                    "stateMutability": "view",
-                    "inputs": [],
-                    "outputs": [{"name": "decimals", "type": "uint8"}],
-                },
-            ]
-            c = w3.eth.contract(address=token, abi=abi)
-            bal_raw = c.functions.balanceOf(wallet).call()
-            try:
-                dec = int(c.functions.decimals().call())
-            except Exception:
-                dec = 6
-            if dec <= 0:
-                dec = 6
-            return float(bal_raw) / (10 ** dec)
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6)) as s:
+                async with s.post(Config.POLYGON_RPC_URL, json=payload) as r:
+                    if r.status != 200:
+                        return None
+                    resp = await r.json()
+            raw_hex = (resp or {}).get("result")
+            if not isinstance(raw_hex, str) or not raw_hex.startswith("0x"):
+                return None
+            bal_raw = int(raw_hex, 16)
+            return float(bal_raw) / 1_000_000.0
         except Exception as e:
             log.debug("get_wallet_usdc_balance: %s", e)
             return None
