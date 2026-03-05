@@ -28,6 +28,14 @@ class Config:
     REQUIRED_EDGE_HIGH         = 0.025
     DEFAULT_ATR                = 150.0    # Fallback for Bayesian posterior if TAAPI is 429
 
+    # ── Late-window conviction override ──────────────────────────────────────
+    # When near expiry with very high posterior and large distance-from-strike,
+    # the edge gate is relaxed because the market already prices in the outcome.
+    LATE_CONVICTION_MIN_REM    = 3.0      # must be within last 3 min of window
+    LATE_CONVICTION_POSTERIOR  = 0.93     # model must be ≥93% confident
+    LATE_CONVICTION_DISTANCE   = 50.0     # price must be ≥$50 from strike
+    LATE_CONVICTION_EDGE       = 0.015    # relaxed edge requirement (1.5% instead of 3.5%)
+
     # ── ADX trend filter (FIX #5) ─────────────────────────────────────────────
     ADX_TREND_THRESHOLD        = 20.0     # below = choppy, block directional entry
 

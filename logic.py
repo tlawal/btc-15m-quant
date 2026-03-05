@@ -588,12 +588,34 @@ def compute_signals(
     if vpin_proxy > Config.VPIN_BLOCK_THRESHOLD and res.abs_score < 4.0 and not res.monster_signal:
         gates.append(f"vpin_toxic={vpin_proxy:.3f}")
 
-    # Edge gate
-    if res.target_edge is None or res.target_edge < res.required_edge:
-        gates.append(f"edge_insufficient={res.target_edge or 0:.4f}_req={res.required_edge:.3f}")
+    # ── Late-window conviction override ──────────────────────────────────────
+    # Near expiry + very high posterior + deep ITM → relax edge & score gates.
+    # Rationale: at 97% posterior with 2 min left, the market already prices
+    # YES at 0.94+, compressing the mathematical edge below 3.5% even though
+    # the probability of winning is enormous.
+    is_late_conviction = (
+        minutes_remaining <= Config.LATE_CONVICTION_MIN_REM
+        and chosen_posterior >= Config.LATE_CONVICTION_POSTERIOR
+        and res.distance is not None
+        and abs(res.distance) >= Config.LATE_CONVICTION_DISTANCE
+    )
 
-    # Score gate
-    if res.abs_score < res.min_score and not res.monster_signal:
+    if is_late_conviction:
+        effective_required_edge = Config.LATE_CONVICTION_EDGE
+        log.info(
+            "LATE_CONVICTION: rem=%.1f post=%.4f dist=%.1f → relaxed edge %.3f→%.3f",
+            minutes_remaining, chosen_posterior, res.distance,
+            res.required_edge, effective_required_edge
+        )
+    else:
+        effective_required_edge = res.required_edge
+
+    # Edge gate
+    if res.target_edge is None or res.target_edge < effective_required_edge:
+        gates.append(f"edge_insufficient={res.target_edge or 0:.4f}_req={effective_required_edge:.3f}")
+
+    # Score gate (bypassed for late conviction trades)
+    if res.abs_score < res.min_score and not res.monster_signal and not is_late_conviction:
         gates.append(f"score_low={res.abs_score:.2f}_req={res.min_score:.1f}")
 
     # Early window guard (block non-monster trades in first N min)
