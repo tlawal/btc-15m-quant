@@ -351,7 +351,7 @@ class DataFeeds:
     # ── Simple price fallback ─────────────────────────────────────────────────
 
     async def get_btc_price(self) -> Optional[float]:
-        """Priority 3 fallback: Binance simple ticker price."""
+        """Simple spot price fallback (Binance → Coinbase)."""
         url = f"{BINANCE_REST}/api/v3/ticker/price?symbol=BTCUSDT"
         alt = f"{BINANCE_ALT}/api/v3/ticker/price?symbol=BTCUSDT"
         try:
@@ -360,7 +360,18 @@ class DataFeeds:
                 return float(raw["price"])
         except Exception as e:
             log.warning(f"Simple BTC price error: {e}")
-        return None
+        # Coinbase public ticker (often works when Binance is geo-blocked)
+        try:
+            cb_url = f"{COINBASE_REST}/products/BTC-USD/ticker"
+            async with self.session.get(cb_url) as r:
+                if r.status != 200:
+                    return None
+                data = await r.json()
+                px = float(data.get("price") or 0.0)
+                return px if px > 0 else None
+        except Exception as e:
+            log.warning(f"Coinbase spot price error: {e}")
+            return None
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -369,6 +380,11 @@ class DataFeeds:
             async with self.session.get(url) as r:
                 if r.status == 200:
                     return await r.json()
+                try:
+                    body = await r.text()
+                    log.debug(f"Primary fetch non-200 ({r.status}) {url}: {body[:200]}")
+                except Exception:
+                    log.debug(f"Primary fetch non-200 ({r.status}) {url}")
         except Exception as e:
             log.debug(f"Primary fetch failed ({url}): {e}")
         if alt:
@@ -376,6 +392,11 @@ class DataFeeds:
                 async with self.session.get(alt) as r:
                     if r.status == 200:
                         return await r.json()
+                    try:
+                        body = await r.text()
+                        log.debug(f"Fallback fetch non-200 ({r.status}) {alt}: {body[:200]}")
+                    except Exception:
+                        log.debug(f"Fallback fetch non-200 ({r.status}) {alt}")
             except Exception as e:
                 log.warning(f"Fallback fetch failed ({alt}): {e}")
         return None

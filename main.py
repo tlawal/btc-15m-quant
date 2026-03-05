@@ -57,8 +57,15 @@ class Engine:
         await self.feeds.start()
         await self.pm.start()
         self.state = await self.state_mgr.load()
-        log.info("Engine started. Ensuring Polymarket approvals...")
-        await self.pm.ensure_approvals()
+        if self.pm.can_trade:
+            log.info("Engine started. Ensuring Polymarket approvals...")
+            await self.pm.ensure_approvals()
+        else:
+            # Run signals + market discovery, but do not attempt trading endpoints.
+            self.state.trading_halted = True
+            log.warning(
+                "Polymarket trading credentials missing; running in READONLY mode (no orders, no balance, no positions)."
+            )
 
         # Phase 6: Start Dashboard in background
         self._dashboard_task = asyncio.create_task(run_dashboard(self))
@@ -157,11 +164,16 @@ class Engine:
 
         # ── Polymarket context (Phase 4: Latency track) ──────────────────────
         with Timer("fetch_polymarket", self.state.latencies):
-            ob, balance, positions = await asyncio.gather(
-                self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id),
-                self.pm.get_balance(),
-                self.pm.get_positions(),
-            )
+            if self.pm.can_trade and not self.state.trading_halted:
+                ob, balance, positions = await asyncio.gather(
+                    self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id),
+                    self.pm.get_balance(),
+                    self.pm.get_positions(),
+                )
+            else:
+                ob = await self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id)
+                balance = None
+                positions = []
 
         # ── Reconcile Pending Orders (Phase 3) ────────────────────────────────
         # (Already done above, so we keep the order consistent)
@@ -410,7 +422,7 @@ class Engine:
         since Binance limits are much more generous for depth polling.
         """
         book = await self.feeds.get_binance_book(
-            symbol           = "BTCUSD",
+            symbol           = "BTCUSDT",
             prev_bid_depth20 = self.state.prev_bid_depth20,
             prev_ask_depth20 = self.state.prev_ask_depth20,
         )

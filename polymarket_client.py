@@ -63,6 +63,7 @@ class OrderBook:
 
 class PolymarketClient:
     def __init__(self):
+        self._warned_missing_creds = False
         # Fix base64 padding if needed
         secret = Config.POLYMARKET_API_SECRET or ""
         if secret and len(secret) % 4 != 0:
@@ -79,6 +80,21 @@ class PolymarketClient:
             ),
         )
         self._session: Optional[aiohttp.ClientSession] = None
+        self.can_trade = bool(
+            Config.POLYMARKET_PRIVATE_KEY
+            and Config.POLYMARKET_API_KEY
+            and Config.POLYMARKET_API_SECRET
+            and Config.POLYMARKET_API_PASSPHRASE
+        )
+
+    def _warn_no_creds_once(self, caller: str):
+        if self.can_trade or self._warned_missing_creds:
+            return
+        self._warned_missing_creds = True
+        log.warning(
+            "%s: Polymarket trading creds missing; skipping trading endpoint calls.",
+            caller,
+        )
 
     async def start(self):
         self._session = aiohttp.ClientSession(
@@ -98,6 +114,9 @@ class PolymarketClient:
 
     async def ensure_approvals(self):
         """Run once on startup to approve USDC collateral on Polygon."""
+        if not self.can_trade:
+            self._warn_no_creds_once("ensure_approvals")
+            return
         try:
             loop = asyncio.get_event_loop()
             params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
@@ -239,6 +258,9 @@ class PolymarketClient:
 
     async def get_balance(self) -> Optional[float]:
         """Fetch USDC collateral balance via get_balance_allowance."""
+        if not self.can_trade:
+            self._warn_no_creds_once("get_balance")
+            return None
         try:
             loop = asyncio.get_event_loop()
             params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
@@ -279,6 +301,9 @@ class PolymarketClient:
     # ── Open orders / cancel ──────────────────────────────────────────────────
 
     async def get_open_orders(self, condition_id: str) -> list[str]:
+        if not self.can_trade:
+            self._warn_no_creds_once("get_open_orders")
+            return []
         try:
             loop = asyncio.get_event_loop()
             params = OpenOrderParams(market=condition_id)
@@ -291,6 +316,9 @@ class PolymarketClient:
             return []
 
     async def cancel_order(self, order_id: str):
+        if not self.can_trade:
+            self._warn_no_creds_once("cancel_order")
+            return
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, lambda: self.client.cancel(order_id))
@@ -299,6 +327,9 @@ class PolymarketClient:
 
     async def get_order_status(self, order_id: str) -> Optional[dict]:
         """Check if an order has been filled, partially filled, or is still open."""
+        if not self.can_trade:
+            self._warn_no_creds_once("get_order_status")
+            return None
         try:
             loop = asyncio.get_event_loop()
             result = await loop.run_in_executor(
@@ -334,6 +365,9 @@ class PolymarketClient:
         self, token_id: str, price: float, size: float, order_type: str = "GTC"
     ) -> Optional[str]:
         """Place a limit buy order. Returns order_id or None."""
+        if not self.can_trade:
+            self._warn_no_creds_once("limit_buy")
+            return None
         try:
             args = OrderArgs(
                 token_id = token_id,
@@ -358,6 +392,9 @@ class PolymarketClient:
         self, token_id: str, amount_usd: float
     ) -> Optional[str]:
         """Market IOC buy for `amount_usd` dollars of a token."""
+        if not self.can_trade:
+            self._warn_no_creds_once("market_buy")
+            return None
         try:
             args = MarketOrderArgs(
                 token_id = token_id,
@@ -379,6 +416,9 @@ class PolymarketClient:
     async def limit_sell(
         self, token_id: str, price: float, size: float, order_type: str = "GTC"
     ) -> Optional[str]:
+        if not self.can_trade:
+            self._warn_no_creds_once("limit_sell")
+            return None
         try:
             args = OrderArgs(
                 token_id = token_id,
@@ -402,6 +442,9 @@ class PolymarketClient:
     async def market_sell(
         self, token_id: str, size: float
     ) -> Optional[str]:
+        if not self.can_trade:
+            self._warn_no_creds_once("market_sell")
+            return None
         try:
             args = MarketOrderArgs(
                 token_id = token_id,
