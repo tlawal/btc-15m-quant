@@ -497,6 +497,43 @@ class DataFeeds:
             log.warning(f"ATR calculation failed: {e}")
             return 150.0  # safe fallback
 
+    # ── Dedicated MACD from Binance 5m klines ─────────────────────────────────
+
+    async def calculate_macd_histogram(self) -> float:
+        """
+        Compute MACD histogram from Binance 5m klines directly.
+        Returns 0.0 if insufficient data.
+        """
+        try:
+            klines = await self.get_klines("BTCUSDT", "5m", 50)
+            if not klines or len(klines) < 35:
+                return 0.0
+
+            closes = [c.close for c in klines]
+
+            def ema(data, period):
+                alpha = 2.0 / (period + 1)
+                val = data[0]
+                for px in data[1:]:
+                    val = alpha * px + (1 - alpha) * val
+                return val
+
+            # Compute running MACD line for signal EMA
+            macd_values = []
+            for i in range(26, len(closes)):
+                e12 = ema(closes[i - 12 + 1 : i + 1], 12)
+                e26 = ema(closes[i - 26 + 1 : i + 1], 26)
+                macd_values.append(e12 - e26)
+
+            if len(macd_values) < 9:
+                return 0.0
+
+            signal_line = ema(macd_values[-9:], 9)
+            histogram = macd_values[-1] - signal_line
+            return histogram
+        except Exception as e:
+            log.warning(f"MACD calculation failed: {e}")
+            return 0.0
 
     # ── Simple price fallback ─────────────────────────────────────────────────
 

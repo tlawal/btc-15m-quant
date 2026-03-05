@@ -207,6 +207,10 @@ class Engine:
         if indic.atr14 is None or indic.atr14 <= 0:
             indic.atr14 = await self.feeds.calculate_atr_binance()
 
+        # Dedicated MACD override (fixes 0.0 MACD from pandas pipeline)
+        if indic.macd_hist is None or indic.macd_hist == 0:
+            indic.macd_hist = await self.feeds.calculate_macd_histogram()
+
         # Cache market info
         self.state.last_market_slug      = market_info.slug
         self.state.last_condition_id     = market_info.condition_id
