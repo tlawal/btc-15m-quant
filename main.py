@@ -207,15 +207,20 @@ class Engine:
 
         if self.pm.can_trade and not self.state.trading_halted:
             # Priority: direct on-chain wallet > CLOB margin available > CLOB margin balance
+            log.warning(
+                "BALANCE_DEBUG: wallet_usdc=%s margin=%s POLYGON_RPC_URL_SET=%s USDC_CONTRACT=%s",
+                wallet_usdc, margin, bool(Config.POLYGON_RPC_URL), Config.POLYGON_USDC_ADDRESS,
+            )
             balance = wallet_usdc
             if balance is None or balance <= 1e-6:
                 balance = (margin or {}).get("available_usdc")
+                log.warning("BALANCE_DEBUG: wallet_usdc was None/0, trying margin.available_usdc=%s", balance)
             if balance is None or balance <= 1e-6:
                 balance = (margin or {}).get("balance_usdc")
+                log.warning("BALANCE_DEBUG: available_usdc was None/0, trying margin.balance_usdc=%s", balance)
             if balance is None or balance <= 1e-6:
                 log.warning(
-                    "Balance resolved as %.6f (wallet_usdc=%s margin=%s) — verify POLYGON_RPC_URL is set and wallet has USDC on Polygon",
-                    balance or 0, wallet_usdc, margin,
+                    "BALANCE_ZERO: All sources returned 0 — verify POLYGON_RPC_URL is set in Railway env vars and wallet has USDC.e on Polygon",
                 )
         else:
             balance = None
