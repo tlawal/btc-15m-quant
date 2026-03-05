@@ -10,14 +10,31 @@ from fastapi.staticfiles import StaticFiles
 log = logging.getLogger("dashboard")
 
 app = FastAPI()
-templates = Jinja2Templates(directory="templates")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_TEMPLATES_DIR_CANDIDATES = [
+    os.path.join(_HERE, "templates"),
+    os.path.join(os.getcwd(), "templates"),
+]
+_templates_dir = next((p for p in _TEMPLATES_DIR_CANDIDATES if os.path.isdir(p)), None)
+templates = Jinja2Templates(directory=_templates_dir or "templates")
 
 # Shared state reference set by the Engine
 engine = None
 
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    if _templates_dir:
+        try:
+            return templates.TemplateResponse("index.html", {"request": request})
+        except Exception:
+            log.exception("Failed to render index.html from templates dir %s", _templates_dir)
+    return HTMLResponse(
+        "<html><body>"
+        "<h2>Dashboard template missing</h2>"
+        "<p>The API is up. The UI template <code>templates/index.html</code> was not found in the runtime container.</p>"
+        "<p>Try visiting <code>/api/metrics</code> instead, or ensure the templates folder is deployed.</p>"
+        "</body></html>"
+    )
 
 @app.get("/api/metrics")
 async def get_metrics():
