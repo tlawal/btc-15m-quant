@@ -59,6 +59,74 @@ class CVDResult:
     sell_vol:   float
 
 
+# ── Real-time Binance aggTrade WebSocket CVD ──────────────────────────────────
+
+class BinanceCVDWebsocket:
+    """
+    Streams live Binance aggTrades and computes true CVD (buy vol - sell vol)
+    based on taker side. Replaces synthetic/REST-based CVD.
+    """
+
+    def __init__(self):
+        self.cvd = 0.0
+        self.buy_vol = 0.0
+        self.sell_vol = 0.0
+        self.last_price = None
+        self.running = False
+        self._task = None
+
+    async def start(self):
+        """Start the WebSocket in the background with auto-reconnect."""
+        self._task = asyncio.create_task(self._run_forever())
+
+    async def _run_forever(self):
+        """Reconnect loop — restarts on any disconnect or error."""
+        import websockets
+        self.running = True
+        while self.running:
+            try:
+                uri = "wss://stream.binance.com:9443/ws/btcusdt@aggTrade"
+                async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as ws:
+                    log.info("BinanceCVD WebSocket connected")
+                    while self.running:
+                        msg = await ws.recv()
+                        data = __import__('json').loads(msg)
+                        price = float(data['p'])
+                        qty = float(data['q'])
+                        is_buyer_maker = data['m']  # True = seller hit the bid → sell volume
+                        if is_buyer_maker:
+                            self.cvd -= qty
+                            self.sell_vol += qty
+                        else:
+                            self.cvd += qty
+                            self.buy_vol += qty
+                        self.last_price = price
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.warning(f"BinanceCVD WebSocket error: {e} — reconnecting in 3s")
+                await asyncio.sleep(3)
+
+    def get_cvd(self) -> float:
+        """Return current cumulative volume delta."""
+        return self.cvd
+
+    def get_volumes(self) -> tuple:
+        """Return (cvd, buy_vol, sell_vol)."""
+        return self.cvd, self.buy_vol, self.sell_vol
+
+    def reset(self):
+        """Reset CVD and volumes (call on each new 15m window)."""
+        self.cvd = 0.0
+        self.buy_vol = 0.0
+        self.sell_vol = 0.0
+
+    def stop(self):
+        self.running = False
+        if self._task:
+            self._task.cancel()
+
+
 # ── Main DataFeeds class ──────────────────────────────────────────────────────
 
 class DataFeeds:

@@ -102,6 +102,7 @@ class EngineState:
     # ── CVD accumulator (reset per window) ────────────────────────────────────
     cvd: float                            = 0.0
     prev_cvd_slope: float                 = 0.0
+    prev_cycle_cvd: float                 = 0.0
     latencies: dict[str, float]           = field(default_factory=dict)  # Phase 4: Name -> ms
 
     # ── Phase 2: Accumulated OFI + cross-exchange ─────────────────────────────

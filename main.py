@@ -52,6 +52,9 @@ class Engine:
         self._last_exit_reason = "HOLD"
         self.inference = InferenceEngine()  # Phase 5: ML inference engine
         self._dashboard_task = None         # Phase 6: Dashboard task handle
+        # Real-time CVD WebSocket
+        from data_feeds import BinanceCVDWebsocket
+        self.cvd_ws = BinanceCVDWebsocket()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -74,6 +77,10 @@ class Engine:
         self._dashboard_task = asyncio.create_task(run_dashboard(self))
         log.info("Dashboard server started on port 8000")
 
+        # Start real-time CVD WebSocket
+        await self.cvd_ws.start()
+        log.info("BinanceCVD WebSocket started")
+
         log.info("Ready. Starting main loop.")
 
     async def stop(self):
@@ -86,6 +93,7 @@ class Engine:
             try: await self._dashboard_task
             except asyncio.CancelledError: pass
 
+        self.cvd_ws.stop()
         await self.feeds.close()
         await self.pm.close()
         log.info("Engine stopped.")
@@ -123,6 +131,7 @@ class Engine:
             self.state.strike_window_start  = win_start
             self.state.cvd                  = 0.0   # reset CVD each window
             self.state.accumulated_ofi      = 0.0   # Phase 2: reset accumulated OFI
+            self.cvd_ws.reset()                      # Reset real-time CVD WebSocket
 
         self.state.last_window_start_sec = win_start
 
@@ -260,15 +269,28 @@ class Engine:
             await self.state_mgr.save(self.state)
             return
 
-        # ── Real CVD accumulation (FIX #4) ──────────────────────────────────
-        self.state.cvd         += cvd_res.cvd_delta
-        self.state.prev_cvd_slope = cvd_res.cvd_delta
+        # ── Real CVD: prefer WebSocket, fall back to REST ─────────────────────
+        ws_cvd, ws_buy, ws_sell = self.cvd_ws.get_volumes()
+        ws_total = ws_buy + ws_sell
+        if ws_total > 0:
+            # WebSocket has data — use it as the primary source
+            self.state.cvd = ws_cvd
+            self.state.prev_cvd_slope = ws_cvd - (self.state.prev_cycle_cvd or 0.0)
+            self.state.prev_cycle_cvd = ws_cvd
+            cvd_total_vol = ws_total
+            cvd_delta_for_signals = self.state.prev_cvd_slope
+            log.debug(f"CVD_WS: cvd={ws_cvd:.2f} buy={ws_buy:.2f} sell={ws_sell:.2f}")
+        else:
+            # Fallback to REST-based CVD
+            self.state.cvd         += cvd_res.cvd_delta
+            self.state.prev_cvd_slope = cvd_res.cvd_delta
+            cvd_total_vol = cvd_res.buy_vol + cvd_res.sell_vol
+            cvd_delta_for_signals = cvd_res.cvd_delta
 
         # ── Phase 2: Cross-exchange CVD agreement ────────────────────────────
-        bin_dir = 1 if cvd_bin.cvd_delta > 0 else (-1 if cvd_bin.cvd_delta < 0 else 0)
+        bin_dir = 1 if cvd_delta_for_signals > 0 else (-1 if cvd_delta_for_signals < 0 else 0)
         cb_dir  = 1 if cvd_cb.cvd_delta > 0 else (-1 if cvd_cb.cvd_delta < 0 else 0)
         self.state.cross_cvd_agree = (bin_dir == cb_dir) or bin_dir == 0 or cb_dir == 0
-        cvd_total_vol = cvd_res.buy_vol + cvd_res.sell_vol
 
         # ── Phase 2: Accumulate OFI within window ────────────────────────────
         if not book.is_stale:
@@ -292,7 +314,7 @@ class Engine:
             deep_ofi          = book.deep_ofi,
             microprice        = book.microprice,
             is_stale_micro    = is_stale,
-            cvd_delta         = cvd_res.cvd_delta,
+            cvd_delta         = cvd_delta_for_signals,
             true_cvd          = self.state.cvd,
             accumulated_ofi   = self.state.accumulated_ofi,
             cross_cvd_agree   = self.state.cross_cvd_agree,
