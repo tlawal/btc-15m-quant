@@ -102,6 +102,7 @@ class EngineState:
     # ── CVD accumulator (reset per window) ────────────────────────────────────
     cvd: float                            = 0.0
     prev_cvd_slope: float                 = 0.0
+    latencies: dict[str, float]           = field(default_factory=dict)  # Phase 4: Name -> ms
 
     # ── Phase 2: Accumulated OFI + cross-exchange ─────────────────────────────
     accumulated_ofi: float                = 0.0   # sum of OFI deltas within window
@@ -129,9 +130,9 @@ class EngineState:
     # ── Delta tracking ────────────────────────────────────────────────────────
     prev_cycle_score: Optional[float]     = None
     prev_cycle_price: Optional[float]     = None
+    prev_x: Optional[float]               = None  # Bayesian z-score memory
 
     # ── Belief volatility ─────────────────────────────────────────────────────
-    prev_x: Optional[float]               = None
     belief_vol_samples: List[BeliefVolSample] = field(default_factory=list)
 
 
@@ -181,6 +182,8 @@ class StateManager:
                 state.belief_vol_samples = [
                     BeliefVolSample(**s) for s in v
                 ]
+            elif k == "latencies" and isinstance(v, dict):
+                state.latencies = v
             elif hasattr(state, k):
                 setattr(state, k, v)
 
@@ -226,7 +229,8 @@ class StateManager:
             "last_ofi_score":         state.last_ofi_score,
             "last_imbalance_score":   state.last_imbalance_score,
             "last_flow_accel_score":  state.last_flow_accel_score,
-            "cvd":                    state.cvd,
+            "prev_x":                 state.prev_x,
+            "latencies":              state.latencies,
             "prev_cvd_slope":         state.prev_cvd_slope,
             "accumulated_ofi":        state.accumulated_ofi,
             "cross_cvd_agree":        state.cross_cvd_agree,
@@ -248,6 +252,7 @@ class StateManager:
             "prev_cycle_score":       state.prev_cycle_score,
             "prev_cycle_price":       state.prev_cycle_price,
             "prev_x":                 state.prev_x,
+            "latencies":              state.latencies,
         }
         async with self._session_factory() as session:
             async with session.begin():

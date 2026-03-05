@@ -13,6 +13,23 @@ from config import Config
 log = logging.getLogger(__name__)
 
 
+class Timer:
+    """Helper for Phase 4 latency tracking."""
+    def __init__(self, name: str, state_latencies: dict):
+        self.name = name
+        self.latencies = state_latencies
+        self.start_t = None
+
+    def __enter__(self):
+        self.start_t = time.monotonic()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.start_t:
+            dt = (time.monotonic() - self.start_t) * 1000
+            self.latencies[self.name] = round(dt, 1)
+
+
 # ── Logging setup ─────────────────────────────────────────────────────────────
 
 def setup_logging():
@@ -183,3 +200,30 @@ def window_start_iso(window_start: int) -> str:
 
 def window_end_iso(window_start: int) -> str:
     return window_start_iso(window_start + Config.WINDOW_SEC)
+
+
+def fmt_pnl_dashboard(trade_history: list, balance: float) -> str:
+    """Phase 4: Visual PnL summary for the console."""
+    if not trade_history:
+        return f"\n--- PnL Dashboard ---\nBalance: ${balance:.2f}\nTrades: 0\nWin Rate: 0%\n"
+
+    wins = [t for t in trade_history if t.outcome == "WIN"]
+    losses = [t for t in trade_history if t.outcome == "LOSS"]
+    total = len(wins) + len(losses)
+    wr = (len(wins) / total * 100) if total > 0 else 0
+
+    history_str = ""
+    for t in trade_history[-10:]:
+        icon = "🟢" if t.outcome == "WIN" else "🔴" if t.outcome == "LOSS" else "⏳"
+        pnl = f"{t.pnl*100:+.1f}%" if t.pnl is not None else "OPEN"
+        history_str += f"{icon} {pnl} | "
+
+    return (
+        f"\n{'='*50}\n"
+        f"  📊 DASHBOARD\n"
+        f"  Balance:  ${balance:,.2f}\n"
+        f"  Trades:   {total}  (W: {len(wins)} / L: {len(losses)})\n"
+        f"  Win Rate: {total > 0 and wr:.1f}%\n"
+        f"  History:  {history_str[:-3]}\n"
+        f"{'='*50}\n"
+    )

@@ -9,7 +9,10 @@ Architecture:
 """
 
 import asyncio
+import aiofiles
+import json
 import logging
+import os
 import signal
 import sys
 import time
@@ -24,8 +27,8 @@ from polymarket_client import PolymarketClient
 from indicators import compute_local_indicators
 from logic import compute_signals, evaluate_exit, compute_position_size
 from utils import (
-    setup_logging, send_telegram,
-    fmt_entry, fmt_exit, fmt_halt, fmt_status, fmt_engine_block,
+    setup_logging, send_telegram, Timer,
+    fmt_entry, fmt_exit, fmt_halt, fmt_status, fmt_engine_block, fmt_pnl_dashboard,
     current_window_start, minutes_remaining as calc_minutes_remaining,
     window_start_iso, window_end_iso,
 )
@@ -86,6 +89,8 @@ class Engine:
         # ── Window reset ──────────────────────────────────────────────────────
         if win_rolled:
             log.info(f"New 15m window: {win_start} ({datetime.fromtimestamp(win_start, tz=timezone.utc).strftime('%H:%M:%S')} UTC)")
+            # Phase 4: Reset latencies on new window to clear stale metrics
+            self.state.latencies             = {}
             self.state.trades_this_window   = 0
             self.state.locked_strike_price  = None
             self.state.strike_source        = None
@@ -95,88 +100,59 @@ class Engine:
 
         self.state.last_window_start_sec = win_start
 
-        # ── Strike resolution (FIX #2) ────────────────────────────────────────
-        # Priority: Binance 15m open → Coinbase 15m open → HL mid → None
-        # NEVER uses live EMA/current price as strike
-        if self.state.locked_strike_price is None:
-            strike, strike_source = await self._resolve_strike(win_start)
-            if strike:
-                self.state.locked_strike_price = strike
-                self.state.strike_source       = strike_source
-                log.info(f"Strike locked: {strike:.2f} via {strike_source}")
-            else:
-                log.warning("Could not resolve strike price — z-score unavailable this cycle")
-
-        # ── Parallel data fetch ───────────────────────────────────────────────
-        now_ms = now_ts * 1000
-        
-        # CVD tasks (60.1s window)
-        cvd_bin_task = asyncio.create_task(self.feeds.get_real_cvd(now_ms - 60_100, now_ms))
-        cvd_cb_task  = asyncio.create_task(self.feeds.get_coinbase_cvd(now_ms - 60_100, now_ms))
-        
-        # Order book task (Binance only for now)
-        book_task    = asyncio.create_task(self._fetch_binance_book())
-        
-        # Kline tasks (250 candles)
-        k5m_bin_task = asyncio.create_task(self.feeds.get_klines("BTCUSD", "5m", 250))
-        k1m_bin_task = asyncio.create_task(self.feeds.get_klines("BTCUSD", "1m", 250))
-        k5m_cb_task  = asyncio.create_task(self.feeds.get_coinbase_klines("5m", 250))
-        k1m_cb_task  = asyncio.create_task(self.feeds.get_coinbase_klines("1m", 250))
-
-        # Polymarket market discovery
-        pm_task      = asyncio.create_task(
-            self.pm.discover_market(
-                win_start,
-                cached_slug         = self.state.last_market_slug,
-                cached_expiry       = self.state.last_market_expiry,
-                cached_condition_id = self.state.last_condition_id,
-            )
-        )
-
-        (cvd_bin, cvd_cb, book, 
-         k5m_bin, k1m_bin, k5m_cb, k1m_cb,
-         market_info) = await asyncio.gather(
-            cvd_bin_task, cvd_cb_task, book_task,
-            k5m_bin_task, k1m_bin_task, k5m_cb_task, k1m_cb_task,
-            pm_task
-        )
-
-        # ── Source Selection Logic ───────────────────────────────────────────
-        
-        # Pick CVD source with more total volume (buy + sell)
-        bin_cvd_vol = cvd_bin.buy_vol + cvd_bin.sell_vol
-        cb_cvd_vol  = cvd_cb.buy_vol + cvd_cb.sell_vol
-        if cb_cvd_vol > bin_cvd_vol:
-            cvd_res = cvd_cb
-            cvd_source = "coinbase"
-        else:
-            cvd_res = cvd_bin
-            cvd_source = "binance"
-            
-        # Pick Kline source with more volume in the latest candle
-        bin_k_vol = sum(c.volume for c in k5m_bin[:5]) if k5m_bin else 0.0
-        cb_k_vol  = sum(c.volume for c in k5m_cb[:5]) if k5m_cb else 0.0
-        if cb_k_vol > bin_k_vol and k5m_cb:
-            k5m, k1m = k5m_cb, k1m_cb
-            k_source = "coinbase"
-        else:
-            k5m, k1m = k5m_bin, k1m_bin
-            k_source = "binance"
-
-        log.info(f"Data Sources: klines={k_source} cvd={cvd_source} (v={max(bin_k_vol, cb_k_vol):.1f}/{max(bin_cvd_vol, cb_cvd_vol):.3f})")
-
-        # ── Reconcile Pending Orders (Phase 3) ────────────────────────────────
         if self.state.held_position.is_pending and self.state.held_position.order_id:
             await self._reconcile_pending_order()
 
-        # Compute indicators locally
-        indic = compute_local_indicators(k5m, k1m)
+        # ── Parallel Data Fetch (Phase 4: Latency track) ──────────────────────
+        with Timer("data_fetch_all", self.state.latencies):
+            # 1. Market discovery
+            pm_task = asyncio.create_task(
+                self.pm.discover_market(
+                    win_start,
+                    cached_slug         = self.state.last_market_slug,
+                    cached_expiry       = self.state.last_market_expiry,
+                    cached_condition_id = self.state.last_condition_id,
+                )
+            )
+            # 2. Strike resolution
+            strike_task = asyncio.create_task(self._resolve_strike(win_start))
+            # 3. Klines (parallel sources in DataFeeds)
+            k5m_task = asyncio.create_task(self.feeds.get_klines("BTCUSDT", "5m", 30))
+            k1m_task = asyncio.create_task(self.feeds.get_klines("BTCUSDT", "1m", 30))
+            # 4. CVD (parallel sources)
+            cvd_task = asyncio.create_task(self.feeds.get_cvd_with_cb_fallback())
+            # 5. Micro book
+            book_task = asyncio.create_task(self._fetch_micro_data())
 
-        # ── Guard: need market ────────────────────────────────────────────────
-        if market_info is None:
-            log.warning("No active BTC 15m market found — skipping cycle")
+            # Wait for all
+            (market_info, strike_info, k5m, k1m, 
+             cvd_data_combined, book) = await asyncio.gather(
+                pm_task, strike_task, k5m_task, k1m_task, cvd_task, book_task
+            )
+            
+            self.state.locked_strike_price = strike_info["strike"]
+            self.state.strike_source       = strike_info["source"]
+            cvd_res, cvd_bin, cvd_cb = cvd_data_combined
+
+        if not market_info:
+            log.warning("No market info available — skipping cycle")
             await self.state_mgr.save(self.state)
             return
+
+        # ── Polymarket context (Phase 4: Latency track) ──────────────────────
+        with Timer("fetch_polymarket", self.state.latencies):
+            ob, balance, positions = await asyncio.gather(
+                self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id),
+                self.pm.get_balance(),
+                self.pm.get_positions(),
+            )
+
+        # ── Reconcile Pending Orders (Phase 3) ────────────────────────────────
+        # (Already done above, so we keep the order consistent)
+
+
+        # Compute indicators locally
+        indic = compute_local_indicators(k5m, k1m)
 
         # Cache market info
         self.state.last_market_slug      = market_info.slug
@@ -184,12 +160,13 @@ class Engine:
         self.state.last_market_expiry    = market_info.expiry_ts
 
         # ── Fetch order book + balance (parallel) ─────────────────────────────
-        ob_task  = asyncio.create_task(
-            self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id)
-        )
-        bal_task = asyncio.create_task(self.pm.get_balance())
-        pos_task = asyncio.create_task(self.pm.get_positions())
-        ob, balance, positions = await asyncio.gather(ob_task, bal_task, pos_task)
+        # This section is now part of the "fetch_polymarket" Timer block above.
+        # ob_task  = asyncio.create_task(
+        #     self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id)
+        # )
+        # bal_task = asyncio.create_task(self.pm.get_balance())
+        # pos_task = asyncio.create_task(self.pm.get_positions())
+        # ob, balance, positions = await asyncio.gather(ob_task, bal_task, pos_task)
 
         balance = balance or 0.0
         if ob.yes_mid:  self.state.last_pm_px_yes = ob.yes_mid
@@ -333,9 +310,17 @@ class Engine:
                 )
             )
 
-        # ── Dashboard Logging ────────────────────────────────────────────────
+        # ── Dashboard Logging (Phase 4) ───────────────────────────────────────
         runtime_ms = int(time.time() * 1000) - start_time_ms
+        self.state.latencies["total_cycle"] = runtime_ms
         
+        # PnL Dashboard (console only)
+        if self._status_counter % 4 == 0: # Print every ~1 min
+            print(fmt_pnl_dashboard(self.state.trade_history, balance))
+
+        # Heartbeat file
+        await self._write_heartbeat(now_ts, balance, runtime_ms)
+
         # Calculate sizing for reporting if flat
         if not self.state.held_position.side:
             p_up = sig.posterior_final_up or 0.5
@@ -368,27 +353,27 @@ class Engine:
 
     # ── Strike resolution (FIX #2) ────────────────────────────────────────────
 
-    async def _resolve_strike(self, win_start: int) -> tuple[Optional[float], str]:
+    async def _resolve_strike(self, win_start: int) -> dict:
         win_start_ms = win_start * 1000
 
         # Priority 1: Binance 15m kline open
         p = await self.feeds.get_binance_15m_open(win_start_ms)
         if p:
-            return p, "binance_15m_open"
+            return {"strike": p, "source": "binance_15m_open"}
 
         # Priority 2: Coinbase 15m candle open (NEW — FIX #2)
         start_iso = window_start_iso(win_start)
         end_iso   = window_end_iso(win_start)
         p = await self.feeds.get_coinbase_15m_open(start_iso, end_iso)
         if p:
-            return p, "coinbase_15m_open"
+            return {"strike": p, "source": "coinbase_15m_open"}
 
         # Priority 3: Binance mid (better than None or live ticker)
         if self.state.prev_hl_mid:
-            return self.state.prev_hl_mid, "binance_mid_prev"
+            return {"strike": self.state.prev_hl_mid, "source": "binance_mid_prev"}
 
         # NOT returning live BTC price — that was the original bug
-        return None, "none"
+        return {"strike": None, "source": "none"}
 
     # ── Binance book fetch ─────────────────────────────────────────────────────
 
@@ -445,6 +430,25 @@ class Engine:
             # Fallback for status strings that might differ
             log.info(f"PENDING ORDER MATCHED: {matched} shares")
             pos.is_pending = False
+
+    async def _write_heartbeat(self, ts: int, balance: float, runtime_ms: int):
+        """Phase 4: Structured heartbeat for external health monitoring."""
+        hb = {
+            "ts": ts,
+            "status": "HEALTHY",
+            "balance": balance,
+            "position": self.state.held_position.side or "FLAT",
+            "runtime_ms": runtime_ms,
+            "latencies": self.state.latencies,
+            "trades_15m": self.state.trades_this_window,
+        }
+        try:
+            # Write to /data if on Railway, otherwise local
+            hb_path = "/data/heartbeat.json" if os.path.exists("/data") else "heartbeat.json"
+            async with aiofiles.open(hb_path, mode='w') as f:
+                await f.write(json.dumps(hb, indent=2))
+        except Exception as e:
+            log.debug(f"Heartbeat write aborted: {e}")
 
     # ── Exit handler ──────────────────────────────────────────────────────────
 

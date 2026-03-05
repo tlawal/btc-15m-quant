@@ -224,36 +224,46 @@ class DataFeeds:
         Binance aggTrades-based CVD.
         Returns (cvd_delta, buy_vol, sell_vol).
         """
-        # Add 1s lag to end only — avoid future timestamps from Binance clock skew
+        # Add 1s buffer for Binance clock skew
         end_ms -= 1000
-
-        url = (
-            f"{BINANCE_REST}/api/v3/aggTrades"
-            f"?symbol=BTCUSD&startTime={start_ms}&endTime={end_ms}&limit=1000"
-        )
+        url = f"{BINANCE_REST}/api/v3/aggTrades?symbol=BTCUSDT&startTime={start_ms}&endTime={end_ms}&limit=1000"
         try:
-            async with self.session.get(url) as r:
-                if r.status != 200:
-                    text = await r.text()
-                    log.error(f"get_real_cvd: status {r.status} body={text}")
-                    return CVDResult(0.0, 0.0, 0.0)
-                trades = await r.json()
-            
-            # log.debug(f"get_real_cvd: {len(trades)} trades fetched")
-            buy_vol = sell_vol = 0.0
-            for t in trades:
-                qty = float(t["q"])
-                if t["m"]:      # isBuyerMaker=True → sell aggressor
+            raw = await self._fetch_json_with_fallback(url, BINANCE_ALT)
+            if not raw:
+                return CVDResult(0.0, 0.0, 0.0)
+
+            buy_vol = 0.0
+            sell_vol = 0.0
+            for t in raw:
+                qty = float(t['q'])
+                if t['m']:  # m=True means buyer was maker -> sell aggressor
                     sell_vol += qty
-                else:           # buyer aggressor
-                    buy_vol  += qty
-            cvd = buy_vol - sell_vol
-            if abs(cvd) > 0:
-                log.debug(f"get_real_cvd: {len(trades)} trades, delta={cvd:.4f}")
-            return CVDResult(cvd, buy_vol, sell_vol)
+                else:
+                    buy_vol += qty
+            return CVDResult(buy_vol - sell_vol, buy_vol, sell_vol)
         except Exception as e:
-            log.warning(f"aggTrades CVD error: {e}")
+            log.warning(f"get_real_cvd error: {e}")
             return CVDResult(0.0, 0.0, 0.0)
+
+    async def get_cvd_with_cb_fallback(self) -> tuple[CVDResult, CVDResult, CVDResult]:
+        """
+        Phase 4: Multi-source CVD fetch with fallback.
+        Returns (best_cvd, bin_cvd, cb_cvd).
+        """
+        now_ms = int(time.time() * 1000)
+        start_ms = now_ms - 60_000
+        
+        bin_task = asyncio.create_task(self.get_real_cvd(start_ms, now_ms))
+        cb_task  = asyncio.create_task(self.get_coinbase_cvd(start_ms, now_ms))
+        
+        bin_cvd, cb_cvd = await asyncio.gather(bin_task, cb_task)
+        
+        bin_vol = bin_cvd.buy_vol + bin_cvd.sell_vol
+        cb_vol  = cb_cvd.buy_vol + cb_cvd.sell_vol
+        
+        # Select source with more volume
+        best_cvd = bin_cvd if bin_vol >= cb_vol else cb_cvd
+        return best_cvd, bin_cvd, cb_cvd
 
     # ── Binance L2 order book ─────────────────────────────────────────────────
     # Replacing Hyperliquid with Binance as the primary source for microstructure.
