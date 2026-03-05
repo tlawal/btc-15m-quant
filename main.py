@@ -632,11 +632,19 @@ class Engine:
             from datetime import datetime, timezone
             ts_str = datetime.fromtimestamp(t.ts, tz=timezone.utc).strftime("%H:%M:%S")
             if t.outcome:
-                pnl_str = f"{(t.pnl or 0)*100:.2f}%" if t.pnl else "0.00%"
+                pnl_str = f"{(t.pnl or 0)*100:.2f}%"
+                exit_str = f"{t.exit_price:.3f}" if t.exit_price is not None else "N/A"
+                entry_str = f"{t.entry_price:.3f}" if t.entry_price is not None else "N/A"
                 recent_events.append({
                     "ts": ts_str,
                     "type": "trade",
-                    "msg": f"Trade {t.side} closed: {t.outcome} | Entry={t.entry_price:.3f} Exit={t.exit_price:.3f} PnL={pnl_str}"
+                    "msg": f"Trade {t.side} closed: {t.outcome} | Entry={entry_str} Exit={exit_str} PnL={pnl_str}"
+                })
+            else:
+                recent_events.append({
+                    "ts": ts_str,
+                    "type": "trade",
+                    "msg": f"Trade {t.side} OPEN | Entry={t.entry_price:.3f}" if t.entry_price else f"Trade {t.side} OPEN"
                 })
         hb["events"] = recent_events
 
@@ -690,6 +698,9 @@ class Engine:
         # For GTC exits, mid is acceptable as a limit price
         exit_bid = (ob.yes_bid if pos.side == "YES" else ob.no_bid) or current_px or entry_px
         exit_px_gtc = current_px or entry_px
+        # Clamp to Polymarket valid price range [0.01, 0.99]
+        exit_bid = max(0.01, min(0.99, exit_bid))
+        exit_px_gtc = max(0.01, min(0.99, exit_px_gtc))
         if reason in ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT"):
             order_id = await self.pm.limit_sell(pos.token_id, exit_bid, pos.size, order_type="IOC")
         else:
