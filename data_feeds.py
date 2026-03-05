@@ -59,12 +59,13 @@ class CVDResult:
     sell_vol:   float
 
 
-# ── Real-time Binance aggTrade WebSocket CVD ──────────────────────────────────
+# ── Real-time CVD WebSocket (Bybit public trades) ─────────────────────────────
 
 class BinanceCVDWebsocket:
     """
-    Streams live Binance aggTrades and computes true CVD (buy vol - sell vol)
-    based on taker side. Replaces synthetic/REST-based CVD.
+    Streams live Bybit BTCUSDT public trades and computes true taker-side CVD.
+    Bybit has near-Binance liquidity and works from US servers (Railway).
+    Interface is identical — drop-in replacement, no changes needed elsewhere.
     """
 
     def __init__(self):
@@ -82,30 +83,38 @@ class BinanceCVDWebsocket:
     async def _run_forever(self):
         """Reconnect loop — restarts on any disconnect or error."""
         import websockets
+        import json as _json
         self.running = True
+        uri = "wss://stream.bybit.com/v5/public/linear"
+
         while self.running:
             try:
-                uri = "wss://stream.binance.com:9443/ws/btcusdt@aggTrade"
                 async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as ws:
-                    log.info("BinanceCVD WebSocket connected")
+                    log.info("Bybit CVD WebSocket connected (high volume)")
+                    # Subscribe to BTCUSDT public trades
+                    await ws.send(_json.dumps({
+                        "op": "subscribe",
+                        "args": ["publicTrade.BTCUSDT"]
+                    }))
                     while self.running:
                         msg = await ws.recv()
-                        data = __import__('json').loads(msg)
-                        price = float(data['p'])
-                        qty = float(data['q'])
-                        is_buyer_maker = data['m']  # True = seller hit the bid → sell volume
-                        if is_buyer_maker:
-                            self.cvd -= qty
-                            self.sell_vol += qty
-                        else:
-                            self.cvd += qty
-                            self.buy_vol += qty
-                        self.last_price = price
+                        data = _json.loads(msg)
+                        if data.get("topic") == "publicTrade.BTCUSDT" and "data" in data:
+                            for trade in data["data"]:
+                                qty = float(trade["v"])
+                                side = trade["S"]  # "Buy" or "Sell"
+                                if side == "Buy":
+                                    self.cvd += qty
+                                    self.buy_vol += qty
+                                else:
+                                    self.cvd -= qty
+                                    self.sell_vol += qty
+                                self.last_price = float(trade["p"])
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                log.warning(f"BinanceCVD WebSocket error: {e} — reconnecting in 3s")
-                await asyncio.sleep(3)
+                log.warning(f"Bybit CVD WebSocket error: {e} — reconnecting in 5s")
+                await asyncio.sleep(5)
 
     def get_cvd(self) -> float:
         """Return current cumulative volume delta."""
