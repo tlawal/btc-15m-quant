@@ -348,19 +348,24 @@ class PolymarketClient:
                 return {"balance_usdc": bal, "allowance_usdc": None, "available_usdc": bal}
 
             bal_raw = result.get("balance")
-            allowance_raw = result.get("allowance") or result.get("approved") or result.get("spend")
+            # 'allowances' can be a dict of {spender: amount} — extract first non-zero value
+            allowance_raw = result.get("allowance")
+            if allowance_raw is None:
+                allowances_dict = result.get("allowances")
+                if isinstance(allowances_dict, dict) and allowances_dict:
+                    # Take the first allowance value
+                    allowance_raw = next(iter(allowances_dict.values()), None)
+            if allowance_raw is None:
+                allowance_raw = result.get("approved") or result.get("spend")
             available_raw = result.get("available") or result.get("availableBalance")
 
             bal = self._parse_usdc(bal_raw)
             allowance = self._parse_usdc(allowance_raw)
             available = self._parse_usdc(available_raw)
 
-            log.debug(
-                "get_margin: result=%s parsed={balance:%s allowance:%s available:%s}",
-                result,
-                bal,
-                allowance,
-                available,
+            log.info(
+                "get_margin: raw_balance=%s parsed_balance=%s parsed_available=%s",
+                bal_raw, bal, available,
             )
             if available is None:
                 available = bal
@@ -371,45 +376,47 @@ class PolymarketClient:
             return {"balance_usdc": bal, "allowance_usdc": None, "available_usdc": bal}
 
     async def get_wallet_usdc_balance(self) -> Optional[float]:
-        """Fetch ERC20 USDC balance for the trading wallet directly from Polygon RPC."""
+        """Fetch ERC20 USDC balance for the trading wallet directly from Polygon RPC.
+
+        Checks both USDC.e (bridged, used by Polymarket) and native USDC,
+        returning the sum of both.
+        """
         if not Config.POLYGON_RPC_URL:
             return None
-        if not Config.POLYMARKET_PRIVATE_KEY:
+        pk = Config.POLYMARKET_PRIVATE_KEY
+        if not pk:
             return None
         try:
-            acct = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+            if not pk.startswith("0x"):
+                pk = "0x" + pk
+            acct = Account.from_key(pk)
             wallet = acct.address
 
-            def _pad32(hex_no_0x: str) -> str:
-                return hex_no_0x.rjust(64, "0")
+            async def _check_token(token_addr: str) -> float:
+                owner = wallet.lower().replace("0x", "")
+                data = "0x70a08231" + owner.rjust(64, "0")
+                payload = {
+                    "jsonrpc": "2.0", "id": 1,
+                    "method": "eth_call",
+                    "params": [{"to": token_addr.lower(), "data": data}, "latest"],
+                }
+                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6)) as s:
+                    async with s.post(Config.POLYGON_RPC_URL, json=payload) as r:
+                        if r.status != 200:
+                            return 0.0
+                        resp = await r.json()
+                raw_hex = (resp or {}).get("result", "0x0")
+                if not isinstance(raw_hex, str) or not raw_hex.startswith("0x"):
+                    return 0.0
+                return float(int(raw_hex, 16)) / 1_000_000.0
 
-            # ERC20 balanceOf(address): 0x70a08231 + leftpad(address)
-            owner = wallet.lower().replace("0x", "")
-            token = Config.POLYGON_USDC_ADDRESS.lower()
-            if not token.startswith("0x") or len(token) != 42:
-                return None
-
-            data = "0x70a08231" + _pad32(owner)
-            payload = {
-                "jsonrpc": "2.0",
-                "id": 1,
-                "method": "eth_call",
-                "params": [
-                    {"to": token, "data": data},
-                    "latest",
-                ],
-            }
-
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6)) as s:
-                async with s.post(Config.POLYGON_RPC_URL, json=payload) as r:
-                    if r.status != 200:
-                        return None
-                    resp = await r.json()
-            raw_hex = (resp or {}).get("result")
-            if not isinstance(raw_hex, str) or not raw_hex.startswith("0x"):
-                return None
-            bal_raw = int(raw_hex, 16)
-            return float(bal_raw) / 1_000_000.0
+            # Check both USDC.e (bridged, Polymarket default) and native USDC
+            usdc_e = await _check_token(Config.POLYGON_USDC_ADDRESS)  # USDC.e
+            usdc_native = await _check_token(Config.POLYGON_USDC_NATIVE) if hasattr(Config, 'POLYGON_USDC_NATIVE') else 0.0
+            total = usdc_e + usdc_native
+            if total > 0:
+                log.info("wallet_usdc: USDC.e=$%.4f native=$%.4f total=$%.4f", usdc_e, usdc_native, total)
+            return total if total > 0 else None
         except Exception as e:
             log.debug("get_wallet_usdc_balance: %s", e)
             return None

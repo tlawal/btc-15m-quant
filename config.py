@@ -82,8 +82,11 @@ class Config:
 
     # ── Polygon RPC / Tokens ──────────────────────────────────────────────────
     POLYGON_RPC_URL            = os.getenv("POLYGON_RPC_URL", "")
-    # Polygon PoS USDC (native) contract (6 decimals)
-    POLYGON_USDC_ADDRESS       = os.getenv("POLYGON_USDC_ADDRESS", "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359")
+    # Polymarket uses USDC.e (bridged) on Polygon — NOT native USDC
+    # USDC.e: 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174 (6 decimals)
+    # Native: 0x3c499c542cef5e3811e1192ce70d8cc03d5c3359 (6 decimals)
+    POLYGON_USDC_ADDRESS       = os.getenv("POLYGON_USDC_ADDRESS", "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174")
+    POLYGON_USDC_NATIVE        = "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359"
 
     # ── API Keys ─────────────────────────────────────────────────────────────
     BINANCE_API_KEY            = os.getenv("BINANCE_API_KEY", "")
