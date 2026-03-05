@@ -452,22 +452,49 @@ class Engine:
         win_start_ms = win_start * 1000
 
         # Priority 1: Binance 15m kline open
-        p = await self.feeds.get_binance_15m_open(win_start_ms)
-        if p:
-            return {"strike": p, "source": "binance_15m_open"}
+        try:
+            p = await self.feeds.get_binance_15m_open(win_start_ms)
+            if p:
+                return {"strike": p, "source": "binance_15m_open"}
+        except Exception as e:
+            log.debug(f"Strike P1 (Binance 15m) failed: {e}")
 
-        # Priority 2: Coinbase 15m candle open (NEW — FIX #2)
-        start_iso = window_start_iso(win_start)
-        end_iso   = window_end_iso(win_start)
-        p = await self.feeds.get_coinbase_15m_open(start_iso, end_iso)
-        if p:
-            return {"strike": p, "source": "coinbase_15m_open"}
+        # Priority 2: Coinbase 15m candle open
+        try:
+            start_iso = window_start_iso(win_start)
+            end_iso   = window_end_iso(win_start)
+            p = await self.feeds.get_coinbase_15m_open(start_iso, end_iso)
+            if p:
+                return {"strike": p, "source": "coinbase_15m_open"}
+        except Exception as e:
+            log.debug(f"Strike P2 (Coinbase 15m) failed: {e}")
 
-        # Priority 3: Binance mid (better than None or live ticker)
+        # Priority 3: First 5m kline that overlaps the window start
+        #   We already fetch 5m klines every cycle — use the one closest to window open
+        try:
+            klines_5m = await self.feeds.get_klines("BTCUSDT", "5m", 5)
+            if klines_5m:
+                for c in klines_5m:
+                    if c.ts_ms >= win_start_ms:
+                        return {"strike": c.open, "source": "binance_5m_open"}
+                # If no kline exactly at window start, use the latest kline's close
+                return {"strike": klines_5m[-1].close, "source": "binance_5m_close"}
+        except Exception as e:
+            log.debug(f"Strike P3 (Binance 5m) failed: {e}")
+
+        # Priority 4: Previous book mid price
         if self.state.prev_hl_mid:
             return {"strike": self.state.prev_hl_mid, "source": "binance_mid_prev"}
 
-        # NOT returning live BTC price — that was the original bug
+        # Priority 5: Live BTC price (last resort)
+        try:
+            p = await self.feeds.get_btc_price()
+            if p:
+                log.warning(f"Strike fallback to live BTC price: ${p:.2f}")
+                return {"strike": p, "source": "live_price_fallback"}
+        except Exception as e:
+            log.debug(f"Strike P5 (live price) failed: {e}")
+
         return {"strike": None, "source": "none"}
 
     # ── Binance book fetch ─────────────────────────────────────────────────────

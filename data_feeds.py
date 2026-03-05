@@ -250,16 +250,18 @@ class DataFeeds:
                 if r.status != 200:
                     return None
                 data = await r.json()
-                # Coinbase format: [[ts, low, high, open, close, volume], ...]
                 if data and len(data) > 0:
-                    # Coinbase returns newest first. Window might have multiple if overlaps.
-                    # We want the one that MATCHES window_start exactly.
+                    # Try exact match first
                     ws_ts = int(datetime.fromisoformat(window_start_iso.replace("Z", "+00:00")).timestamp())
                     for row in data:
                         if int(row[0]) == ws_ts:
                             open_price = float(row[3])
                             if open_price > 0:
                                 return open_price
+                    # Fallback: use the latest candle's open if no exact match
+                    open_price = float(data[0][3])  # Coinbase returns newest first
+                    if open_price > 0:
+                        return open_price
         except Exception as e:
             log.warning(f"Coinbase 15m open error: {e}")
         return None
