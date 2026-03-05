@@ -214,6 +214,13 @@ class Engine:
                     self.state.trading_halted,
                     margin,
                 )
+            elif balance <= 1e-6:
+                log.warning(
+                    "Polymarket balance parsed as 0.0 (can_trade=%s halted=%s margin=%s) — verify wallet has USDC on Polygon and creds are correct",
+                    self.pm.can_trade,
+                    self.state.trading_halted,
+                    margin,
+                )
         else:
             balance = None
 

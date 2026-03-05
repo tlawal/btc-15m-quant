@@ -146,6 +146,18 @@ class PolymarketClient:
             return {}
         return {}
 
+    @staticmethod
+    def _parse_usdc_auto(raw) -> Optional[float]:
+        try:
+            x = float(raw)
+        except (TypeError, ValueError):
+            return None
+        if x < 0:
+            return None
+        # Heuristic: some endpoints return base units (micro-USDC), others return USDC.
+        # If the magnitude is large, treat as micro-USDC; otherwise treat as already-decimal.
+        return x / 1_000_000.0 if x >= 1000.0 else x
+
     # ── Market discovery ──────────────────────────────────────────────────────
 
     async def search_market_by_slug(self, slug: str) -> Optional[MarketInfo]:
@@ -296,22 +308,14 @@ class PolymarketClient:
                     or result.get("collateral")
                     or 0
                 )
-                try:
-                    raw_bal = float(raw)
-                except (TypeError, ValueError):
-                    raw_bal = 0.0
-                bal = raw_bal / 1_000_000.0
-                log.debug("get_balance: result=%s raw=%s parsed_usdc=%.6f", result, raw_bal, bal)
-                return bal
+                bal = self._parse_usdc_auto(raw)
+                log.debug("get_balance: result=%s raw=%s parsed_usdc=%s", result, raw, bal)
+                return bal or 0.0
 
             if result is None:
                 return None
-            try:
-                raw_bal = float(result)
-            except (TypeError, ValueError):
-                raw_bal = 0.0
-            bal = raw_bal / 1_000_000.0
-            log.debug("get_balance: raw=%s parsed_usdc=%.6f", raw_bal, bal)
+            bal = self._parse_usdc_auto(result)
+            log.debug("get_balance: raw=%s parsed_usdc=%s", result, bal)
             return bal
         except Exception as e:
             log.warning(f"get_balance: {e}")
@@ -332,15 +336,21 @@ class PolymarketClient:
                 bal = await self.get_balance()
                 return {"balance_usdc": bal, "allowance_usdc": None, "available_usdc": bal}
 
-            def _parse_usdc(x):
-                try:
-                    return float(x) / 1_000_000.0
-                except (TypeError, ValueError):
-                    return None
+            bal_raw = result.get("balance")
+            allowance_raw = result.get("allowance") or result.get("approved") or result.get("spend")
+            available_raw = result.get("available") or result.get("availableBalance")
 
-            bal = _parse_usdc(result.get("balance"))
-            allowance = _parse_usdc(result.get("allowance") or result.get("approved") or result.get("spend"))
-            available = _parse_usdc(result.get("available") or result.get("availableBalance"))
+            bal = self._parse_usdc_auto(bal_raw)
+            allowance = self._parse_usdc_auto(allowance_raw)
+            available = self._parse_usdc_auto(available_raw)
+
+            log.debug(
+                "get_margin: result=%s parsed={balance:%s allowance:%s available:%s}",
+                result,
+                bal,
+                allowance,
+                available,
+            )
             if available is None:
                 available = bal
             return {"balance_usdc": bal, "allowance_usdc": allowance, "available_usdc": available}
