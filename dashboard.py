@@ -125,21 +125,20 @@ async def get_metrics():
     open_pos = 1 if state.held_position.side else 0
     exposure = state.held_position.size_usd if state.held_position.side else 0.0
 
-    return {
+    # Base payload on heartbeat to not drop anything (signal, position, etc.)
+    metrics = hb.copy()
+    
+    # Overwrite/inject dynamic runtime metrics + performance
+    metrics.update({
         "balance": hb.get("balance", 0.0),
-        "wallet_usdc": hb.get("wallet_usdc"),
-        "pm_collateral_usdc": hb.get("pm_collateral_usdc"),
         "status": "Running" if getattr(engine, "_running", False) else "Stopped",
         "uptime_sec": int(time.time() - start_time),
         "version": getattr(engine, "BUILD_VERSION", "v1.0.0"),
         "wallet_usdc": balance,
         "open_positions": open_pos,
         "exposure_usd": exposure,
-        "latency_ms": hb.get("latency_ms", {}), # This is from heartbeat
         "strike_source": getattr(state, "strike_source", "none"),
         "trading_halted": getattr(state, "trading_halted", False),
-        
-        # New real performance metrics!
         "performance": {
             "total_pnl": state.total_pnl_usd,
             "win_rate": win_rate,
@@ -148,9 +147,6 @@ async def get_metrics():
             "profit_factor": 1.5, # placeholder unless we track gross profit/loss separately
             "sharpe": 2.1 # placeholder
         },
-        
-        "active_trade": None,  # handled by heartbeat events stream in frontend
-        "events": hb.get("events", []), # Keep events from heartbeat
         "recent_trades": [
             {
                 "ts": t.ts,
@@ -162,7 +158,9 @@ async def get_metrics():
             }
             for t in state.trade_history[-10:]
         ]
-    }
+    })
+    
+    return metrics
 
 async def run_dashboard(engine_instance, port=8000):
     global engine
