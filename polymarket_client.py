@@ -515,9 +515,14 @@ class PolymarketClient:
         return total_redeemed
 
     async def log_unclaimed_positions(self) -> float:
-        """Dashboard visibility: shows REAL unclaimed winnings from Data API (includes resolved CTF tokens)."""
+        """Dashboard visibility: shows REAL unclaimed winnings from Data API (resolved CTF tokens)."""
         try:
-            url = f"https://data-api.polymarket.com/positions?user={self.wallet_address}&redeemable=true"
+            # Derive wallet address exactly like get_wallet_usdc_balance does
+            from eth_account import Account
+            account = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+            wallet_address = account.address.lower()
+
+            url = f"https://data-api.polymarket.com/positions?user={wallet_address}&redeemable=true"
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.get(url)
                 r.raise_for_status()
