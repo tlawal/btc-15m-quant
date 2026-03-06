@@ -503,12 +503,12 @@
 
                 // Global Status
                 $('wallet-bal').innerText = d.wallet_usdc != null ? fmtMoney(d.wallet_usdc) : '...';
-                $('pm-avail').innerText = d.pm_available_usdc != null ? fmtMoney(d.pm_available_usdc) : '...';
+                $('pm-avail').innerText = d.pm_collateral_usdc != null ? fmtMoney(d.pm_collateral_usdc) : '...';
                 $('loss-streak').innerText = d.loss_streak || 0;
-                $('trades-15m').innerText = d.trades_15m || 0;
+                $('trades-15m').innerText = d.open_positions || 0; // Use open positions instead of missing trades_15m
 
                 // Latency
-                const lats = d.latencies || {};
+                const lats = d.latency_ms || {};
                 $('sys-lat').innerText = lats.total_cycle ? `${lats.total_cycle}ms` : '0ms';
 
                 // RPC status
@@ -521,7 +521,7 @@
                 }
 
                 // Halted
-                if (d.halted) {
+                if (d.trading_halted) {
                     $('status-badge').className = 'sys-badge sys-halted uppercase';
                     $('status-badge').innerText = 'TRADING HALTED';
                     $('main-dot').className = 'indicator-dot dot-red';
@@ -532,13 +532,13 @@
                 }
 
                 // ── Performance (REAL) ──
-                $('perf-trades-label').innerText = `${perf.closed_trades || 0} closed trades`;
-                $('win-rate').innerText = perf.closed_trades > 0 ? fmtPct(perf.win_rate) : 'No data';
-                $('sharpe').innerText = perf.closed_trades >= 2 ? perf.sharpe.toFixed(2) : 'N/A';
-                $('profit-factor').innerText = perf.closed_trades > 0 ? perf.profit_factor.toFixed(2) : 'N/A';
-                $('avg-pnl').innerText = perf.closed_trades > 0 ? (perf.avg_pnl > 0 ? '+' : '') + fmtPct(perf.avg_pnl) : 'N/A';
-                $('cum-pnl').innerText = perf.closed_trades > 0
-                    ? ((perf.total_pnl >= 0 ? '+' : '') + fmtPct(perf.total_pnl))
+                $('perf-trades-label').innerText = `${perf.total_trades || 0} closed trades`;
+                $('win-rate').innerText = perf.total_trades > 0 ? fmtPct(perf.win_rate) : 'No data';
+                $('sharpe').innerText = perf.total_trades >= 2 ? perf.sharpe.toFixed(2) : 'N/A';
+                $('profit-factor').innerText = perf.total_trades > 0 ? perf.profit_factor.toFixed(2) : 'N/A';
+                $('avg-pnl').innerText = perf.total_trades > 0 ? (perf.avg_trade > 0 ? '+' : '') + fmtMoney(perf.avg_trade) : 'N/A';
+                $('cum-pnl').innerText = perf.total_trades > 0
+                    ? ((perf.total_pnl >= 0 ? '+' : '') + fmtMoney(perf.total_pnl))
                     : '--';
                 $('cum-pnl').className = `mono font-bold ${perf.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
 
@@ -548,25 +548,25 @@
                 }
 
                 // OFI bar (show score + raw)
-                const ofiS = sig.ofi_score || 0;
+                let ofiS = sig.ofi_score || 0;
                 $('sig-ofi').innerText = ofiS.toFixed(2); colorVal($('sig-ofi'), ofiS);
                 setBar(ofiS, 3, 'bar-ofi-up', 'bar-ofi-dn');
                 $('raw-ofi').innerText = `raw: ${(sig.raw_deep_ofi || 0).toFixed(2)}`;
 
                 // CVD bar (show score + raw)
-                const cvdS = sig.cvd_score || 0;
+                let cvdS = sig.cvd_score || 0;
                 $('sig-cvd').innerText = cvdS.toFixed(2); colorVal($('sig-cvd'), cvdS);
                 setBar(cvdS, 3, 'bar-cvd-up', 'bar-cvd-dn');
                 $('raw-cvd').innerText = `raw: ${(sig.raw_cvd || 0).toFixed(0)}`;
 
                 // Imbalance
-                const imb = sig.raw_deep_imbalance != null ? sig.raw_deep_imbalance : 0.5;
+                let imb = sig.raw_deep_imbalance != null ? sig.raw_deep_imbalance : 0.5;
                 $('sig-imb').innerText = imb.toFixed(3);
                 $('bar-imb').style.width = `${imb * 100}%`;
                 $('bar-imb').className = `h-full transition-all rounded-r ${imb > 0.55 ? 'bg-green-500' : imb < 0.45 ? 'bg-red-500' : 'bg-blue-500'}`;
 
                 // Signed Score
-                const sc = sig.signed_score || 0;
+                let sc = sig.signed_score || 0;
                 $('sig-score').innerText = sc.toFixed(2); colorVal($('sig-score'), sc);
                 setBar(sc, 10, 'bar-sc-up', 'bar-sc-dn');
                 $('score-req').innerText = `req: ${(sig.min_score || 2.5).toFixed(1)}`;
@@ -596,7 +596,7 @@
                 }
 
                 // Skip gates
-                const gates = sig.skip_gates || [];
+                let gates = sig.skip_gates || [];
                 $('skip-gates').innerText = gates.length > 0 ? gates.join(', ') : 'CLEAR';
                 $('skip-gates').className = gates.length === 0 ? 'text-green-400' : 'text-orange-400';
 
@@ -619,15 +619,15 @@
 
                 // ── Self-Learning Optimizer (REAL) ──
                 $('opt-total').innerText = perf.total_trades || 0;
-                $('opt-closed').innerText = perf.closed_trades || 0;
+                $('opt-closed').innerText = perf.total_trades || 0;
                 $('opt-wins').innerText = perf.wins || 0;
                 $('opt-losses').innerText = perf.losses || 0;
-                $('opt-wr').innerText = perf.closed_trades > 0 ? fmtPct(perf.win_rate) : '--';
+                $('opt-wr').innerText = perf.total_trades > 0 ? fmtPct(perf.win_rate) : '--';
                 $('opt-wr').className = perf.win_rate > 0.5 ? 'text-green-400' : (perf.win_rate > 0 ? 'text-red-400' : 'text-white');
-                $('opt-pf').innerText = perf.closed_trades > 0 ? perf.profit_factor.toFixed(2) : '--';
-                const optSt = perf.total_trades > 0 ? (perf.closed_trades >= 10 ? 'ACTIVE (LEARNING)' : 'COLLECTING DATA') : 'AWAITING TRADES';
+                $('opt-pf').innerText = perf.total_trades > 0 ? perf.profit_factor.toFixed(2) : '--';
+                const optSt = perf.total_trades > 0 ? (perf.total_trades >= 10 ? 'ACTIVE (LEARNING)' : 'COLLECTING DATA') : 'AWAITING TRADES';
                 $('opt-status').innerText = optSt;
-                $('opt-status').className = `mono ${perf.closed_trades >= 10 ? 'text-green-400' : 'text-yellow-400'}`;
+                $('opt-status').className = `mono ${perf.total_trades >= 10 ? 'text-green-400' : 'text-yellow-400'}`;
 
                 // Config snapshot
                 $('cfg-score').innerText = (sig.min_score || 2.5).toFixed(1);
