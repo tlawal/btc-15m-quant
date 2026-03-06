@@ -511,7 +511,7 @@ class PolymarketClient:
 
         w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(Config.POLYGON_RPC_URL))
         account = w3.eth.account.from_key(Config.POLYMARKET_PRIVATE_KEY)
-        ctf = w3.eth.contract(address="0x4D97DCd97eC945f40cF65F87097ACe5EA0476045", abi=CTF_ABI)
+        ctf = w3.eth.contract(address=w3.to_checksum_address(CTF_EXCHANGE), abi=CTF_ABI)
 
         total_redeemed = 0.0
         for p in positions:
