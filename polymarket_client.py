@@ -17,6 +17,7 @@ import time
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any, Tuple
 import aiohttp
+import httpx
 from eth_account import Account
 from web3 import AsyncWeb3
 
@@ -514,23 +515,26 @@ class PolymarketClient:
         return total_redeemed
 
     async def log_unclaimed_positions(self) -> float:
-        """Read-only check: logs unclaimed winning positions for Railway dashboard visibility."""
-        if not self.can_trade:
-            log.info("Unclaimed positions: $0.00 (trading disabled)")
-            return 0.0
+        """Dashboard visibility: shows REAL unclaimed winnings from Data API (includes resolved CTF tokens)."""
+        try:
+            url = f"https://data-api.polymarket.com/positions?user={self.wallet_address}&redeemable=true"
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                positions = r.json()
+            
+            if not positions:
+                log.info("Unclaimed positions: $0.00 (none found)")
+                return 0.0
 
-        positions = await self.get_positions()
-        redeemable = [p for p in positions if p.get("closed") and float(p.get("size", 0)) > 0.01]
-        
-        if not redeemable:
-            log.info("Unclaimed positions: $0.00 (none found)")
+            total = sum(float(p.get("redeemableAmountUSDC", 0)) for p in positions)
+            details = [f"{p.get('marketSlug','?')} (${float(p.get('redeemableAmountUSDC',0)):.2f})" for p in positions]
+            
+            log.info(f"Unclaimed positions: ${total:.2f} → {' | '.join(details)}")
+            return total
+        except Exception as e:
+            log.warning(f"Unclaimed check failed: {e}")
             return 0.0
-
-        total_unclaimed = sum(float(p.get("size", 0)) for p in redeemable)
-        slugs = [p.get("marketSlug", "unknown")[:40] for p in redeemable]
-        
-        log.info(f"Unclaimed positions: ${total_unclaimed:.2f} across {len(redeemable)} market(s) → {', '.join(slugs)}")
-        return total_unclaimed
 
     @staticmethod
     def summarize_exposure(positions: list[dict], condition_id: Optional[str] = None) -> dict:
