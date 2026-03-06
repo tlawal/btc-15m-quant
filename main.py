@@ -56,6 +56,35 @@ class Engine:
         from data_feeds import BinanceCVDWebsocket
         self.cvd_ws = BinanceCVDWebsocket()
 
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _record_redemption(self, size_usd: float):
+        """Find the matching OPEN trade from the previous window and mark it as a WIN."""
+        # We usually redeem full sizes, meaning entry price was ~0.40 to 0.60
+        # If we redeemed $10 for example, the position was 10 shares.
+        # This isn't perfect tracking (since we don't return which specific order was redeemed),
+        # but since we only trade 1 market per window and never hold multiple directions,
+        # finding the most recent OPEN trade is robust.
+        
+        for tr in reversed(self.state.trade_history):
+            if tr.outcome == "OPEN":
+                tr.exit_price = 1.0  # Polymarket winning shares are always redeemed at $1
+                tr.pnl = (tr.exit_price - tr.entry_price) / tr.entry_price if tr.entry_price else 0.0
+                tr.outcome = "WIN"
+                
+                self.state.loss_streak = 0
+                self.state.total_trades += 1
+                self.state.total_wins += 1
+                
+                # Approximate PnL logic (size_usd is the *payout*)
+                profit_usd = size_usd * tr.pnl if tr.pnl else 0.0
+                self.state.total_pnl_usd += profit_usd
+                
+                log.info(f"Recorded redemption win: +{tr.pnl*100:.2f}% (approx profit: ${profit_usd:.2f})")
+                return
+                
+        log.warning("Redeemed position but no matching OPEN trade found in history.")
+
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self):
@@ -123,6 +152,12 @@ class Engine:
         # ── Window reset ──────────────────────────────────────────────────────
         if win_rolled:
             log.info(f"New 15m window: {win_start} ({datetime.fromtimestamp(win_start, tz=timezone.utc).strftime('%H:%M:%S')} UTC)")
+            # Try to redeem any winning positions from the previous window
+            redeemed_usd = await self.pm.redeem_winning_positions()
+            if redeemed_usd > 0:
+                log.info(f"Auto-redeemed ${redeemed_usd:.2f} USDC!")
+                self._record_redemption(redeemed_usd)
+            
             # Phase 4: Reset latencies on new window to clear stale metrics
             self.state.latencies             = {}
             self.state.trades_this_window   = 0
@@ -736,6 +771,12 @@ class Engine:
 
         # Clear position
         self.state.held_position = HeldPosition()
+        self.state.total_trades += 1
+        if outcome == "WIN":
+            self.state.total_wins += 1
+        else:
+            self.state.total_losses += 1
+            
         return True
 
     # ── Entry handler ─────────────────────────────────────────────────────────
@@ -839,6 +880,7 @@ class Engine:
             outcome     = "OPEN",
             score       = sig.signed_score,
             window      = self.state.last_window_start_sec or 0,
+            size        = shares, # store the size for PnL calcs
         ))
         if len(self.state.trade_history) > 100:
             self.state.trade_history = self.state.trade_history[-100:]

@@ -15,9 +15,10 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List, Dict, Any, Tuple
 import aiohttp
 from eth_account import Account
+from web3 import AsyncWeb3
 
 from py_clob_client.client import ClobClient
 from py_clob_client.clob_types import (
@@ -33,6 +34,21 @@ log = logging.getLogger(__name__)
 
 GAMMA_API   = "https://gamma-api.polymarket.com"
 BTC_PREFIX  = "btc-updown-15m-"
+
+# CTF Exchange on Polygon (v2) for redemption
+CTF_EXCHANGE = "0x4bFbB701cd4a0bba82C318CcEd1b4Ebc115A36de"
+CTF_ABI = [
+    {
+        "inputs": [
+            {"internalType": "bytes32", "name": "conditionId", "type": "bytes32"},
+            {"internalType": "uint256[]", "name": "indexSets", "type": "uint256[]"}
+        ],
+        "name": "redeemPositions",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    }
+]
 
 
 @dataclass
@@ -425,20 +441,77 @@ class PolymarketClient:
 
     async def get_positions(self) -> list[dict]:
         """Fetch positions via CLOB REST API (no SDK method in 0.34.x)."""
+        if not self.can_trade:
+            return []
         try:
             url = f"{POLYMARKET_HOST}/positions"
-            headers = {}
-            if self.can_trade:
-                headers = self._get_auth_headers_best_effort()
+            headers = self._get_auth_headers_best_effort()
             async with self.session.get(url, headers=headers or None) as r:
                 if r.status != 200:
-                    if r.status in (401, 403) and self.can_trade:
+                    if r.status in (401, 403):
                         log.warning("get_positions: unauthorized (%s) — missing/invalid auth headers", r.status)
                     return []
                 return await r.json()
         except Exception as e:
             log.warning(f"get_positions: {e}")
             return []
+
+    async def redeem_winning_positions(self) -> float:
+        """
+        Check for winning resolved positions and redeem them directly via the CTF contract.
+        Returns the total USDC size redeemed.
+        """
+        if not self.can_trade or not Config.POLYGON_RPC_URL:
+            return 0.0
+
+        positions = await self.get_positions()
+        if not positions:
+            return 0.0
+
+        # A position is redeemable if it's closed (resolved) but has size > 0 
+        # (meaning we own winning shares that haven't been cashed out yet)
+        redeemable = [p for p in positions if p.get("closed") and float(p.get("size", 0)) > 0.01]
+        if not redeemable:
+            return 0.0
+
+        w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(Config.POLYGON_RPC_URL))
+        account = w3.eth.account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+        ctf_contract = w3.eth.contract(address=w3.to_checksum_address(CTF_EXCHANGE), abi=CTF_ABI)
+
+        total_redeemed = 0.0
+
+        for p in redeemable:
+            condition_id = p.get('conditionId')
+            size = float(p.get('size', 0))
+            if not condition_id: continue
+
+            log.info(f"Redeeming {size:.2f} winning shares for condition {condition_id}")
+            try:
+                tx_data = await ctf_contract.functions.redeemPositions(
+                    w3.to_bytes(hexstr=condition_id),
+                    [1, 2] # binary market always YES/NO
+                ).build_transaction({
+                    'from': account.address,
+                    'nonce': await w3.eth.get_transaction_count(account.address),
+                    'gas': 150000,
+                    'gasPrice': await w3.eth.gas_price
+                })
+                
+                signed_tx = account.sign_transaction(tx_data)
+                tx_hash = await w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                log.info(f"Redemption tx sent: {tx_hash.hex()}")
+                
+                receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                if receipt.status == 1:
+                    log.info(f"Successfully redeemed {size:.2f} USDC!")
+                    total_redeemed += size
+                else:
+                    log.error(f"Redemption tx failed. Status: {receipt.status}")
+                    
+            except Exception as e:
+                log.error(f"Error executing redemption: {e}")
+
+        return total_redeemed
 
     @staticmethod
     def summarize_exposure(positions: list[dict], condition_id: Optional[str] = None) -> dict:

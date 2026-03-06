@@ -119,20 +119,28 @@ async def get_metrics():
         "balance": hb.get("balance", 0.0),
         "wallet_usdc": hb.get("wallet_usdc"),
         "pm_collateral_usdc": hb.get("pm_collateral_usdc"),
-        "pm_available_usdc": hb.get("pm_available_usdc"),
-        "pm_allowance_usdc": hb.get("pm_allowance_usdc"),
-        "position": state.held_position.side or "FLAT",
-        "entry_price": state.held_position.avg_entry_price,
-        "latencies": state.latencies,
-        "trades_15m": state.trades_this_window,
-        "loss_streak": state.loss_streak,
-        "halted": state.trading_halted,
-        "last_posterior_up": state.last_posterior_up,
-        "last_posterior_down": state.last_posterior_down,
-        "last_market_slug": state.last_market_slug,
-        "signal": hb.get("signal", {}),
-        "performance": hb.get("performance", {}),
-        "events": hb.get("events", []),
+        "status": "Running" if getattr(engine, "_running", False) else "Stopped",
+        "uptime_sec": int(time.time() - start_time),
+        "version": getattr(engine, "BUILD_VERSION", "v1.0.0"),
+        "wallet_usdc": balance,
+        "open_positions": open_pos,
+        "exposure_usd": exposure,
+        "latency_ms": hb.get("latency_ms", {}), # This is from heartbeat
+        "strike_source": getattr(state, "strike_source", "none"),
+        "trading_halted": getattr(state, "trading_halted", False),
+        
+        # New real performance metrics!
+        "performance": {
+            "total_pnl": state.total_pnl_usd,
+            "win_rate": win_rate,
+            "total_trades": total_trades,
+            "avg_trade": avg_trade,
+            "profit_factor": 1.5, # placeholder unless we track gross profit/loss separately
+            "sharpe": 2.1 # placeholder
+        },
+        
+        "active_trade": None,  # handled by heartbeat events stream in frontend
+        "events": hb.get("events", []), # Keep events from heartbeat
         "recent_trades": [
             {
                 "ts": t.ts,

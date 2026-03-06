@@ -78,6 +78,12 @@ class EngineState:
     held_position: HeldPosition           = field(default_factory=HeldPosition)
     trade_history: List[TradeRecord]      = field(default_factory=list)
 
+    # ── Performance tracking ──────────────────────────────────────────────────
+    total_trades: int                     = 0
+    total_wins: int                       = 0
+    total_losses: int                     = 0
+    total_pnl_usd: float                  = 0.0
+
     # ── Microstructure memory ─────────────────────────────────────────────────
     prev_bid_depth20: Optional[float]     = None
     prev_ask_depth20: Optional[float]     = None
