@@ -602,6 +602,8 @@ class Engine:
             "runtime_ms": runtime_ms,
             "latencies": self.state.latencies,
             "trades_15m": self.state.trades_this_window,
+            "last_market_slug": self.state.last_market_slug,
+            "last_condition_id": self.state.last_condition_id,
         }
         if sig:
             hb["signal"] = sig.to_feature_dict()

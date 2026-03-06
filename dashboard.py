@@ -139,14 +139,6 @@ async def get_metrics():
         "exposure_usd": exposure,
         "strike_source": getattr(state, "strike_source", "none"),
         "trading_halted": getattr(state, "trading_halted", False),
-        "performance": {
-            "total_pnl": state.total_pnl_usd,
-            "win_rate": win_rate,
-            "total_trades": total_trades,
-            "avg_trade": avg_trade,
-            "profit_factor": 1.5, # placeholder unless we track gross profit/loss separately
-            "sharpe": 2.1 # placeholder
-        },
         "recent_trades": [
             {
                 "ts": t.ts,
