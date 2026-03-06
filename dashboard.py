@@ -139,6 +139,8 @@ async def get_metrics():
         "exposure_usd": exposure,
         "strike_source": getattr(state, "strike_source", "none"),
         "trading_halted": getattr(state, "trading_halted", False),
+        "performance_metrics": getattr(state, "performance_metrics", {}),
+        "last_tuned_time": getattr(state, "last_tuned_time", 0),
         "recent_trades": [
             {
                 "ts": t.ts,

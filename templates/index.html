@@ -521,6 +521,10 @@
                                 <span class="text-slate-300">Profit Factor</span>
                                 <span id="opt-pf" class="text-white">--</span>
                             </div>
+                            <div class="metric-row mt-2 pt-2 border-t border-white/5">
+                                <span class="text-slate-300">Last Tuned</span>
+                                <span id="opt-tuned" class="text-slate-400">PENDING</span>
+                            </div>
                         </div>
                         <div class="mt-3 pt-3 border-t border-white/5">
                             <div class="text-[0.6rem] text-slate-500 uppercase tracking-widest mb-2">Active Config
@@ -579,25 +583,27 @@
                 $('pm-avail').innerText = d.pm_collateral_usdc != null ? fmtMoney(d.pm_collateral_usdc) : '...';
 
                 // New DB Performance UI Hook
-                const pdb = d.perf_db || {};
-                if ($('new-pm-total')) {
-                    $('new-pm-total').innerText = pdb.total_trades || 0;
+                if (d.performance_metrics || d.perf_db) {
+                    const pdb = d.performance_metrics || d.perf_db || {};
+                    if ($('new-pm-total')) {
+                        $('new-pm-total').innerText = pdb.total_trades || 0;
 
-                    const wr = pdb.win_rate || 0;
-                    $('new-pm-wr').innerText = `${(wr * 100).toFixed(2)}%`;
-                    $('new-pm-wr').style.color = wr >= 0.5 ? '#22c55e' : (wr > 0 ? '#f87171' : '#94a3b8');
+                        const wr = pdb.win_rate || 0;
+                        $('new-pm-wr').innerText = `${(wr * 100).toFixed(2)}%`;
+                        $('new-pm-wr').style.color = wr >= 0.5 ? '#22c55e' : (wr > 0 ? '#f87171' : '#94a3b8');
 
-                    const pf = pdb.profit_factor || 0;
-                    $('new-pm-pf').innerText = pf.toFixed(2);
-                    $('new-pm-pf').style.color = pf >= 1.0 ? '#22c55e' : (pf > 0 ? '#f87171' : '#94a3b8');
+                        const pf = pdb.profit_factor || 0;
+                        $('new-pm-pf').innerText = pf.toFixed(2);
+                        $('new-pm-pf').style.color = pf >= 1.0 ? '#22c55e' : (pf > 0 ? '#f87171' : '#94a3b8');
 
-                    const sh = pdb.sharpe_ratio || 0;
-                    $('new-pm-sharpe').innerText = sh.toFixed(2);
-                    $('new-pm-sharpe').style.color = sh > 0 ? '#22c55e' : (sh < 0 ? '#f87171' : '#94a3b8');
+                        const sh = pdb.sharpe_ratio || 0;
+                        $('new-pm-sharpe').innerText = sh.toFixed(2);
+                        $('new-pm-sharpe').style.color = sh > 0 ? '#22c55e' : (sh < 0 ? '#f87171' : '#94a3b8');
 
-                    const avg = pdb.avg_pnl_per_trade || 0;
-                    $('new-pm-avg').innerText = avg === 0 ? '--' : (avg > 0 ? `+${fmtMoney(avg)}` : `-${fmtMoney(Math.abs(avg))}`);
-                    $('new-pm-avg').style.color = avg > 0 ? '#22c55e' : (avg < 0 ? '#f87171' : '#94a3b8');
+                        const avg = pdb.avg_pnl_per_trade || 0;
+                        $('new-pm-avg').innerText = avg === 0 ? '--' : (avg > 0 ? `+${fmtMoney(avg)}` : `-${fmtMoney(Math.abs(avg))}`);
+                        $('new-pm-avg').style.color = avg > 0 ? '#22c55e' : (avg < 0 ? '#f87171' : '#94a3b8');
+                    }
                 }
 
                 $('loss-streak').innerText = d.loss_streak || 0;
@@ -760,6 +766,14 @@
                 const optSt = perf.total_trades > 0 ? (perf.closed_trades >= 10 ? 'ACTIVE (LEARNING)' : 'COLLECTING DATA') : 'AWAITING TRADES';
                 $('opt-status').innerText = optSt;
                 $('opt-status').className = `mono ${perf.closed_trades >= 10 ? 'text-green-400' : 'text-yellow-400'}`;
+
+                // Last Tuned Parse
+                if (d.last_tuned_time && d.last_tuned_time > 0) {
+                    const lt = new Date(d.last_tuned_time * 1000);
+                    $('opt-tuned').innerText = lt.toLocaleTimeString('en-US', { hour12: false }) + ' ' + lt.toLocaleDateString();
+                } else {
+                    $('opt-tuned').innerText = 'PENDING';
+                }
 
                 // Config snapshot
                 $('cfg-score').innerText = (sig.min_score || 2.5).toFixed(1);

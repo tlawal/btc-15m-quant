@@ -274,6 +274,8 @@ class StateManager:
             "last_posterior_down":    state.last_posterior_down,
             "prev_cycle_score":       state.prev_cycle_score,
             "prev_cycle_price":       state.prev_cycle_price,
+            "performance_metrics":    state.performance_metrics,
+            "last_tuned_time":        state.last_tuned_time,
         }
         async with self._session_factory() as session:
             async with session.begin():
@@ -328,10 +330,16 @@ class StateManager:
         except statistics.StatisticsError:
             sharpe = 0.0
             
-        return {
+        metrics = {
             "total_trades": total_trades,
             "win_rate": win_rate,
             "profit_factor": profit_factor,
             "sharpe_ratio": sharpe,
             "avg_pnl_per_trade": round(avg_pnl, 2)
         }
+        
+        if self._state:
+            self._state.performance_metrics = metrics
+            await self.save(self._state)
+            
+        return metrics

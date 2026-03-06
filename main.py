@@ -67,13 +67,22 @@ class Engine:
         # finding the most recent OPEN trade is robust.
         
         for tr in reversed(self.state.trade_history):
-            if tr.outcome == "OPEN":
+            if tr.outcome in ("OPEN", "LOSS"):
+                # Always force entry price to a sane value if zero
+                ep = tr.entry_price if tr.entry_price and tr.entry_price > 0 else 0.5
                 tr.exit_price = 1.0  # Polymarket winning shares are always redeemed at $1
-                tr.pnl = (tr.exit_price - tr.entry_price) / tr.entry_price if tr.entry_price else 0.0
+                tr.pnl = (tr.exit_price - ep) / ep
+                
+                # If it was prematurely marked as a LOSS, reverse the loss stats
+                if tr.outcome == "LOSS":
+                    self.state.total_losses -= 1
+                    self.state.total_pnl_usd += size_usd # Add the size back
+                
                 tr.outcome = "WIN"
                 
                 self.state.loss_streak = 0
-                self.state.total_trades += 1
+                if self.state.total_trades == 0:
+                    self.state.total_trades += 1 # Ensure counting if lost
                 self.state.total_wins += 1
                 
                 # Approximate PnL logic (size_usd is the *payout*)
@@ -81,6 +90,10 @@ class Engine:
                 self.state.total_pnl_usd += profit_usd
                 
                 log.info(f"Recorded redemption win: +{tr.pnl*100:.2f}% (approx profit: ${profit_usd:.2f})")
+                
+                # Immediately recalculate and store metrics inside the event loop if possible
+                if self.state_mgr:
+                    asyncio.create_task(self.state_mgr.calculate_performance_metrics())
                 return
                 
         log.warning("Redeemed position but no matching OPEN trade found in history.")

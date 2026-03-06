@@ -553,6 +553,7 @@ class PolymarketClient:
                 signed = account.sign_transaction(tx)
                 tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
                 receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                
                 if receipt.status == 1:
                     log.info(f"✅ CLAIMED ${size:.2f} SUCCESSFULLY!")
                     total_redeemed += size
