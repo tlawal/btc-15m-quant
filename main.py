@@ -170,7 +170,7 @@ class Engine:
 
         self.state.last_window_start_sec = win_start
         # Dashboard visibility: show unclaimed positions every cycle
-        await self.pm.log_unclaimed_positions()
+        self.state.unclaimed_usdc = await self.pm.log_unclaimed_positions()
 
         if self.state.held_position.is_pending and self.state.held_position.order_id:
             await self._reconcile_pending_order()
@@ -606,6 +606,7 @@ class Engine:
             "trades_15m": self.state.trades_this_window,
             "last_market_slug": self.state.last_market_slug,
             "last_condition_id": self.state.last_condition_id,
+            "unclaimed_usdc": self.state.unclaimed_usdc,
         }
         if sig:
             hb["signal"] = sig.to_feature_dict()

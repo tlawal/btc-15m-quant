@@ -83,6 +83,7 @@ class EngineState:
     total_wins: int                       = 0
     total_losses: int                     = 0
     total_pnl_usd: float                  = 0.0
+    unclaimed_usdc: float                 = 0.0
 
     # ── Microstructure memory ─────────────────────────────────────────────────
     prev_bid_depth20: Optional[float]     = None
