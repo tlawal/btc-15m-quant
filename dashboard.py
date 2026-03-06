@@ -114,7 +114,15 @@ async def get_metrics():
         except: pass
 
     # Prepare latest signals for the UI
-    # We can get these from the state's memory variables
+    total_trades = state.total_trades
+    wins = state.total_wins
+    win_rate = (wins / total_trades) if total_trades > 0 else 0.0
+    avg_trade = (state.total_pnl_usd / total_trades) if total_trades > 0 else 0.0
+    
+    balance = hb.get("wallet_usdc") or hb.get("balance", 0.0)
+    open_pos = 1 if state.held_position.side else 0
+    exposure = state.held_position.size_usd if state.held_position.side else 0.0
+
     return {
         "balance": hb.get("balance", 0.0),
         "wallet_usdc": hb.get("wallet_usdc"),
