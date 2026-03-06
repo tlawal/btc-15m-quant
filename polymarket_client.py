@@ -506,6 +506,23 @@ class PolymarketClient:
                 if receipt.status == 1:
                     log.info(f"Successfully redeemed {size:.2f} USDC!")
                     total_redeemed += size
+                    
+                    try:
+                        from state import StateManager
+                        sm = StateManager()
+                        entry_price = float(p.get("avgPrice", p.get("averagePrice", 0.5)))
+                        pnl = size - (size * entry_price)
+                        await sm.record_closed_trade(
+                            ts=int(time.time()),
+                            market_slug=p.get("marketSlug", "unknown"),
+                            size=size,
+                            entry_price=entry_price,
+                            exit_price=1.0,
+                            pnl_usd=pnl,
+                            outcome_win=1
+                        )
+                    except Exception as e:
+                        log.error(f"Failed to record closed trade to DB: {e}")
                 else:
                     log.error(f"Redemption tx failed. Status: {receipt.status}")
                     

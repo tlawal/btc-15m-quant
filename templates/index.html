@@ -219,6 +219,36 @@
                                 <div class="data-value-lg" id="pm-avail">--</div>
                             </div>
                         </div>
+
+                        <!-- NEW: Performance Metrics (from SQLite DB) -->
+                        <div class="pt-3 border-t border-white/5">
+                            <div class="text-[0.7rem] text-slate-400 uppercase tracking-widest mb-3">Performance Metrics
+                            </div>
+                            <div class="grid grid-cols-2 gap-4 mb-3">
+                                <div>
+                                    <div class="data-label">Total Trades</div>
+                                    <div class="data-value-lg" id="new-pm-total" style="font-weight:bold;">0</div>
+                                </div>
+                                <div>
+                                    <div class="data-label">Win Rate</div>
+                                    <div class="data-value-lg" id="new-pm-wr" style="font-weight:bold;">0.00%</div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div>
+                                    <div class="data-label">Profit Factor</div>
+                                    <div class="data-value mono" id="new-pm-pf" style="font-weight:bold;">0.00</div>
+                                </div>
+                                <div>
+                                    <div class="data-label">Sharpe</div>
+                                    <div class="data-value mono" id="new-pm-sharpe" style="font-weight:bold;">0.00</div>
+                                </div>
+                                <div>
+                                    <div class="data-label">Avg PnL</div>
+                                    <div class="data-value mono" id="new-pm-avg" style="font-weight:bold;">--</div>
+                                </div>
+                            </div>
+                        </div>
                         <div class="grid grid-cols-2 gap-4 pt-3 border-t border-white/5">
                             <div>
                                 <div class="data-label">Loss Streak</div>
@@ -508,6 +538,29 @@
                 $('wallet-bal').innerText = d.wallet_usdc != null ? fmtMoney(d.wallet_usdc) : '...';
                 if ($('unclaimed-win')) $('unclaimed-win').innerText = d.unclaimed_usdc != null ? '$' + d.unclaimed_usdc.toFixed(2) : '$0.00';
                 $('pm-avail').innerText = d.pm_collateral_usdc != null ? fmtMoney(d.pm_collateral_usdc) : '...';
+
+                // New DB Performance UI Hook
+                const pdb = d.perf_db || {};
+                if ($('new-pm-total')) {
+                    $('new-pm-total').innerText = pdb.total_trades || 0;
+
+                    const wr = pdb.win_rate || 0;
+                    $('new-pm-wr').innerText = `${(wr * 100).toFixed(2)}%`;
+                    $('new-pm-wr').style.color = wr >= 0.5 ? '#22c55e' : (wr > 0 ? '#f87171' : '#94a3b8');
+
+                    const pf = pdb.profit_factor || 0;
+                    $('new-pm-pf').innerText = pf.toFixed(2);
+                    $('new-pm-pf').style.color = pf >= 1.0 ? '#22c55e' : (pf > 0 ? '#f87171' : '#94a3b8');
+
+                    const sh = pdb.sharpe_ratio || 0;
+                    $('new-pm-sharpe').innerText = sh.toFixed(2);
+                    $('new-pm-sharpe').style.color = sh > 0 ? '#22c55e' : (sh < 0 ? '#f87171' : '#94a3b8');
+
+                    const avg = pdb.avg_pnl_per_trade || 0;
+                    $('new-pm-avg').innerText = avg === 0 ? '--' : (avg > 0 ? `+${fmtMoney(avg)}` : `-${fmtMoney(Math.abs(avg))}`);
+                    $('new-pm-avg').style.color = avg > 0 ? '#22c55e' : (avg < 0 ? '#f87171' : '#94a3b8');
+                }
+
                 $('loss-streak').innerText = d.loss_streak || 0;
                 $('trades-15m').innerText = d.open_positions || 0; // Use open positions instead of missing trades_15m
 

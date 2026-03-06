@@ -658,13 +658,23 @@ class Engine:
             "closed_trades": len(closed),
             "wins": len(wins),
             "losses": len(losses),
-            "win_rate": round(win_rate, 4),
-            "avg_pnl": round(avg_pnl, 6),
-            "total_pnl": round(total_pnl, 6),
-            "sharpe": round(sharpe, 2),
-            "profit_factor": round(profit_factor, 2),
+            "win_rate": win_rate,
+            "avg_trade": avg_pnl if closed else 0.0,
+            "avg_pnl": avg_pnl,
+            "total_pnl": total_pnl,
+            "profit_factor": profit_factor,
+            "sharpe": sharpe,
             "loss_streak": self.state.loss_streak,
         }
+        
+        try:
+            hb["perf_db"] = await self.state_mgr.calculate_performance_metrics()
+        except Exception as e:
+            log.error(f"Failed to calc metrics: {e}")
+            hb["perf_db"] = {
+                "total_trades": 0, "win_rate": 0.0, "profit_factor": 0.0,
+                "sharpe_ratio": 0.0, "avg_pnl_per_trade": 0.0
+            }
 
         # ── Recent events for the event stream ──────────────────────
         recent_events = []
@@ -940,6 +950,26 @@ class Engine:
                 async with aiofiles.open(f"{log_dir}/outcomes.jsonl", mode='a') as f:
                     await f.write(json.dumps(outcome_data) + "\n")
                 log.info(f"Outcome logged for window {win_start}: BTC closed at {cand:.2f}")
+
+                # Record any expired out-of-the-money trades as losses in the DB
+                for tr in reversed(self.state.trade_history):
+                    if tr.window == win_start and tr.outcome == "OPEN":
+                        tr.outcome = "LOSS"
+                        tr.exit_price = 0.0
+                        tr.pnl = -1.0
+                        try:
+                            size = self.state.last_sizing or 0.0
+                            await self.state_mgr.record_closed_trade(
+                                ts=int(time.time()),
+                                market_slug=self.state.last_market_slug or "unknown",
+                                size=size,
+                                entry_price=tr.entry_price,
+                                exit_price=0.0,
+                                pnl_usd=-size,
+                                outcome_win=0
+                            )
+                        except Exception as e:
+                            log.error(f"Failed to record expired loss to DB: {e}")
         except Exception as e:
             log.debug(f"Outcome logging error: {e}")
 

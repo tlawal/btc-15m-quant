@@ -159,6 +159,17 @@ class StateManager:
                 "CREATE TABLE IF NOT EXISTS kv "
                 "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
             ))
+            await conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS closed_trades ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "timestamp INTEGER, "
+                "market_slug TEXT, "
+                "size REAL, "
+                "entry_price REAL, "
+                "exit_price REAL, "
+                "pnl_usd REAL, "
+                "outcome_win INTEGER)"
+            ))
         log.info("State DB initialised")
 
     async def load(self) -> EngineState:
@@ -274,3 +285,53 @@ class StateManager:
 
     def get_cached(self) -> Optional[EngineState]:
         return self._state
+
+    async def record_closed_trade(self, ts: int, market_slug: str, size: float, entry_price: float, exit_price: float, pnl_usd: float, outcome_win: int):
+        async with self.engine.begin() as conn:
+            await conn.execute(text(
+                "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win) "
+                "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win)"
+            ), {
+                "ts": ts, "slug": market_slug, "sz": size,
+                "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win
+            })
+
+    async def calculate_performance_metrics(self) -> dict:
+        async with self._session_factory() as session:
+            result = await session.execute(text("SELECT pnl_usd, outcome_win FROM closed_trades"))
+            rows = result.fetchall()
+            
+        total_trades = len(rows)
+        if total_trades == 0:
+            return {
+                "total_trades": 0,
+                "win_rate": 0.0,
+                "profit_factor": 0.0,
+                "sharpe_ratio": 0.0,
+                "avg_pnl_per_trade": 0.0
+            }
+            
+        wins = sum(1 for r in rows if r.outcome_win == 1)
+        win_rate = round(wins / total_trades, 2)
+        
+        gross_profit = sum(r.pnl_usd for r in rows if r.pnl_usd > 0)
+        gross_loss = abs(sum(r.pnl_usd for r in rows if r.pnl_usd < 0))
+        profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else 0.0
+        
+        pnl_list = [r.pnl_usd for r in rows]
+        avg_pnl = sum(pnl_list) / total_trades
+        
+        import statistics
+        try:
+            stdev = statistics.stdev(pnl_list)
+            sharpe = round((avg_pnl / stdev) * (len(pnl_list) ** 0.5), 2) if stdev > 0 else 0.0
+        except statistics.StatisticsError:
+            sharpe = 0.0
+            
+        return {
+            "total_trades": total_trades,
+            "win_rate": win_rate,
+            "profit_factor": profit_factor,
+            "sharpe_ratio": sharpe,
+            "avg_pnl_per_trade": round(avg_pnl, 2)
+        }
