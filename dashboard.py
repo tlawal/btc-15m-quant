@@ -141,6 +141,7 @@ async def get_metrics():
         "trading_halted": getattr(state, "trading_halted", False),
         "performance_metrics": getattr(state, "performance_metrics", {}),
         "last_tuned_time": getattr(state, "last_tuned_time", 0),
+        "open_positions_api": getattr(state, "open_positions_api", []),
         "recent_trades": [
             {
                 "ts": t.ts,

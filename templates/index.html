@@ -305,6 +305,45 @@
                     </div>
                 </div>
 
+                <!-- API Open Positions -->
+                <div class="glass-panel mt-5">
+                    <div class="glass-header">
+                        <span>📡 Live Open Positions</span>
+                    </div>
+                    <div class="p-0 overflow-x-auto">
+                        <table style="width:100%; border-collapse:collapse; font-size:0.85em; text-align:left;">
+                            <thead>
+                                <tr style="background:#1f2937; border-bottom:1px solid #374151;">
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem;">
+                                        Market</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem;">
+                                        Outcome</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
+                                        Size</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
+                                        Entry Value $</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
+                                        Current Value $</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
+                                        Unrlz PnL %</th>
+                                </tr>
+                            </thead>
+                            <tbody id="open-positions-body">
+                                <tr>
+                                    <td colspan="6" style="padding:12px; text-align:center; color:#6b7280;">No active
+                                        positions found.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
                 <!-- API Trade History -->
                 <div class="glass-panel mt-5">
                     <div class="glass-header">
@@ -608,6 +647,37 @@
 
                 $('loss-streak').innerText = d.loss_streak || 0;
                 $('trades-15m').innerText = d.open_positions || 0; // Use open positions instead of missing trades_15m
+
+                // API Open Positions mapping (Dynamic Javascript UI)
+                if (d.open_positions_api && $('open-positions-body')) {
+                    const tbody = $('open-positions-body');
+                    if (d.open_positions_api.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="padding:12px; text-align:center; color:#6b7280;">No active positions found.</td></tr>';
+                    } else {
+                        tbody.innerHTML = d.open_positions_api.map(t => {
+                            const entryValue = t.entryValue || 0;
+                            const currValue = t.currentValue || 0;
+                            const unrlzPct = entryValue > 0 ? ((currValue / entryValue) - 1) * 100 : 0.0;
+                            const pnlColor = unrlzPct > 0 ? '#22c55e' : (unrlzPct < 0 ? '#ef4444' : '#9ca3af');
+                            const slugTrim = t.marketSlug && t.marketSlug.length > 35 ? t.marketSlug.substring(0, 35) + '...' : (t.marketSlug || '?');
+                            const outcomeName = (t.outcome || 'Unknown').toUpperCase();
+                            const outcomeColor = outcomeName.includes('YES') ? '#22c55e' : (outcomeName.includes('NO') ? '#ef4444' : '#9ca3af');
+
+                            return `
+                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding:8px 12px;">${slugTrim}</td>
+                                    <td style="padding:8px 12px; font-weight:bold; color:${outcomeColor};">${outcomeName}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.size.toFixed(2)}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">$${entryValue.toFixed(2)}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">$${currValue.toFixed(2)}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace; font-weight:bold; color:${pnlColor};">
+                                        ${unrlzPct > 0 ? '+' : ''}${unrlzPct.toFixed(2)}%
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
+                }
 
                 // API Trade History mapping (Dynamic Javascript UI)
                 if (d.api_trade_history && $('trade-history-body')) {

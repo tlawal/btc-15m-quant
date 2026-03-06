@@ -77,6 +77,7 @@ class EngineState:
     # ── Position tracking ─────────────────────────────────────────────────────
     held_position: HeldPosition           = field(default_factory=HeldPosition)
     trade_history: List[TradeRecord]      = field(default_factory=list)
+    open_positions_api: List[Dict[str, Any]] = field(default_factory=list)
 
     # ── Performance tracking ──────────────────────────────────────────────────
     total_trades: int                     = 0

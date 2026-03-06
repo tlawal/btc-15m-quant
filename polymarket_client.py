@@ -614,6 +614,42 @@ class PolymarketClient:
             log.warning(f"Unclaimed check failed: {e}")
             return 0.0
 
+    async def get_open_positions(self) -> list[dict]:
+        """Fetch all currently open (unresolved, non-redeemable) positions via the Data API."""
+        try:
+            from eth_account import Account
+            account = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+            wallet_address = account.address.lower()
+
+            url = f"https://data-api.polymarket.com/positions?user={wallet_address}"
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                data = r.json()
+            
+            open_pos = []
+            for p in data:
+                # Active open positions are generally not redeemable yet and have size > 0
+                if p.get("redeemable") is True: 
+                    continue
+                size = float(p.get("size", 0))
+                if size <= 0.01:
+                    continue
+                    
+                open_pos.append({
+                    "conditionId": p.get("conditionId"),
+                    "marketSlug": p.get("marketSlug", p.get("slug", "?")),
+                    "size": size,
+                    "currentValue": float(p.get("currentValue", 0)),
+                    "entryValue": float(p.get("initialValue", 0)),
+                    "asset": p.get("asset"),
+                    "outcome": p.get("outcome", "unknown")
+                })
+            return open_pos
+        except Exception as e:
+            log.error(f"Failed to fetch open positions from Data API: {e}")
+            return []
+
     @staticmethod
     def summarize_exposure(positions: list[dict], condition_id: Optional[str] = None) -> dict:
         """Return lightweight exposure metrics from the positions payload."""
@@ -749,6 +785,31 @@ class PolymarketClient:
             return resp.get("orderID") or resp.get("id")
         except Exception as e:
             log.error(f"market_buy failed: {e}")
+            return None
+
+    async def market_sell(
+        self, token_id: str, amount_shares: float
+    ) -> Optional[str]:
+        """Market IOC sell for `amount_shares` of a token."""
+        if not self.can_trade:
+            self._warn_no_creds_once("market_sell")
+            return None
+        try:
+            args = MarketOrderArgs(
+                token_id = token_id,
+                amount   = amount_shares,
+                side     = "SELL",
+            )
+            loop = asyncio.get_event_loop()
+            signed = await loop.run_in_executor(
+                None, lambda: self.client.create_market_order(args)
+            )
+            resp = await loop.run_in_executor(
+                None, lambda: self.client.post_order(signed, OrderType.FOK)
+            )
+            return resp.get("orderID") or resp.get("id")
+        except Exception as e:
+            log.error(f"market_sell failed: {e}")
             return None
 
     async def limit_sell(

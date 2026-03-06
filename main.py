@@ -417,6 +417,12 @@ class Engine:
         self.state.prev_obv    = indic.obv
         self.state.prev_ofi_recent = book.deep_ofi
 
+        # ── Mid-Window Reversal / Stop-Loss Tracking (Data API) ─────────────
+        open_positions = await self.pm.get_open_positions()
+        self.state.open_positions_api = open_positions
+        for pos in open_positions:
+            await self._monitor_and_exit_position(pos, sig, btc_price, indic.atr14)
+
         # ── Exit handling ─────────────────────────────────────────────────────
         # Phase 3: pass CVD and posteriors for new exit types
         exit_executed = await self._handle_exits(
@@ -819,6 +825,75 @@ class Engine:
             self.state.total_losses += 1
             
         return True
+
+    async def _monitor_and_exit_position(self, pos: dict, sig, btc_price: float, atr14: float):
+        """API-driven mid-window exit checker (Stop Loss / Reversal)."""
+        market_slug = pos.get('marketSlug', 'unknown')
+        strike = self.state.locked_strike_price
+        
+        # We need atr14 and strike to evaluate technical stop-loss
+        if not strike or not atr14:
+            return
+
+        current_distance = abs(btc_price - strike)
+        entry_val = pos.get('entryValue', 0.0)
+        curr_val = pos.get('currentValue', 0.0)
+        size = pos.get('size', 0.0)
+        
+        if entry_val <= 0 or size <= 0:
+            return
+            
+        unrealized_pct = (curr_val / entry_val - 1) * 100
+        
+        # Stop loss logic (sig flipped strong reverse, or distance blew out, or hard UNRLZ SL)
+        if (sig.signed_score < -3 or current_distance > 0.6 * atr14 or unrealized_pct < -15):
+            log.info(f"EXIT TRIGGERED: reversing signal or SL hit on {market_slug} (Unrealized: {unrealized_pct:.2f}%)")
+            
+            token_id = pos.get('asset')
+            if not token_id:
+                # Fallback to condition mapping if asset is missing from payload
+                if self.state.last_condition_id == pos.get('conditionId'):
+                    token_id = self.state.held_position.token_id
+            
+            if not token_id:
+                log.error(f"Cannot exit {market_slug}: missing token_id / asset")
+                return
+
+            sold_oid = await self.pm.market_sell(token_id, size)
+            if sold_oid:
+                log.info(f"Market sold {size} shares of {market_slug} (OID: {sold_oid})")
+                import time
+                await self.state_mgr.record_closed_trade(
+                    ts=int(time.time()),
+                    market_slug=market_slug,
+                    size=size,
+                    entry_price=entry_val / size,
+                    exit_price=curr_val / size,
+                    pnl_usd=curr_val - entry_val,
+                    outcome_win=1 if curr_val > entry_val else 0
+                )
+                asyncio.create_task(self.state_mgr.calculate_performance_metrics())
+
+                # Clear internal memory if this was the internally held position
+                if self.state.held_position.side and str(self.state.last_condition_id) == str(pos.get('conditionId')):
+                    from state import HeldPosition
+                    self.state.held_position = HeldPosition()
+                    self.state.total_trades += 1
+                    if curr_val > entry_val:
+                        self.state.total_wins += 1
+                        self.state.loss_streak = 0
+                    else:
+                        self.state.total_losses += 1
+                        self.state.loss_streak += 1
+                    self.state.total_pnl_usd += (curr_val - entry_val)
+                    
+                    # Update local trade_history to WIN/LOSS
+                    for tr in reversed(self.state.trade_history):
+                        if tr.outcome == "OPEN":
+                            tr.exit_price = curr_val / size
+                            tr.pnl        = (curr_val - entry_val) / entry_val
+                            tr.outcome    = "WIN" if curr_val > entry_val else "LOSS"
+                            break
 
     # ── Entry handler ─────────────────────────────────────────────────────────
 
