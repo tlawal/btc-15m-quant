@@ -694,7 +694,7 @@ class Engine:
             for oid in await self.pm.get_open_orders(self.state.last_condition_id):
                 await self.pm.cancel_order(oid)
 
-        # Execute exit — use bid price for IOC exits (ensures fill on thin books)
+        # Execute exit — use bid price for FOK exits (ensures fill on thin books)
         # For GTC exits, mid is acceptable as a limit price
         exit_bid = (ob.yes_bid if pos.side == "YES" else ob.no_bid) or current_px or entry_px
         exit_px_gtc = current_px or entry_px
@@ -702,7 +702,7 @@ class Engine:
         exit_bid = max(0.01, min(0.99, exit_bid))
         exit_px_gtc = max(0.01, min(0.99, exit_px_gtc))
         if reason in ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT"):
-            order_id = await self.pm.limit_sell(pos.token_id, exit_bid, pos.size, order_type="IOC")
+            order_id = await self.pm.limit_sell(pos.token_id, exit_bid, pos.size, order_type="FOK")
         else:
             order_id = await self.pm.limit_sell(pos.token_id, exit_px_gtc, pos.size, order_type="GTC")
         exit_px = exit_bid if reason in ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT") else exit_px_gtc

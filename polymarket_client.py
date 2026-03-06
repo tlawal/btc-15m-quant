@@ -590,7 +590,7 @@ class PolymarketClient:
                 size     = round(size, 2),
                 side     = "SELL",
             )
-            ot = OrderType.IOC if order_type == "IOC" else OrderType.GTC
+            ot = OrderType.FOK if order_type in ("IOC", "FOK") else OrderType.GTC
             loop = asyncio.get_event_loop()
             signed = await loop.run_in_executor(
                 None, lambda: self.client.create_order(args)
