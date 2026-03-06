@@ -304,6 +304,45 @@
                         <div class="h-28 w-full"><canvas id="equityChart"></canvas></div>
                     </div>
                 </div>
+
+                <!-- API Trade History -->
+                <div class="glass-panel mt-5">
+                    <div class="glass-header">
+                        <span>📜 Recent Trade History</span>
+                    </div>
+                    <div class="p-0 overflow-x-auto">
+                        <table style="width:100%; border-collapse:collapse; font-size:0.85em; text-align:left;">
+                            <thead>
+                                <tr style="background:#1f2937; border-bottom:1px solid #374151;">
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem;">
+                                        Market</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem;">
+                                        Outcome</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
+                                        Size</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
+                                        Entry</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
+                                        Exit</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
+                                        PnL $</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trade-history-body">
+                                <tr>
+                                    <td colspan="6" style="padding:12px; text-align:center; color:#6b7280;">Loading
+                                        trades...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <!-- COL 2: Alpha Signal Engine + Market Edge (5) -->
@@ -563,6 +602,42 @@
 
                 $('loss-streak').innerText = d.loss_streak || 0;
                 $('trades-15m').innerText = d.open_positions || 0; // Use open positions instead of missing trades_15m
+
+                // API Trade History mapping (Dynamic Javascript UI)
+                if (d.api_trade_history && $('trade-history-body')) {
+                    const tbody = $('trade-history-body');
+                    if (d.api_trade_history.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" style="padding:12px; text-align:center; color:#6b7280;">No closed trades found.</td></tr>';
+                    } else {
+                        tbody.innerHTML = d.api_trade_history.map(t => {
+                            const pnlColor = t.realized_pnl > 0 ? '#22c55e' : (t.realized_pnl < 0 ? '#ef4444' : '#9ca3af');
+                            const slugTrim = t.slug.length > 35 ? t.slug.substring(0, 35) + '...' : t.slug;
+                            return `
+                                <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
+                                    <td style="padding:8px 12px;">${slugTrim}</td>
+                                    <td style="padding:8px 12px; font-weight:bold; color:${pnlColor};">${t.outcome}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.size.toFixed(2)}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.entry_price.toFixed(4)}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.exit_price.toFixed(4)}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace; font-weight:bold; color:${pnlColor};">
+                                        $${t.realized_pnl.toFixed(2)}
+                                    </td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
+                }
+
+                // ── Performance (REAL) ──
+                $('perf-trades-label').innerText = `${perf.closed_trades || 0} closed trades`;
+                $('win-rate').innerText = perf.closed_trades > 0 ? fmtPct(perf.win_rate) : 'No data';
+                $('sharpe').innerText = perf.closed_trades >= 2 ? perf.sharpe.toFixed(2) : 'N/A';
+                $('profit-factor').innerText = perf.closed_trades > 0 ? perf.profit_factor.toFixed(2) : 'N/A';
+                $('avg-pnl').innerText = perf.closed_trades > 0 ? (perf.avg_pnl > 0 ? '+' : '') + fmtPct(perf.avg_pnl) : 'N/A';
+                $('cum-pnl').innerText = perf.closed_trades > 0
+                    ? ((perf.total_pnl >= 0 ? '+' : '') + fmtPct(perf.total_pnl))
+                    : '--';
+                $('cum-pnl').className = `mono font-bold ${perf.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
 
                 // Latency
                 const lats = d.latency_ms || {};

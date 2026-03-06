@@ -457,6 +457,35 @@ class PolymarketClient:
             log.warning(f"get_positions: {e}")
             return []
 
+    async def get_trade_history(self, limit: int = 50):
+        try:
+            from eth_account import Account
+            account = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+            wallet = account.address.lower()
+            url = f"https://data-api.polymarket.com/positions?user={wallet}&limit={limit}"
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                data = r.json()
+            
+            trades = []
+            for p in data:
+                if float(p.get("size", 0)) == 0: continue
+                trades.append({
+                    "slug": p.get("marketSlug") or p.get("slug", "?"),
+                    "outcome": p.get("outcome", "?"),
+                    "size": float(p.get("size", 0)),
+                    "entry_price": float(p.get("avgPrice", 0)),
+                    "exit_price": float(p.get("currentValue", 0)) / float(p.get("size", 1)),
+                    "realized_pnl": float(p.get("realizedPnl", 0)),
+                    "percent_pnl": float(p.get("percentRealizedPnl", 0)),
+                    "timestamp": p.get("endDate", "?")
+                })
+            return trades[:20]  # last 20 only
+        except Exception as e:
+            log.warning(f"Trade history fetch failed: {e}")
+            return []
+
     async def redeem_winning_positions(self) -> float:
         """
         Check for winning resolved positions and redeem them directly via the CTF contract.
