@@ -513,6 +513,25 @@ class PolymarketClient:
 
         return total_redeemed
 
+    async def log_unclaimed_positions(self) -> float:
+        """Read-only check: logs unclaimed winning positions for Railway dashboard visibility."""
+        if not self.can_trade:
+            log.info("Unclaimed positions: $0.00 (trading disabled)")
+            return 0.0
+
+        positions = await self.get_positions()
+        redeemable = [p for p in positions if p.get("closed") and float(p.get("size", 0)) > 0.01]
+        
+        if not redeemable:
+            log.info("Unclaimed positions: $0.00 (none found)")
+            return 0.0
+
+        total_unclaimed = sum(float(p.get("size", 0)) for p in redeemable)
+        slugs = [p.get("marketSlug", "unknown")[:40] for p in redeemable]
+        
+        log.info(f"Unclaimed positions: ${total_unclaimed:.2f} across {len(redeemable)} market(s) → {', '.join(slugs)}")
+        return total_unclaimed
+
     @staticmethod
     def summarize_exposure(positions: list[dict], condition_id: Optional[str] = None) -> dict:
         """Return lightweight exposure metrics from the positions payload."""

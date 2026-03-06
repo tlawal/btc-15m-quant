@@ -169,6 +169,8 @@ class Engine:
             self.cvd_ws.reset()                      # Reset real-time CVD WebSocket
 
         self.state.last_window_start_sec = win_start
+        # Dashboard visibility: show unclaimed positions every cycle
+        await self.pm.log_unclaimed_positions()
 
         if self.state.held_position.is_pending and self.state.held_position.order_id:
             await self._reconcile_pending_order()
