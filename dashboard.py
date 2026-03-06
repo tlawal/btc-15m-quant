@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
 log = logging.getLogger("dashboard")
+start_time = time.time()
 
 app = FastAPI()
 _HERE = os.path.dirname(os.path.abspath(__file__))
