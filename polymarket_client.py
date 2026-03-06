@@ -7,7 +7,7 @@ Handles:
   - Balance check
   - Position query
   - Limit buy/sell and market IOC orders
-  - ensure_approvals on startup
+  - ensure_approvals onn startup
 """
 
 import asyncio
