@@ -511,7 +511,25 @@ class PolymarketClient:
 
         w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(Config.POLYGON_RPC_URL))
         account = w3.eth.account.from_key(Config.POLYMARKET_PRIVATE_KEY)
-        ctf = w3.eth.contract(address=w3.to_checksum_address(CTF_EXCHANGE), abi=CTF_ABI)
+        
+        # We must use the base Gnosis CTF directly (4 arguments) to bypass proxy bugs
+        gnosis_ctf_address = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+        gnosis_abi = [{
+            "inputs": [
+                {"internalType": "contract IERC20", "name": "collateralToken", "type": "address"},
+                {"internalType": "bytes32", "name": "parentCollectionId", "type": "bytes32"},
+                {"internalType": "bytes32", "name": "conditionId", "type": "bytes32"},
+                {"internalType": "uint256[]", "name": "indexSets", "type": "uint256[]"}
+            ],
+            "name": "redeemPositions",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function"
+        }]
+        
+        ctf = w3.eth.contract(address=w3.to_checksum_address(gnosis_ctf_address), abi=gnosis_abi)
+        usdc_e = w3.to_checksum_address(Config.POLYGON_USDC_ADDRESS)
+        parent_col = b'\x00' * 32
 
         total_redeemed = 0.0
         for p in positions:
@@ -522,6 +540,8 @@ class PolymarketClient:
             log.info(f"Attempting redemption of ${size:.2f} for {p.get('marketSlug','?')} (condition {condition_id[:10]}...)")
             try:
                 tx = await ctf.functions.redeemPositions(
+                    usdc_e,
+                    parent_col,
                     w3.to_bytes(hexstr=condition_id),
                     [1, 2]  # YES/NO binary
                 ).build_transaction({
