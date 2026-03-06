@@ -131,6 +131,15 @@ class Engine:
 
     async def run(self):
         await self.start()
+        
+        # Also run once at startup
+        try:
+            redeemed_startup = await self.pm.redeem_winning_positions()
+            if redeemed_startup > 0:
+                log.info(f"✅ STARTUP CLAIM: ${redeemed_startup:.2f}")
+        except Exception as e:
+            log.error(f"Startup redeem failed: {e}")
+            
         while self._running:
             t0 = time.monotonic()
             try:
@@ -152,10 +161,10 @@ class Engine:
         # ── Window reset ──────────────────────────────────────────────────────
         if win_rolled:
             log.info(f"New 15m window: {win_start} ({datetime.fromtimestamp(win_start, tz=timezone.utc).strftime('%H:%M:%S')} UTC)")
-            # Try to redeem any winning positions from the previous window
+            # Try to redeem any winning positions
             redeemed_usd = await self.pm.redeem_winning_positions()
             if redeemed_usd > 0:
-                log.info(f"Auto-redeemed ${redeemed_usd:.2f} USDC!")
+                log.info(f"✅ AUTO-CLAIMED ${redeemed_usd:.2f} at window start!")
                 self._record_redemption(redeemed_usd)
             
             # Phase 4: Reset latencies on new window to clear stale metrics

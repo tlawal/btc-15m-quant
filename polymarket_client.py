@@ -487,57 +487,59 @@ class PolymarketClient:
             return []
 
     async def redeem_winning_positions(self) -> float:
-        """
-        Check for winning resolved positions and redeem them directly via the CTF contract.
-        Returns the total USDC size redeemed.
-        """
+        """Detects resolved winners via Data API (redeemable=true) and redeems via CTF contract."""
         if not self.can_trade or not Config.POLYGON_RPC_URL:
             return 0.0
 
-        positions = await self.get_positions()
-        if not positions:
+        # Use Data API (this is the only source that shows resolved winners)
+        try:
+            from eth_account import Account
+            account = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+            wallet = account.address.lower()
+            url = f"https://data-api.polymarket.com/positions?user={wallet}&redeemable=true"
+            async with httpx.AsyncClient(timeout=10) as client:
+                r = await client.get(url)
+                r.raise_for_status()
+                positions = r.json()
+        except Exception as e:
+            log.error(f"Data API redeem check failed: {e}")
             return 0.0
 
-        # A position is redeemable if it's closed (resolved) but has size > 0 
-        # (meaning we own winning shares that haven't been cashed out yet)
-        redeemable = [p for p in positions if p.get("closed") and float(p.get("size", 0)) > 0.01]
-        if not redeemable:
+        if not positions:
+            log.info("No redeemable positions found (Data API)")
             return 0.0
 
         w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(Config.POLYGON_RPC_URL))
         account = w3.eth.account.from_key(Config.POLYMARKET_PRIVATE_KEY)
-        ctf_contract = w3.eth.contract(address=w3.to_checksum_address(CTF_EXCHANGE), abi=CTF_ABI)
+        ctf = w3.eth.contract(address="0x4D97DCd97eC945f40cF65F87097ACe5EA0476045", abi=CTF_ABI)
 
         total_redeemed = 0.0
+        for p in positions:
+            condition_id = p.get("conditionId")
+            size = float(p.get("size", p.get("currentValue", 0)))
+            if not condition_id or size <= 0.01: continue
 
-        for p in redeemable:
-            condition_id = p.get('conditionId')
-            size = float(p.get('size', 0))
-            if not condition_id: continue
-
-            log.info(f"Redeeming {size:.2f} winning shares for condition {condition_id}")
+            log.info(f"Attempting redemption of ${size:.2f} for {p.get('marketSlug','?')} (condition {condition_id[:10]}...)")
             try:
-                tx_data = await ctf_contract.functions.redeemPositions(
+                tx = await ctf.functions.redeemPositions(
                     w3.to_bytes(hexstr=condition_id),
-                    [1, 2] # binary market always YES/NO
+                    [1, 2]  # YES/NO binary
                 ).build_transaction({
                     'from': account.address,
                     'nonce': await w3.eth.get_transaction_count(account.address),
-                    'gas': 150000,
+                    'gas': 200000,
                     'gasPrice': await w3.eth.gas_price
                 })
-                
-                signed_tx = account.sign_transaction(tx_data)
-                tx_hash = await w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-                log.info(f"Redemption tx sent: {tx_hash.hex()}")
-                
-                receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+                signed = account.sign_transaction(tx)
+                tx_hash = await w3.eth.send_raw_transaction(signed.raw_transaction)
+                receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
                 if receipt.status == 1:
-                    log.info(f"Successfully redeemed {size:.2f} USDC!")
+                    log.info(f"✅ CLAIMED ${size:.2f} SUCCESSFULLY!")
                     total_redeemed += size
                     
                     try:
                         from state import StateManager
+                        import time
                         sm = StateManager()
                         entry_price = float(p.get("avgPrice", p.get("averagePrice", 0.5)))
                         pnl = size - (size * entry_price)
@@ -553,10 +555,9 @@ class PolymarketClient:
                     except Exception as e:
                         log.error(f"Failed to record closed trade to DB: {e}")
                 else:
-                    log.error(f"Redemption tx failed. Status: {receipt.status}")
-                    
+                    log.error(f"Redemption failed (status {receipt.status})")
             except Exception as e:
-                log.error(f"Error executing redemption: {e}")
+                log.error(f"Redemption error: {e}")
 
         return total_redeemed
 
