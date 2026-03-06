@@ -517,7 +517,7 @@ class PolymarketClient:
     async def log_unclaimed_positions(self) -> float:
         """Dashboard visibility: shows REAL unclaimed winnings from Data API (resolved CTF tokens)."""
         try:
-            # Derive wallet address exactly like get_wallet_usdc_balance does
+            # Derive wallet address exactly like your other methods
             from eth_account import Account
             account = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
             wallet_address = account.address.lower()
@@ -532,8 +532,13 @@ class PolymarketClient:
                 log.info("Unclaimed positions: $0.00 (none found)")
                 return 0.0
 
-            total = sum(float(p.get("redeemableAmountUSDC", 0)) for p in positions)
-            details = [f"{p.get('marketSlug','?')} (${float(p.get('redeemableAmountUSDC',0)):.2f})" for p in positions]
+            total = 0.0
+            details = []
+            for p in positions:
+                amount = float(p.get("currentValue", p.get("size", 0)))
+                total += amount
+                slug = p.get("marketSlug", p.get("slug", "?"))
+                details.append(f"{slug} (${amount:.2f})")
             
             log.info(f"Unclaimed positions: ${total:.2f} → {' | '.join(details)}")
             return total
