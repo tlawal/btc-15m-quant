@@ -10,7 +10,7 @@ import json
 import os
 import logging
 import asyncio
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, is_dataclass, asdict
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 

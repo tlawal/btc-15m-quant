@@ -179,4 +179,9 @@ async def run_dashboard(engine_instance, port=8000):
     import uvicorn
     config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="error")
     server = uvicorn.Server(config)
-    await server.serve()
+    
+    # We must run `serve` as a task, but await it so it occupies this background task
+    try:
+        await server.serve()
+    except asyncio.CancelledError:
+        pass
