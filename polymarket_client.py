@@ -671,6 +671,77 @@ class PolymarketClient:
         except Exception as e:
             log.error(f"Failed to fetch open positions from Data API: {e}")
             return []
+    async def monitor_and_exit_open_positions(self, open_positions: list[dict], sig, btc_price: float, atr14: float) -> list[dict]:
+        """
+        Evaluate open positions against mid-window exit criteria.
+        Returns a list of reasons/orders for any triggered exits.
+        """
+        exits = []
+        if not self.can_trade or not open_positions:
+            return exits
+
+        strike = sig.strike_price
+        if not strike or not atr14:
+            return exits
+
+        for pos in open_positions:
+            market_slug = pos.get("marketSlug", "unknown")
+            side = pos.get("outcome", "").upper() # YES or NO
+            size = pos.get("size", 0.0)
+            entry_val = pos.get("entryValue", 0.0)
+            curr_val = pos.get("currentValue", 0.0)
+            token_id = pos.get("asset")
+
+            if size <= 0 or entry_val <= 0:
+                continue
+
+            unrealized_pct = (curr_val / entry_val - 1)
+            current_distance = abs(btc_price - strike)
+
+            trigger_reason = None
+
+            # 1. SignedScore reversal
+            if side == "YES" and sig.signed_score < -3:
+                trigger_reason = "SCORE_REVERSAL"
+            elif side == "NO" and sig.signed_score > 3:
+                trigger_reason = "SCORE_REVERSAL"
+
+            # 2. Unrealized loss > 15%
+            elif unrealized_pct < -0.15:
+                trigger_reason = "STOP_LOSS_15PCT"
+
+            # 3. Distance from strike > 0.6 * ATR
+            elif current_distance > 0.6 * atr14:
+                trigger_reason = "STRIKE_DISTANCE_EXCEEDED"
+
+            # 4. CVD or OFI flip against position
+            # (Sensitive: CVD/OFI flip while losing)
+            elif unrealized_pct < -0.05:
+                if side == "YES" and (sig.cvd < -0.5 or sig.deep_ofi < -5):
+                    trigger_reason = "MICROSTRUCTURE_FLIP"
+                elif side == "NO" and (sig.cvd > 0.5 or sig.deep_ofi > 5):
+                    trigger_reason = "MICROSTRUCTURE_FLIP"
+
+            if trigger_reason:
+                log.warning(f"MID-WINDOW EXIT TRIGGERED for {market_slug}: {trigger_reason} (Unrealized: {unrealized_pct*100:.2f}%)")
+                if not token_id:
+                    log.error(f"Cannot exit {market_slug}: missing token_id / asset")
+                    continue
+
+                order_id = await self.market_sell(token_id, size)
+                if order_id:
+                    exits.append({
+                        "market_slug": market_slug,
+                        "reason": trigger_reason,
+                        "order_id": order_id,
+                        "size": size,
+                        "entry_price": entry_val / size,
+                        "exit_price": curr_val / size,
+                        "pnl_usd": curr_val - entry_val,
+                        "condition_id": pos.get("conditionId")
+                    })
+        
+        return exits
 
     @staticmethod
     def summarize_exposure(positions: list[dict], condition_id: Optional[str] = None) -> dict:
