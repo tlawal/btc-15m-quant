@@ -16,6 +16,8 @@ def compute_position_size(
     balance:        float,
     loss_streak:    int,
     monster_signal: bool = False,
+    win_rate:       Optional[float] = None,
+    profit_factor:  Optional[float] = None,
 ) -> Optional[float]:
     """
     Returns position size in USD, or None if below minimum.
@@ -31,14 +33,14 @@ def compute_position_size(
     risk_pct = Config.get_risk_pct(balance)
     max_loss_usd = balance * risk_pct
 
-    # Streak de-risk: halve after 2 consecutive losses
-    if Config.STREAK_HALVE and loss_streak >= 2:
-        max_loss_usd = max(max_loss_usd * 0.5, Config.MIN_TRADE_USD)
-
-    # Kelly fraction: f* = (p*b - q) / b  where b = (1-price)/price
-    b = (1.0 - entry_price) / entry_price if entry_price > 0 else 1.0
-    q = 1.0 - posterior
-    full_kelly = max(0.0, (posterior * b - q) / b)
+    # Recalibrate Kelly using live performance if available
+    # Modified Kelly: f* = p - (1-p)/b
+    # If we have live profit_factor, use it as 'b'
+    b = profit_factor if profit_factor and profit_factor > 0 else (1.0 - entry_price) / entry_price if entry_price > 0 else 1.0
+    p = win_rate if win_rate and win_rate > 0 else posterior
+    
+    q = 1.0 - p
+    full_kelly = max(0.0, (p * b - q) / b) if b > 0 else 0.0
 
     # True quarter-Kelly
     quarter_kelly = full_kelly * 0.25

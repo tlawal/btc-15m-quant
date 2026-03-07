@@ -56,24 +56,59 @@ def setup_logging():
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
 
+from enum import Enum
+import json
+
+class AlertTier(Enum):
+    INFO = "🟢 [INFO]"
+    WARN = "🟡 [WARN]"
+    CRITICAL = "🔴 [CRITICAL]"
+
 async def send_telegram(
     session: aiohttp.ClientSession,
     message: str,
+    tier: AlertTier = AlertTier.INFO,
     parse_mode: str = "HTML",
 ):
     if not Config.TELEGRAM_TOKEN or not Config.TELEGRAM_CHAT_ID:
         return
     url = f"https://api.telegram.org/bot{Config.TELEGRAM_TOKEN}/sendMessage"
+    
+    # Prefix message with tier exception if strictly INFO
+    full_message = f"{tier.value} {message}" if tier != AlertTier.INFO else message
+
     try:
         async with session.post(url, json={
             "chat_id":    Config.TELEGRAM_CHAT_ID,
-            "text":       message,
+            "text":       full_message,
             "parse_mode": parse_mode,
         }, timeout=aiohttp.ClientTimeout(total=5)) as r:
             if r.status != 200:
                 log.warning(f"Telegram status {r.status}")
     except Exception as e:
         log.warning(f"Telegram send failed: {e}")
+
+class StructuredJSONLogger:
+    """Phase 5: Structured JSON logging to persistent storage on /data."""
+    def __init__(self, log_dir="/data"):
+        # Fallback to local if /data doesn't exist
+        self.log_dir = log_dir if os.path.exists(log_dir) else "."
+        self.filepath = os.path.join(self.log_dir, "structured_logs.json")
+
+    def log(self, event_type: str, data: dict):
+        entry = {
+            "ts": int(time.time()),
+            "type": event_type,
+            "data": data
+        }
+        try:
+            with open(self.filepath, "a") as f:
+                f.write(json.dumps(entry) + "\n")
+        except Exception as e:
+            log.error(f"Failed to write structured log: {e}")
+
+# Create global instance
+json_logger = StructuredJSONLogger()
 
 
 def fmt_entry(

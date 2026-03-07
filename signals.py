@@ -190,6 +190,9 @@ def compute_signals(
     total_ask_size:   float,
     # Phase 5
     inference_engine: Optional[object] = None,
+    # Phase 4 Optimization
+    score_offset:     float = 0.0,
+    edge_offset:      float = 0.0,
 ) -> SignalResult:
 
     res = SignalResult()
@@ -207,6 +210,9 @@ def compute_signals(
         res.regime = "normal"
 
     res.required_edge, res.min_score = Config.get_regime_thresholds(atr14)
+    res.required_edge += edge_offset
+    res.min_score += score_offset
+
 
     # ── Expected move ─────────────────────────────────────────────────────────
     res.expected_move = 0.0

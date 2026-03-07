@@ -182,9 +182,10 @@ class StateManager:
             log.error(f"Failed to run Alembic migrations: {e}")
             raise
             
-        async with self.engine.begin() as conn:
-            await conn.execute(text("PRAGMA journal_mode=WAL;"))
-            await conn.execute(text("PRAGMA synchronous=NORMAL;"))
+        if "sqlite" in str(self.engine.url):
+            async with self.engine.begin() as conn:
+                await conn.execute(text("PRAGMA journal_mode=WAL;"))
+                await conn.execute(text("PRAGMA synchronous=NORMAL;"))
         
         log.info("State DB initialised with Alembic")
 
@@ -303,19 +304,20 @@ class StateManager:
     def get_cached(self) -> Optional[EngineState]:
         return self._state
 
-    async def record_closed_trade(self, ts: int, market_slug: str, size: float, entry_price: float, exit_price: float, pnl_usd: float, outcome_win: int):
+    async def record_closed_trade(self, ts: int, market_slug: str, size: float, entry_price: float, exit_price: float, pnl_usd: float, outcome_win: int, regime: str = None, features: dict = None, kelly_fraction: float = None):
         async with self.engine.begin() as conn:
             await conn.execute(text(
-                "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win) "
-                "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win)"
+                "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win, regime, features, kelly_fraction) "
+                "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win, :regime, :feats, :kelly)"
             ), {
                 "ts": ts, "slug": market_slug, "sz": size,
-                "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win
+                "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
+                "regime": regime, "feats": json.dumps(features) if features else None, "kelly": kelly_fraction
             })
 
     async def calculate_performance_metrics(self) -> dict:
         async with self._session_factory() as session:
-            result = await session.execute(text("SELECT pnl_usd, outcome_win FROM closed_trades"))
+            result = await session.execute(text("SELECT pnl_usd, outcome_win, regime FROM closed_trades"))
             rows = result.fetchall()
             
         total_trades = len(rows)
@@ -325,7 +327,8 @@ class StateManager:
                 "win_rate": 0.0,
                 "profit_factor": 0.0,
                 "sharpe_ratio": 0.0,
-                "avg_pnl_per_trade": 0.0
+                "avg_pnl_per_trade": 0.0,
+                "regimes": {}
             }
             
         wins = sum(1 for r in rows if r.outcome_win == 1)
@@ -338,6 +341,21 @@ class StateManager:
         pnl_list = [r.pnl_usd for r in rows]
         avg_pnl = sum(pnl_list) / total_trades
         
+        # Per-regime stats
+        regimes = {}
+        for r in rows:
+            reg = r.regime or "unknown"
+            if reg not in regimes:
+                regimes[reg] = {"trades": 0, "wins": 0, "pnl": 0.0}
+            regimes[reg]["trades"] += 1
+            if r.outcome_win == 1:
+                regimes[reg]["wins"] += 1
+            regimes[reg]["pnl"] += r.pnl_usd
+
+        for reg in regimes:
+            regimes[reg]["win_rate"] = round(regimes[reg]["wins"] / regimes[reg]["trades"], 2)
+            regimes[reg]["avg_pnl"] = round(regimes[reg]["pnl"] / regimes[reg]["trades"], 2)
+
         import statistics
         try:
             stdev = statistics.stdev(pnl_list)
@@ -350,7 +368,8 @@ class StateManager:
             "win_rate": win_rate,
             "profit_factor": profit_factor,
             "sharpe_ratio": sharpe,
-            "avg_pnl_per_trade": round(avg_pnl, 2)
+            "avg_pnl_per_trade": round(avg_pnl, 2),
+            "regimes": regimes
         }
         
         if self._state:

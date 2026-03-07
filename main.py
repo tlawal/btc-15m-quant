@@ -28,7 +28,6 @@ from data_feeds import DataFeeds
 from polymarket_client import PolymarketClient
 from indicators import compute_local_indicators
 from signals import SignalResult, compute_signals
-from sizing import compute_position_size
 from exit_policy import evaluate_exit
 from inference import InferenceEngine
 from dashboard import run_dashboard
@@ -36,8 +35,11 @@ from utils import (
     setup_logging, send_telegram, Timer,
     fmt_entry, fmt_exit, fmt_halt, fmt_status, fmt_engine_block, fmt_pnl_dashboard,
     current_window_start, minutes_remaining as calc_minutes_remaining,
-    window_start_iso, window_end_iso,
+    window_start_iso, window_end_iso, AlertTier, json_logger
 )
+from optimizer import StrategyOptimizer
+from attribution import FeatureAttributor
+import metrics_exporter
 
 setup_logging()
 log = logging.getLogger("engine")
@@ -54,9 +56,12 @@ class Engine:
         self._last_exit_reason = "HOLD"
         self.inference = InferenceEngine()  # Phase 5: ML inference engine
         self._dashboard_task = None         # Phase 6: Dashboard task handle
+        self._reconcile_task = None         # Phase 5: Hourly Position sync
         # Real-time CVD WebSocket
         from data_feeds import BinanceCVDWebsocket
         self.cvd_ws = BinanceCVDWebsocket()
+        self.optimizer = StrategyOptimizer(self.state)
+        self.attributor = FeatureAttributor(self.state_mgr)
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -101,6 +106,41 @@ class Engine:
         log.warning("Redeemed position but no matching OPEN trade found in history.")
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
+
+    async def _reconcile_loop(self):
+        """Phase 5: Hourly position reconciliation job."""
+        while self._running:
+            await asyncio.sleep(60) # check shortly after start, then sleep
+            try:
+                if not self.pm.can_trade:
+                    await asyncio.sleep(3600)
+                    continue
+                
+                log.info("Running hourly position reconciliation...")
+                open_pos = await self.pm.get_open_positions()
+                has_active = any(p.get("size", 0) > 0.01 for p in open_pos)
+                db_side = self.state.held_position.side
+
+                if db_side and not has_active:
+                    msg = f"⚠️ Reconciliation Mismatch: DB shows {db_side} open, but Polymarket shows FLAT."
+                    log.error(msg)
+                    from utils import AlertTier
+                    await send_telegram(self.feeds.session, msg, tier=AlertTier.CRITICAL)
+                    
+                elif not db_side and has_active:
+                    msg = "⚠️ Reconciliation Mismatch: DB is FLAT, but Polymarket shows active positions."
+                    log.warning(msg)
+                    from utils import AlertTier
+                    await send_telegram(self.feeds.session, msg, tier=AlertTier.WARN)
+                
+            except Exception as e:
+                log.error(f"Reconciliation error: {e}")
+            
+            # Sleep 1 hour
+            for _ in range(60):
+                if not self._running: break
+                await asyncio.sleep(60)
+
 
     async def start(self):
         # Phase 1 Checks: DB existence
@@ -153,6 +193,10 @@ class Engine:
         await self.cvd_ws.start()
         log.info("BinanceCVD WebSocket started")
 
+        # Phase 5: Start Hourly Reconciliation
+        self._reconcile_task = asyncio.create_task(self._reconcile_loop())
+        log.info("Hourly position reconciliation started")
+
         log.info("Ready. Starting main loop.")
 
     async def stop(self):
@@ -163,6 +207,11 @@ class Engine:
         if self._dashboard_task:
             self._dashboard_task.cancel()
             try: await self._dashboard_task
+            except asyncio.CancelledError: pass
+
+        if getattr(self, "_reconcile_task", None):
+            self._reconcile_task.cancel()
+            try: await self._reconcile_task
             except asyncio.CancelledError: pass
 
         self.cvd_ws.stop()
@@ -411,6 +460,9 @@ class Engine:
         if funding_rate is not None:
             log.debug(f"Perps Funding Rate: {funding_rate:.5f}")
 
+        # Phase 4: Strategy optimization (decay detection + dynamic thresholds)
+        score_offset, edge_offset = self.optimizer.detect_decay()
+
         # ── Compute signals ───────────────────────────────────────────────────
         sig = compute_signals(
             indic             = indic,
@@ -443,6 +495,8 @@ class Engine:
             total_bid_size    = ob.total_bid_size,
             total_ask_size    = ob.total_ask_size,
             inference_engine  = self.inference,
+            score_offset      = score_offset,
+            edge_offset       = edge_offset,
         )
 
         # Store CVD total vol for next cycle's volume-weighted scoring
@@ -493,6 +547,7 @@ class Engine:
             await send_telegram(
                 self.feeds.session,
                 fmt_halt(self.state.loss_streak, balance),
+                tier=AlertTier.CRITICAL
             )
 
         # ── Periodic status message ────────────────────────────────────────────
@@ -565,6 +620,9 @@ class Engine:
         # Update cycle memory for deltas
         self.state.prev_cycle_score = sig.signed_score
         self.state.prev_cycle_price = btc_price
+
+        # ── Update Prometheus Metrics ─────────────────────────────────────────
+        metrics_exporter.update_metrics(self.state, self.state.to_dict(), sig)
 
         # ── Save state ────────────────────────────────────────────────────────
         print("DEBUG: saving state", flush=True)
@@ -693,6 +751,20 @@ class Engine:
                         tr.outcome    = outcome
                         break
                 
+                # Phase 4: Record closed trade to DB
+                await self.state_mgr.record_closed_trade(
+                    ts=int(time.time()),
+                    market_slug=self.state.last_market_slug or "unknown",
+                    size=pos.size,
+                    entry_price=entry_px,
+                    exit_price=actual_px,
+                    pnl_usd=(actual_px - entry_px) * pos.size,
+                    outcome_win=1 if outcome == "WIN" else 0,
+                    regime=getattr(self.state, "entry_regime", None),
+                    features=getattr(self.state, "entry_features", None),
+                    kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
+                )
+
                 # Notify
                 margin = await self.pm.get_margin()
                 balance = margin.get("balance_usdc", 0.0)
@@ -830,7 +902,7 @@ class Engine:
             log.error(f"Failed to calc metrics: {e}")
             hb["perf_db"] = {
                 "total_trades": 0, "win_rate": 0.0, "profit_factor": 0.0,
-                "sharpe_ratio": 0.0, "avg_pnl_per_trade": 0.0
+                "sharpe_ratio": 0.0, "avg_pnl_per_trade": 0.0, "regimes": {}
             }
 
         # ── Recent events for the event stream ──────────────────────
@@ -972,7 +1044,10 @@ class Engine:
                     entry_price=entry_val / size,
                     exit_price=curr_val / size,
                     pnl_usd=curr_val - entry_val,
-                    outcome_win=1 if curr_val > entry_val else 0
+                    outcome_win=1 if curr_val > entry_val else 0,
+                    regime=sig.regime,
+                    features=sig.to_feature_dict(),
+                    kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
                 )
                 asyncio.create_task(self.state_mgr.calculate_performance_metrics())
 
@@ -1063,12 +1138,19 @@ class Engine:
             return
 
         # Size (FIX #8: Kelly with riskPct floor)
+        # Phase 4: Use recalibrated Kelly if available
+        metrics = self.state.performance_metrics or {}
+        win_rate = metrics.get("win_rate")
+        profit_factor = metrics.get("profit_factor")
+
         position_usd = compute_position_size(
             posterior   = posterior,
             entry_price = entry_px,
             balance     = balance,
             loss_streak = self.state.loss_streak,
             monster_signal = sig.monster_signal,
+            win_rate    = win_rate,
+            profit_factor = profit_factor
         )
         if not position_usd:
             log.info(f"Position size below minimum (bal={balance:.2f})")
@@ -1077,6 +1159,9 @@ class Engine:
         shares = round(position_usd / entry_px, 2)
         if shares < 1:
             return
+
+        # Store kelly fraction used for logging
+        self.state.last_kelly_fraction = position_usd / balance if balance > 0 else 0
 
         # Generate deterministic nonce for idempotency
         import hashlib
@@ -1108,6 +1193,9 @@ class Engine:
             placed_at_ts       = int(time.time()),
             intended_entry_price = entry_px,
         )
+        # Store entry features for matching when closed
+        self.state.entry_features = sig.to_feature_dict()
+        self.state.entry_regime = sig.regime
         self.state.trades_this_window += 1
 
         log.info(f"Order placed: {order_id} — waiting for fill confirmation.")
@@ -1146,12 +1234,12 @@ class Engine:
                 "window":     self.state.last_window_start_sec,
                 "strike":     self.state.locked_strike_price,
             })
-            log_dir = "/data" if os.path.exists("/data") else "./logs"
-            os.makedirs(log_dir, exist_ok=True)
-            async with aiofiles.open(f"{log_dir}/features.jsonl", mode='a') as f:
-                await f.write(json.dumps(feats) + "\n")
+            
+            # Phase 5: Structured JSON logging
+            json_logger.log("feature_snapshot", feats)
+            
         except Exception as e:
-            log.debug(f"Feature logging error: {e}")
+            log.debug(f"Failed to log features: {e}")
 
     async def _log_window_outcome(self, win_start: int):
         """Phase 5: Record the final BTC price at window end for labeling."""
@@ -1185,15 +1273,23 @@ class Engine:
                         tr.exit_price = 0.0
                         tr.pnl = -1.0
                         try:
-                            size = self.state.last_sizing or 0.0
+                            # Use stored entry features/regime
+                            regime = getattr(self.state, "entry_regime", "unknown")
+                            feats = getattr(self.state, "entry_features", {})
+                            kelly = getattr(self.state, "last_kelly_fraction", None)
+                            
+                            size = tr.size or 0.0
                             await self.state_mgr.record_closed_trade(
                                 ts=int(time.time()),
                                 market_slug=self.state.last_market_slug or "unknown",
                                 size=size,
                                 entry_price=tr.entry_price,
                                 exit_price=0.0,
-                                pnl_usd=-size,
-                                outcome_win=0
+                                pnl_usd=-size * tr.entry_price, # Roughly
+                                outcome_win=0,
+                                regime=regime,
+                                features=feats,
+                                kelly_fraction=kelly
                             )
                         except Exception as e:
                             log.error(f"Failed to record expired loss to DB: {e}")
@@ -1204,6 +1300,7 @@ class Engine:
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 async def _main():
+    metrics_exporter.start_exporter(port=9090)
     engine = Engine()
 
     # Handle --reset flag to clear state

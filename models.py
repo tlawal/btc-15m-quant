@@ -22,3 +22,7 @@ class ClosedTrade(Base):
     # Adding Phase 3 fields
     slippage = Column(Float)
     exit_reason = Column(String)
+    # Adding Phase 4 fields
+    regime = Column(String)
+    features = Column(String)  # JSON string
+    kelly_fraction = Column(Float)
