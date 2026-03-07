@@ -159,18 +159,11 @@ class Engine:
         if self.pm.can_trade:
             print(f"ENGINE START BUILD={BUILD_VERSION} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS}", flush=True)
             log.info("Engine started. Ensuring Polymarket approvals...")
-            print("DEBUG: Calling pm.ensure_approvals()", flush=True)
             await self.pm.ensure_approvals()
-            print("DEBUG: pm.ensure_approvals() finished", flush=True)
 
             # Record initial balance for 20% loss limit
-            print("DEBUG: Calling pm.get_wallet_usdc_balance()", flush=True)
             wallet_usdc = await self.pm.get_wallet_usdc_balance()
-            print("DEBUG: pm.get_wallet_usdc_balance() finished", flush=True)
-            
-            print("DEBUG: Calling pm.get_margin()", flush=True)
             margin_usdc = await self.pm.get_margin()
-            print("DEBUG: pm.get_margin() finished", flush=True)
             balance = wallet_usdc or 0.0
             if balance <= 1e-6:
                 balance = (margin_usdc or {}).get("available_usdc", 0.0)
@@ -582,7 +575,7 @@ class Engine:
         # ── Entry handling ─────────────────────────────────────────────────────
         if not exit_executed and not self.state.trading_halted:
             await self._handle_entry(
-                sig, ob, market_info, min_rem, btc_price, balance
+                sig, ob, market_info, min_rem, btc_price, balance, win_start=win_start
             )
 
         # ── Halt check ────────────────────────────────────────────────────────
@@ -626,9 +619,7 @@ class Engine:
             print(fmt_pnl_dashboard(self.state.trade_history, balance))
 
         # Heartbeat file
-        print("DEBUG: starting _write_heartbeat", flush=True)
         await self._write_heartbeat(now_ts, balance, runtime_ms, margin=margin, wallet_usdc=wallet_usdc, sig=sig)
-        print("DEBUG: _write_heartbeat finished", flush=True)
 
         # ── Outcome logging for previous window ───────────────────────────────
         if win_rolled:
@@ -658,9 +649,7 @@ class Engine:
             mode="none" if not self.state.held_position.side else self.state.held_position.side,
             exit_reason=str(getattr(self, "_last_exit_reason", "HOLD"))
         )
-        print("DEBUG: fmt_engine_block returned", flush=True)
         log.info(dashboard)
-        print("DEBUG: log.info(dashboard) finished", flush=True)
 
         # Update cycle memory for deltas
         self.state.prev_cycle_score = sig.signed_score
@@ -670,9 +659,7 @@ class Engine:
         metrics_exporter.update_metrics(self.state, asdict(self.state), sig)
 
         # ── Save state ────────────────────────────────────────────────────────
-        print("DEBUG: saving state", flush=True)
         await self.state_mgr.save(self.state)
-        print("DEBUG: state saved. _cycle() entirely finished. Yielding loop.", flush=True)
 
     # ── Strike resolution (FIX #2) ────────────────────────────────────────────
 
@@ -1093,7 +1080,7 @@ class Engine:
 
     # ── Entry handler ─────────────────────────────────────────────────────────
 
-    async def _handle_entry(self, sig, ob, market_info, min_rem, btc_price, balance):
+    async def _handle_entry(self, sig, ob, market_info, min_rem, btc_price, balance, win_start: int = 0):
         if self.state.held_position.side is not None:
             return   # already holding
 
@@ -1124,7 +1111,7 @@ class Engine:
         # Daily loss limit: sum realized losses from today's trades
         today_start = now_sec - 86400
         daily_loss = sum(
-            abs(t.pnl or 0) * (t.entry_price or 0) * (getattr(t, 'size', 0) or 1)
+            abs(t.pnl or 0) * (t.entry_price or 0) * (getattr(t, 'size', 0) or 0)
             for t in self.state.trade_history
             if t.ts >= today_start and t.outcome == "LOSS" and t.pnl is not None
         )
@@ -1146,12 +1133,12 @@ class Engine:
         if sig.direction == "UP":
             token_id  = market_info.yes_token_id
             side_name = "YES"
-            entry_px  = self.pm.smart_entry_price(ob.yes_bid, ob.yes_ask) or 0.0
+            entry_px  = self.pm.smart_entry_price(ob.yes_bid, ob.yes_ask, aggressive=sig.monster_signal) or 0.0
             posterior = sig.posterior_final_up or 0.5
         else:
             token_id  = market_info.no_token_id
             side_name = "NO"
-            entry_px  = self.pm.smart_entry_price(ob.no_bid, ob.no_ask) or 0.0
+            entry_px  = self.pm.smart_entry_price(ob.no_bid, ob.no_ask, aggressive=sig.monster_signal) or 0.0
             posterior = sig.posterior_final_down or 0.5
 
         if entry_px <= 0 or entry_px >= 1.0:

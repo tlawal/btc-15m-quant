@@ -26,9 +26,12 @@ def compute_position_size(
     # === MONSTER SIZING OVERRIDE ===
     is_monster = monster_signal and posterior >= 0.90
 
-    if is_monster and balance >= 6.00:
-        log.info(f"MONSTER_FORCE_MIN: forced $6.00 on 90%+ conviction (balance=${balance:.2f})")
-        return 6.00
+    if is_monster:
+        # Scale monster floor: min($6, 90% of balance) — works at any balance level
+        monster_floor = min(6.00, round(balance * 0.90, 2))
+        if balance >= Config.MIN_TRADE_USD and monster_floor >= Config.MIN_TRADE_USD:
+            log.info(f"MONSTER_FORCE_MIN: forced ${monster_floor:.2f} on 90%+ conviction (balance=${balance:.2f})")
+            return monster_floor
 
     risk_pct = Config.get_risk_pct(balance)
     max_loss_usd = balance * risk_pct

@@ -83,6 +83,11 @@ class Config:
     MAX_TRADES_PER_WINDOW      = 3
     STREAK_HALT_AT             = 3        # halt trading after N consecutive losses
 
+    # ── BB Squeeze gate thresholds (regime-adaptive) ──────────────────────────
+    BB_SQUEEZE_LOW             = 0.0015   # low-vol regime (ATR < 80)
+    BB_SQUEEZE_NORMAL          = 0.0030   # normal regime
+    BB_SQUEEZE_HIGH            = 0.0050   # high-vol regime (ATR > 200)
+
     # ── Hard capital protections ──────────────────────────────────────────────
     MAX_TRADE_USD              = 50.0     # absolute max per single trade
     MAX_TRADES_PER_HOUR        = 8        # hourly trade limit

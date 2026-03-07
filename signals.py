@@ -734,9 +734,16 @@ def compute_signals(
     if res.monster_signal and minutes_remaining > 11.0:
         gates.append(f"monster_too_early_rem={minutes_remaining:.1f}min")
 
-    # Bollinger squeeze
-    if indic.bb_width is not None and indic.bb_width < 0.003 and not res.monster_signal:
-        gates.append(f"bb_squeeze={indic.bb_width:.4f}")
+    # Bollinger squeeze (regime-adaptive threshold)
+    if indic.bb_width is not None and not res.monster_signal:
+        if res.regime == "low":
+            bb_thresh = Config.BB_SQUEEZE_LOW
+        elif res.regime == "high":
+            bb_thresh = Config.BB_SQUEEZE_HIGH
+        else:
+            bb_thresh = Config.BB_SQUEEZE_NORMAL
+        if indic.bb_width < bb_thresh:
+            gates.append(f"bb_squeeze={indic.bb_width:.4f}_thresh={bb_thresh:.4f}")
 
     # VOLUME CONFIRMATION FOR EXTREMES
     if best_posterior > 0.95 and cvd_total_vol <= 8.0:

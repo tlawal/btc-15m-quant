@@ -815,11 +815,14 @@ class PolymarketClient:
             return None
 
     @staticmethod
-    def smart_entry_price(bid: Optional[float], ask: Optional[float], tick: float = 0.01) -> Optional[float]:
+    def smart_entry_price(bid: Optional[float], ask: Optional[float], tick: float = 0.01, aggressive: bool = False) -> Optional[float]:
         """
-        Compute a smart limit price: bid + 1 tick (improves over crossing spread to ask).
+        aggressive=True  (FOK): use ask to guarantee immediate fill.
+        aggressive=False (GTC): bid+tick for passive queue entry.
         Falls back to ask if no bid available.
         """
+        if aggressive:
+            return ask
         if bid is not None and ask is not None:
             smart_px = round(bid + tick, 4)
             # Don't exceed the ask — that would be worse than just using the ask
@@ -933,30 +936,6 @@ class PolymarketClient:
             return resp.get("orderID") or resp.get("id")
         except Exception as e:
             log.error(f"limit_sell failed: {e}")
-            return None
-
-    async def market_sell(
-        self, token_id: str, size: float
-    ) -> Optional[str]:
-        if not self.can_trade:
-            self._warn_no_creds_once("market_sell")
-            return None
-        try:
-            args = MarketOrderArgs(
-                token_id = token_id,
-                amount   = size,
-                side     = "SELL",
-            )
-            loop = asyncio.get_event_loop()
-            signed = await loop.run_in_executor(
-                None, lambda: self.client.create_market_order(args)
-            )
-            resp = await loop.run_in_executor(
-                None, lambda: self.client.post_order(signed, OrderType.FOK)
-            )
-            return resp.get("orderID") or resp.get("id")
-        except Exception as e:
-            log.error(f"market_sell failed: {e}")
             return None
 
 
