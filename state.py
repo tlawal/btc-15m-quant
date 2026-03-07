@@ -58,10 +58,10 @@ class TradeRecord:
     entry_price: float
     exit_price: Optional[float]
     pnl: Optional[float]
-    slippage: Optional[float] = None
     outcome: Optional[str]   # "WIN" | "LOSS" | "OPEN"
     score: float
     window: int
+    slippage: Optional[float] = None
 
 
 @dataclass
