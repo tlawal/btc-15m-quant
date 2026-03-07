@@ -7,13 +7,17 @@ save() updates individual keys atomically.
 """
 
 import json
-import time
+import os
 import logging
-from dataclasses import dataclass, field, asdict
+import asyncio
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy import text
+from sqlalchemy import text, select
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+from alembic.config import Config as AlembicConfig
+from alembic import command
 
 from config import Config
 
@@ -32,10 +36,13 @@ class HeldPosition:
     size_usd: Optional[float]       = None
     entry_signed_score: Optional[float] = None
     condition_id: Optional[str]     = None
+    intended_entry_price: Optional[float] = None
+    intended_exit_price: Optional[float]  = None
     # Phase 3: order fill tracking
     order_id: Optional[str]         = None
     is_pending: bool                = False  # True until fill confirmed
     placed_at_ts: Optional[int]     = None   # when order was placed
+    exit_reason: Optional[str]      = None   # for tracking why an exit was placed
 
 
 @dataclass
@@ -51,6 +58,7 @@ class TradeRecord:
     entry_price: float
     exit_price: Optional[float]
     pnl: Optional[float]
+    slippage: Optional[float] = None
     outcome: Optional[str]   # "WIN" | "LOSS" | "OPEN"
     score: float
     window: int
@@ -161,22 +169,21 @@ class StateManager:
         async with self.engine.begin() as conn:
             await conn.execute(text("PRAGMA journal_mode=WAL;"))
             await conn.execute(text("PRAGMA synchronous=NORMAL;"))
-            await conn.execute(text(
-                "CREATE TABLE IF NOT EXISTS kv "
-                "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"
-            ))
-            await conn.execute(text(
-                "CREATE TABLE IF NOT EXISTS closed_trades ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, "
-                "timestamp INTEGER, "
-                "market_slug TEXT, "
-                "size REAL, "
-                "entry_price REAL, "
-                "exit_price REAL, "
-                "pnl_usd REAL, "
-                "outcome_win INTEGER)"
-            ))
-        log.info("State DB initialised")
+        
+        # Run Alembic migrations synchronously
+        try:
+            alembic_cfg = AlembicConfig("alembic.ini")
+            # Alembic's command.upgrade is synchronous; use run_in_executor for safety inside async
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, command.upgrade, alembic_cfg, "head")
+            log.info("Alembic migrations applied successfully")
+        except Exception as e:
+            log.error(f"Failed to run Alembic migrations: {e}")
+            # Fallback to manual init if migrations fail? 
+            # Better to allow the error if we want robust schema management.
+            raise
+        
+        log.info("State DB initialised with Alembic")
 
     async def load(self) -> EngineState:
         await self.init_db()

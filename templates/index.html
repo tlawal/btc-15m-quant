@@ -370,12 +370,15 @@
                                         Exit</th>
                                     <th
                                         style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
-                                        PnL $</th>
+                                        PnL %</th>
+                                    <th
+                                        style="padding:8px 12px; font-weight:600; text-transform:uppercase; color:#9ca3af; font-size:0.75rem; text-align:right;">
+                                        Slip %</th>
                                 </tr>
                             </thead>
                             <tbody id="trade-history-body">
                                 <tr>
-                                    <td colspan="6" style="padding:12px; text-align:center; color:#6b7280;">Loading
+                                    <td colspan="7" style="padding:12px; text-align:center; color:#6b7280;">Loading
                                         trades...</td>
                                 </tr>
                             </tbody>
@@ -681,26 +684,31 @@
                     }
                 }
 
-                // API Trade History mapping (Dynamic Javascript UI)
-                if (d.api_trade_history && $('trade-history-body')) {
+                // ── Recent Trade History (MODIFIED for Phase 3) ──
+                if (d.recent_trades && $('trade-history-body')) {
                     const tbody = $('trade-history-body');
-                    if (d.api_trade_history.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="6" style="padding:12px; text-align:center; color:#6b7280;">No closed trades found.</td></tr>';
+                    if (d.recent_trades.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" style="padding:12px; text-align:center; color:#6b7280;">No closed trades found.</td></tr>';
                     } else {
-                        tbody.innerHTML = d.api_trade_history.map(t => {
-                            const pnlColor = t.realized_pnl > 0 ? '#22c55e' : (t.realized_pnl < 0 ? '#ef4444' : '#9ca3af');
-                            const slugTrim = t.slug.length > 35 ? t.slug.substring(0, 35) + '...' : t.slug;
+                        tbody.innerHTML = d.recent_trades.map(t => {
+                            const pnl = t.pnl || 0;
+                            const pnlColor = pnl > 0 ? '#22c55e' : (pnl < 0 ? '#ef4444' : '#9ca3af');
+                            const slip = t.slippage != null ? (t.slippage * 100).toFixed(3) : '--';
+                            const sideColor = t.side === 'YES' ? '#22c55e' : '#ef4444';
+                            const timeStr = new Date(t.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
                             return `
                                 <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                    <td style="padding:8px 12px;">
-                                        <a href="https://polymarket.com/event/${t.slug}" target="_blank" style="color:#60a5fa; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${slugTrim}</a>
-                                    </td>
-                                    <td style="padding:8px 12px; font-weight:bold; color:${pnlColor};">${t.outcome}</td>
-                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.size.toFixed(2)}</td>
-                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.entry_price.toFixed(4)}</td>
-                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.exit_price.toFixed(4)}</td>
+                                    <td style="padding:8px 12px; color:#94a3b8;">${timeStr}</td>
+                                    <td style="padding:8px 12px; font-weight:bold; color:${sideColor};">${t.side}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.outcome || 'OPEN'}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.entry ? t.entry.toFixed(3) : '--'}</td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.exit ? t.exit.toFixed(3) : '--'}</td>
                                     <td style="padding:8px 12px; text-align:right; font-family:monospace; font-weight:bold; color:${pnlColor};">
-                                        $${t.realized_pnl.toFixed(2)}
+                                        ${pnl > 0 ? '+' : ''}${(pnl * 100).toFixed(2)}%
+                                    </td>
+                                    <td style="padding:8px 12px; text-align:right; font-family:monospace; color:${t.slippage >= 0 ? '#22c55e' : '#f59e0b'};">
+                                        ${slip}${t.slippage != null ? '%' : ''}
                                     </td>
                                 </tr>
                             `;

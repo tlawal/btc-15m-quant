@@ -27,7 +27,9 @@ from state import StateManager, EngineState, HeldPosition, TradeRecord
 from data_feeds import DataFeeds
 from polymarket_client import PolymarketClient
 from indicators import compute_local_indicators
-from logic import compute_signals, evaluate_exit, compute_position_size
+from signals import SignalResult, compute_signals
+from sizing import compute_position_size
+from exit_policy import evaluate_exit
 from inference import InferenceEngine
 from dashboard import run_dashboard
 from utils import (
@@ -637,7 +639,7 @@ class Engine:
     async def _reconcile_pending_order(self):
         """Phase 3: Verify if a pending order has filled."""
         pos = self.state.held_position
-        if not pos.order_id:
+        if not pos.order_id or not pos.is_pending:
             return
 
         status = await self.pm.get_order_status(pos.order_id)
@@ -646,22 +648,90 @@ class Engine:
 
         st = status.get("status")
         matched = status.get("size_matched", 0)
+        fill_price = status.get("price", 0)
 
-        if st == "FILLED":
+        if st == "FILLED" or (matched > 0 and matched >= pos.size):
             log.info(f"PENDING ORDER FILLED: {pos.order_id} ({matched} shares)")
-            pos.is_pending = False
-        elif st == "CANCELED" or st == "EXPIRED":
+            
+            # Use fill price, fallback to intended
+            actual_px = fill_price or pos.intended_entry_price or pos.intended_exit_price or 0
+            
+            if pos.exit_reason:
+                # EXIT FILL handle
+                intended_px = pos.intended_exit_price or actual_px
+                # Sell: slippage = actual - intended (positive is better price)
+                slippage = (actual_px - intended_px) / intended_px if intended_px > 0 else 0.0
+                
+                entry_px = pos.avg_entry_price or pos.entry_price or actual_px
+                pnl_pct = (actual_px - entry_px) / entry_px if entry_px > 0 else 0.0
+                
+                # Update stats
+                if pnl_pct < 0:
+                    self.state.loss_streak += 1
+                else:
+                    self.state.loss_streak = 0
+                
+                outcome = "WIN" if pnl_pct >= 0 else "LOSS"
+                for tr in reversed(self.state.trade_history):
+                    if tr.side == pos.side and tr.outcome == "OPEN":
+                        tr.exit_price = actual_px
+                        tr.pnl        = pnl_pct
+                        tr.slippage   = slippage
+                        tr.outcome    = outcome
+                        break
+                
+                # Notify
+                margin = await self.pm.get_margin()
+                balance = margin.get("balance_usdc", 0.0)
+                await send_telegram(
+                    self.feeds.session,
+                    fmt_exit(pos.side, actual_px, entry_px, pnl_pct, pos.exit_reason, balance),
+                )
+                log.info(f"EXIT CONFIRMED: {pos.side} {pos.exit_reason} pnl={pnl_pct*100:.2f}% slippage={slippage*100:.4f}%")
+                
+                self.state.total_trades += 1
+                if outcome == "WIN":
+                    self.state.total_wins += 1
+                else:
+                    self.state.total_losses += 1
+                
+                self.state.held_position = HeldPosition()
+            else:
+                # ENTRY FILL handle
+                intended_px = pos.intended_entry_price or actual_px
+                # Buy: slippage = intended - actual (positive is better price)
+                slippage = (intended_px - actual_px) / intended_px if intended_px > 0 else 0.0
+                
+                pos.is_pending = False
+                pos.avg_entry_price = actual_px
+                
+                # Update TradeRecord in history
+                for tr in reversed(self.state.trade_history):
+                    if tr.side == pos.side and tr.outcome == "OPEN":
+                        tr.entry_price = actual_px
+                        tr.slippage = slippage
+                        break
+                
+                log.info(f"ENTRY CONFIRMED: {pos.side} @ {actual_px} slippage={slippage*100:.4f}%")
+
+        elif st in ("CANCELED", "EXPIRED"):
             if matched > 0:
                 log.info(f"PENDING ORDER {st} PARTIALLY: {matched}/{pos.size} shares filled")
                 pos.size = matched
                 pos.is_pending = False
+                if pos.exit_reason:
+                    # Partial exit handled as full exit for state clearing, but log real size
+                    pos.is_pending = False 
             else:
                 log.info(f"PENDING ORDER {st}: clearing position state")
-                self.state.held_position = HeldPosition()
-        elif matched > 0 and matched >= pos.size:
-            # Fallback for status strings that might differ
-            log.info(f"PENDING ORDER MATCHED: {matched} shares")
-            pos.is_pending = False
+                if not pos.exit_reason:
+                    if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
+                        self.state.trade_history.pop()
+                    self.state.held_position = HeldPosition()
+                else:
+                    # Exit failed, keep position but unmark pending
+                    pos.is_pending = False
+                    pos.order_id = None
 
     async def _write_heartbeat(self, ts: int, balance: float, runtime_ms: int, margin: dict | None = None, wallet_usdc: float | None = None, sig = None):
         """Phase 4: Structured heartbeat for external health monitoring."""
@@ -835,38 +905,15 @@ class Engine:
             log.error(f"Exit order failed ({reason})")
             return False
 
-        pnl_pct = (exit_px - entry_px) / entry_px if entry_px > 0 else 0.0
-
-        # Loss tracking
-        if pnl_pct < 0:
-            self.state.loss_streak += 1
-        else:
-            self.state.loss_streak = 0
-
-        # Update trade history
-        outcome = "WIN" if pnl_pct >= 0 else "LOSS"
-        for tr in reversed(self.state.trade_history):
-            if tr.side == pos.side and tr.outcome == "OPEN":
-                tr.exit_price = exit_px
-                tr.pnl        = pnl_pct
-                tr.outcome    = outcome
-                break
-
-        await send_telegram(
-            self.feeds.session,
-            fmt_exit(pos.side, exit_px, entry_px, pnl_pct, reason, balance),
-        )
-        log.info(f"EXIT: {pos.side} {reason} pnl={pnl_pct*100:.2f}%")
-
-        # Clear position
-        self.state.held_position = HeldPosition()
-        self.state.total_trades += 1
-        if outcome == "WIN":
-            self.state.total_wins += 1
-        else:
-            self.state.total_losses += 1
-            
+        # Phase 3: Wait for _reconcile_pending_order to confirm fill
+        pos.is_pending = True
+        pos.order_id = order_id
+        pos.exit_reason = reason
+        pos.intended_exit_price = exit_px
+        log.info(f"Exit order placed ({order_id}) for {reason} — waiting for fill")
         return True
+
+
 
     async def _monitor_and_exit_position(self, pos: dict, sig, btc_price: float, atr14: float):
         """API-driven mid-window exit checker (Stop Loss / Reversal)."""
@@ -951,8 +998,24 @@ class Engine:
         if self.state.trades_this_window >= Config.MAX_TRADES_PER_WINDOW and not sig.monster_signal:
             return
 
+        # ── Phase 3: Time-to-Expiry Gate ────────────────────────────────────────
+        if min_rem < 3.0 and not sig.monster_signal:
+            log.debug(f"Entry blocked: Time to expiry ({min_rem:.1f}m) < 3.0m")
+            return
+
+        # ── Phase 3: Rolling 1-Hour Trade Limit ─────────────────────────────────
+        now_sec = int(time.time())
+        hour_ago = now_sec - 3600
+        recent_trades = [
+            t for t in self.state.trade_history 
+            if t.ts >= hour_ago and t.outcome == "OPEN"  # Only count *entries*
+        ]
+        if len(recent_trades) >= getattr(Config, "MAX_TRADES_PER_HOUR", 6):
+            log.warning(f"Hourly trade limit reached ({len(recent_trades)}/hour) — no new entries")
+            return
+
         # Daily loss limit: sum realized losses from today's trades
-        today_start = int(time.time()) - 86400
+        today_start = now_sec - 86400
         daily_loss = sum(
             abs(t.pnl or 0) * (t.entry_price or 0) * (getattr(t, 'size', 0) or 1)
             for t in self.state.trade_history
@@ -1030,6 +1093,7 @@ class Engine:
             order_id           = order_id,
             is_pending         = True,
             placed_at_ts       = int(time.time()),
+            intended_entry_price = entry_px,
         )
         self.state.trades_this_window += 1
 
