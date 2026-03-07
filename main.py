@@ -382,9 +382,27 @@ class Engine:
         if not book.is_stale:
             self.state.accumulated_ofi += book.deep_ofi
 
-        # ── Compute signals ───────────────────────────────────────────────────
+        # ── Phase 2: Polymarket Book Freshness Check ─────────────────────────
         is_stale = book.is_stale
+        ob_age_ms = now_ts * 1000 - ob.fetch_ms if ob.fetch_ms else 0
+        if ob_age_ms > 5000:
+            log.warning(f"Polymarket orderbook stale ({ob_age_ms}ms) — blocking entries")
+            is_stale_micro = True
+        else:
+            is_stale_micro = is_stale
 
+        # ── Phase 2: Chainlink Oracle Tracking ─────────────────────────────────
+        oracle_px = self.feeds.oracle.get_price()
+        oracle_update_ts = self.feeds.oracle.get_last_update()
+        if oracle_px > 0:
+            log.debug(f"Chainlink Oracle: ${oracle_px:.2f} (age {now_ts - oracle_update_ts}s)")
+
+        # ── Phase 2: Perpetual Funding Rate ─────────────────────────────────────
+        funding_rate = self.feeds.funding_ws.get_rate()
+        if funding_rate is not None:
+            log.debug(f"Perps Funding Rate: {funding_rate:.5f}")
+
+        # ── Compute signals ───────────────────────────────────────────────────
         sig = compute_signals(
             indic             = indic,
             btc_price         = btc_price,
@@ -399,13 +417,16 @@ class Engine:
             vpin_proxy        = book.vpin_proxy,
             deep_ofi          = book.deep_ofi,
             microprice        = book.microprice,
-            is_stale_micro    = is_stale,
+            is_stale_micro    = is_stale_micro,
             cvd_delta         = cvd_delta_for_signals,
             true_cvd          = self.state.cvd,
             accumulated_ofi   = self.state.accumulated_ofi,
             cross_cvd_agree   = self.state.cross_cvd_agree,
             cvd_total_vol     = cvd_total_vol,
             prev_cvd_total_vol = self.state.prev_cvd_total_vol,
+            oracle_px         = oracle_px,
+            oracle_update_ts  = oracle_update_ts,
+            funding_rate      = funding_rate,
             yes_mid           = ob.yes_mid,
             no_mid            = ob.no_mid,
             yes_ask           = ob.yes_ask,
@@ -419,7 +440,7 @@ class Engine:
         self.state.prev_cvd_total_vol = cvd_total_vol
 
         # Update score/posterior memory
-        if not is_stale:
+        if not is_stale_micro:
             self.state.last_cvd_score        = sig.cvd_score
             self.state.last_ofi_score        = sig.ofi_score
             self.state.last_imbalance_score  = sig.imbalance_score

@@ -86,6 +86,8 @@ class EngineState:
     total_pnl_usd: float                  = 0.0
     unclaimed_usdc: float                 = 0.0
     session_start_balance: Optional[float] = None
+    performance_metrics: dict             = field(default_factory=dict)
+    last_tuned_time: Optional[float]      = None
 
     # ── Microstructure memory ─────────────────────────────────────────────────
     prev_bid_depth20: Optional[float]     = None
@@ -279,7 +281,6 @@ class StateManager:
             "prev_cycle_score":       state.prev_cycle_score,
             "prev_cycle_price":       state.prev_cycle_price,
             "performance_metrics":    state.performance_metrics,
-            "last_tuned_time":        state.last_tuned_time,
         }
         async with self._session_factory() as session:
             async with session.begin():

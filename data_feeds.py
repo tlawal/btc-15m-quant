@@ -159,6 +159,9 @@ class BinanceCVDWebsocket:
 class DataFeeds:
     def __init__(self):
         self._session: Optional[aiohttp.ClientSession] = None
+        self.kline_ws = BinanceKlineWebsocket()
+        self.funding_ws = BinanceFundingWebsocket()
+        self.oracle = ChainlinkOraclePolygon()
 
     async def start(self):
         timeout = aiohttp.ClientTimeout(total=8)
@@ -166,10 +169,14 @@ class DataFeeds:
             timeout=timeout,
             headers={"User-Agent": "btc-15m-quant/1.0"},
         )
+        await self.funding_ws.start()
+        await self.oracle.start()
 
     async def close(self):
         if self._session:
             await self._session.close()
+        self.funding_ws.stop()
+        self.oracle.stop()
 
     @property
     def session(self) -> aiohttp.ClientSession:
@@ -180,8 +187,8 @@ class DataFeeds:
     # ── Klines ────────────────────────────────────────────────────────────────
 
     async def get_klines(self, symbol: str, interval: str, limit: int) -> list[Candle]:
-        """Fetch klines with 3-tier fallback: Binance → Bybit → Coinbase."""
-        # Priority 1: Binance (works from NL Railway)
+        """Fetch klines: Priority 1 = Binance REST (works from NL Railway) → Fallbacks."""
+        # Priority 1: Binance REST
         url = f"{BINANCE_REST}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
         alt = f"{BINANCE_ALT}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
         raw = await self._fetch_json_with_fallback(url, alt)
@@ -642,3 +649,155 @@ class DataFeeds:
             except Exception as e:
                 log.warning(f"Fallback fetch failed ({alt}): {e}")
         return None
+import asyncio
+import json
+import logging
+import time
+
+log = logging.getLogger("oracles")
+
+class BinanceKlineWebsocket:
+    """Streams live 1m and 5m klines from Binance."""
+    def __init__(self):
+        self.klines_1m = []
+        self.klines_5m = []
+        self.running = False
+        self._task = None
+
+    async def start(self):
+        self._task = asyncio.create_task(self._run_forever())
+
+    async def _run_forever(self):
+        import websockets
+        self.running = True
+        uri = "wss://stream.binance.com:9443/ws/btcusdt@kline_1m/btcusdt@kline_5m"
+        while self.running:
+            try:
+                async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as ws:
+                    log.info("Binance Kline WS connected")
+                    while self.running:
+                        msg = await ws.recv()
+                        data = json.loads(msg)
+                        if "k" in data:
+                            k = data["k"]
+                            candle = {
+                                "ts_ms": int(k["t"]),
+                                "open": float(k["o"]),
+                                "high": float(k["h"]),
+                                "low": float(k["l"]),
+                                "close": float(k["c"]),
+                                "volume": float(k["v"])
+                            }
+                            # Update exactly the candle that matches the open time
+                            interval = k["i"]
+                            target_list = self.klines_1m if interval == "1m" else self.klines_5m
+                            
+                            # Maintain up to 50 candles
+                            if not target_list or target_list[-1]["ts_ms"] < candle["ts_ms"]:
+                                target_list.append(candle)
+                                if len(target_list) > 50:
+                                    target_list.pop(0)
+                            elif target_list[-1]["ts_ms"] == candle["ts_ms"]:
+                                target_list[-1] = candle
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.warning(f"Binance Kline WS error: {e} - reconnecting in 5s")
+                await asyncio.sleep(5)
+
+    def stop(self):
+        self.running = False
+        if self._task:
+            self._task.cancel()
+
+class BinanceFundingWebsocket:
+    """Streams live perp funding rate from Binance."""
+    def __init__(self):
+        self.funding_rate = 0.0
+        self.running = False
+        self._task = None
+
+    async def start(self):
+        self._task = asyncio.create_task(self._run_forever())
+
+    async def _run_forever(self):
+        import websockets
+        self.running = True
+        uri = "wss://fstream.binance.com/ws/btcusdt@markPrice"
+        while self.running:
+            try:
+                async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as ws:
+                    log.info("Binance Funding WS connected")
+                    while self.running:
+                        msg = await ws.recv()
+                        data = json.loads(msg)
+                        if "r" in data:
+                            self.funding_rate = float(data["r"])
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.warning(f"Binance Funding WS error: {e}")
+                await asyncio.sleep(5)
+
+    def get_rate(self) -> float:
+        return self.funding_rate
+
+    def stop(self):
+        self.running = False
+        if self._task:
+            self._task.cancel()
+
+class ChainlinkOraclePolygon:
+    """Tracks Chainlink BTC/USD oracle on Polygon for Binance lag detection."""
+    def __init__(self):
+        self.oracle_px = 0.0
+        self.last_update = 0
+        self.running = False
+        self._task = None
+
+    async def start(self):
+        self._task = asyncio.create_task(self._run_forever())
+
+    async def _run_forever(self):
+        from web3 import AsyncWeb3
+        from config import Config
+        self.running = True
+        
+        # BTC/USD on Polygon
+        contract_addr = "0xc907E116054Ad103354f2D350FD2514433D57F6f"
+        # minimal ABI for latestRoundData
+        abi = [{"inputs":[],"name":"latestRoundData","outputs":[{"internalType":"uint80","name":"roundId","type":"uint80"},{"internalType":"int256","name":"answer","type":"int256"},{"internalType":"uint256","name":"startedAt","type":"uint256"},{"internalType":"uint256","name":"updatedAt","type":"uint256"},{"internalType":"uint80","name":"answeredInRound","type":"uint80"}],"stateMutability":"view","type":"function"}]
+        
+        while self.running:
+            try:
+                rpc_url = Config.POLYGON_RPC_URL or "https://polygon-rpc.com"
+                w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(rpc_url))
+                contract = w3.eth.contract(address=contract_addr, abi=abi)
+                log.info(f"Chainlink Oracle tracker started ({rpc_url})")
+                
+                while self.running:
+                    try:
+                        data = await contract.functions.latestRoundData().call()
+                        # answer is data[1], updatedAt is data[3]
+                        self.oracle_px = float(data[1]) / 1e8
+                        self.last_update = int(data[3])
+                    except Exception as e:
+                        log.debug(f"Chainlink fetch error: {e}")
+                    # Poll efficiently since oracle only updates every ~27s or 0.5% deviation
+                    await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                log.warning(f"Chainlink Oracle setup error: {e}")
+                await asyncio.sleep(10)
+
+    def get_price(self) -> float:
+        return self.oracle_px
+
+    def get_last_update(self) -> int:
+        return self.last_update
+
+    def stop(self):
+        self.running = False
+        if self._task:
+            self._task.cancel()

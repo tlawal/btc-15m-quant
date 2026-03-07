@@ -77,6 +77,7 @@ class OrderBook:
     no_tick:        float = 0.01
     total_bid_size: float = 0.0
     total_ask_size: float = 0.0
+    fetch_ms:       int   = 0
 
 
 class PolymarketClient:
@@ -274,12 +275,13 @@ class PolymarketClient:
     async def get_order_books(
         self, yes_token_id: str, no_token_id: str
     ) -> OrderBook:
+        import time
         yes_ob, no_ob = await asyncio.gather(
             self._get_single_ob(yes_token_id),
             self._get_single_ob(no_token_id),
             return_exceptions=True,
         )
-        ob = OrderBook()
+        ob = OrderBook(fetch_ms=int(time.time() * 1000))
         if isinstance(yes_ob, dict):
             bids = yes_ob.get("bids", [])
             asks = yes_ob.get("asks", [])

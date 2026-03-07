@@ -78,6 +78,14 @@ class SignalResult:
     misprice_score:       float  = 0.0
     mtf_momentum_score:   float  = 0.0
     adx_stoch_boost:      float  = 0.0
+    spread_pressure_score:float  = 0.0
+    oracle_lag_score:     float  = 0.0
+    funding_rate_score:   float  = 0.0
+
+    # Oracle / Perps info
+    oracle_px:            Optional[float] = None
+    oracle_update_age:    Optional[float] = None
+    funding_rate:         Optional[float] = None
 
     # Edge
     edge_up:              Optional[float] = None
@@ -140,7 +148,11 @@ class SignalResult:
             "accum_ofi_score":    self.accum_ofi_score,
             "misprice_score":     self.misprice_score,
             "mtf_momentum_score": self.mtf_momentum_score,
-            "adx_stoch_boost": self.adx_stoch_boost,
+            "adx_stoch_boost":    self.adx_stoch_boost,
+            "spread_pressure_score": self.spread_pressure_score,
+            "oracle_lag_score":   self.oracle_lag_score,
+            "funding_rate_score": self.funding_rate_score,
+            "funding_rate":       self.funding_rate,
             "vpin_proxy":         self.vpin_proxy,
             "deep_imbalance":     self.deep_imbalance,
             "deep_ofi":           self.deep_ofi,
@@ -178,6 +190,9 @@ def compute_signals(
     cross_cvd_agree:  bool,
     cvd_total_vol:    float,
     prev_cvd_total_vol: float,
+    oracle_px:        Optional[float],
+    oracle_update_ts: Optional[int],
+    funding_rate:     Optional[float],
     # Polymarket
     yes_mid:          Optional[float],
     no_mid:           Optional[float],
@@ -364,14 +379,19 @@ def compute_signals(
         else:
             cvd_score = 0.0
 
-        # OFI
-        if deep_ofi > Config.OFI_STRONG:
+        # OFI (Phase 2 Normalized)
+        # Deep OFI is now divided by the total depth (BidSize + AskSize) to map [-1, 1].
+        # Ensures scalability regardless of asset price/volume magnitude.
+        depth_vol = bid_depth20 + ask_depth20
+        norm_ofi = deep_ofi / depth_vol if depth_vol > 0 else 0.0
+        
+        if norm_ofi > 0.4:
             ofi_score = 2.0
-        elif deep_ofi < -Config.OFI_STRONG:
+        elif norm_ofi < -0.4:
             ofi_score = -2.0
-        elif deep_ofi > 0:
+        elif norm_ofi > 0.15:
             ofi_score = 1.0
-        elif deep_ofi < 0:
+        elif norm_ofi < -0.15:
             ofi_score = -1.0
         else:
             ofi_score = 0.0
@@ -402,6 +422,64 @@ def compute_signals(
     signed += cvd_score * 0.7 + ofi_score + imbalance_score + flow_accel
 
     # ── Phase 2: NEW SIGNAL COMPONENTS ────────────────────────────────────────
+
+    # 0. Book Freshness Check (Handled in main.py, but log dependency here)
+    # 0.5 Oracle Lag Detection
+    oracle_lag_score = 0.0
+    if oracle_px and oracle_px > 0 and btc_price > 0:
+        res.oracle_px = oracle_px
+        if oracle_update_ts:
+            res.oracle_update_age = now_ts - oracle_update_ts
+            
+        divergence_pct = (btc_price - oracle_px) / oracle_px
+        # Oracle lags Binance. If Binance significantly higher, YES will resolve higher.
+        if divergence_pct > 0.0015:  # +0.15% (huge for stable BTC)
+            oracle_lag_score = 2.0
+        elif divergence_pct < -0.0015:
+            oracle_lag_score = -2.0
+    res.oracle_lag_score = oracle_lag_score
+    signed += oracle_lag_score
+
+    # 0.6 Spread Pressure (Polymarket bid/ask compression)
+    res.spread_pressure_score = 0.0
+    spread_compression = 0.0
+    if yes_ask is not None and yes_mid is not None and yes_mid > 0:
+        # Reconstruct approximate bid from mid and ask
+        yes_bid = (yes_mid * 2) - yes_ask
+        if yes_bid > 0 and yes_ask > yes_bid:
+            spread_pct = (yes_ask - yes_bid) / yes_bid
+            # Highly compressed spread (<1.5%) suggests imminent MM breakout support
+            if spread_pct < 0.015:
+                spread_compression = 1.0
+            elif spread_pct > 0.05: # wide spread = bad
+                spread_compression = -0.5
+
+    # Determine polarity based on model direction (if known) or microstructure
+    if spread_compression != 0.0:
+        # Boost up or down based on which side the book pressure is leaning
+        push_dir = 1.0 if imbalance_score > 0 else (-1.0 if imbalance_score < 0 else 0)
+        res.spread_pressure_score = spread_compression * push_dir
+    signed += res.spread_pressure_score
+
+    # 0.7 Perpetual Funding Rate Divergence
+    #    If funding rate is extremely high/low, it indicates crowded positioning.
+    #    When it diverges from price momentum, it's a strong mean-reversion signal.
+    res.funding_rate_score = 0.0
+    if funding_rate is not None:
+        res.funding_rate = funding_rate
+        # Funding rate threshold: > 0.01% per 8h (or whatever interval Binance sends via WS)
+        # Assuming typical 0.01% means normal. If highly elevated (e.g. > 0.03%), longs are paying huge premium.
+        # This implies market is overly long and vulnerable to downside squeeze.
+        if funding_rate > 0.0003: # High positive -> bearish
+            res.funding_rate_score = -1.5
+        elif funding_rate > 0.00015:
+            res.funding_rate_score = -0.5
+        elif funding_rate < -0.0003: # High negative -> bullish
+            res.funding_rate_score = 1.5
+        elif funding_rate < -0.00015:
+            res.funding_rate_score = 0.5
+            
+    signed += res.funding_rate_score
 
     # 1. Liquidity Vacuum Detection
     #    When one side of the book is dramatically thinner, price will likely

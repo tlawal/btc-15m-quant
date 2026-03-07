@@ -1,0 +1,426 @@
+2026-03-06T20:44:40  INFO      inference  No ML model found. Bot will run on Bayesian rules only.
+2026-03-06T20:44:40  INFO      oracles  Chainlink Oracle tracker started (https://polygon-mainnet.g.alchemy.com/v2/B-1hSUzCv6qm4ec0-RTNG)
+2026-03-06T20:44:40  INFO      state  State DB initialised
+2026-03-06T20:44:40  INFO      state  State loaded: streak=0 halted=False position=FLAT
+ENGINE START BUILD=v2.1-USDC-E-FIX RPC_SET=True USDC_ADDR=0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174
+2026-03-06T20:44:40  INFO      engine  Engine started. Ensuring Polymarket approvals...
+2026-03-06T20:44:40  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance/update?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:44:40  INFO      polymarket_client  Polymarket approvals OK
+2026-03-06T20:44:41  INFO      oracles  Binance Funding WS connected
+2026-03-06T20:44:41  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:44:41  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:44:41  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:44:41  INFO      engine  Session start balance recorded: $4.57 (20% limit = $0.91)
+2026-03-06T20:44:41  INFO      engine  Dashboard server started on port 8000
+2026-03-06T20:44:41  INFO      engine  BinanceCVD WebSocket started
+2026-03-06T20:44:41  INFO      engine  Ready. Starting main loop.
+2026-03-06T20:44:41  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:44:41  INFO      polymarket_client  No redeemable positions found (Data API)
+2026-03-06T20:44:42  INFO      oracles  Bybit CVD WebSocket connected (high volume)
+2026-03-06T20:44:42  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:44:42  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:44:42  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:44:45  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:44:45  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:44:45  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:44:45  INFO      logic  signal: score=8.93 dir=UP postUp=0.9278 edge=0.1339 regime=low monster=True gates=CLEAR
+2026-03-06T20:44:46  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+2026-03-06T20:44:46  INFO      engine  Position size below minimum (bal=4.57)
+2026-03-06T20:44:46  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772847886 | window=1772847000-1772847900 | rem=0.3min
+Strike=68226.02 | Price=68258.56 | Dist=32.5
+StrikeSource: coinbase_15m_open (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847000
+Vol: ATR5m=78.2 Regime=low ExpMove=19.7 MinRem=0.3
+Bayesian: z=1.6533 PostUp=0.9278 PostDown=0.0722
+Market: YES=0.74 NO=0.26
+Final: Up=0.9278 Down=0.0722
+Edge: 0.1339 (Min Req: 0.050)
+SignedScore: 8.9 (+3.0) (Min Req: 3).
+ScoreDelta: 2.986649882927386
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-3 | obi=0.2193 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: none
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 4347ms
+
+2026-03-06T20:44:57  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:44:57  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:44:57  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:45:00  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:45:00  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:45:01  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:45:01  INFO      logic  signal: score=-1.65 dir=DOWN postUp=0.1403 edge=0.8327 regime=low monster=False gates=['score_low=1.65_req=3.0', 'bb_squeeze=0.0029']
+2026-03-06T20:45:01  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+2026-03-06T20:45:01  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772847901 | window=1772847900-1772848800 | rem=0.1min
+Strike=68226.02 | Price=68216.93 | Dist=-9.1
+StrikeSource: coinbase_15m_open (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847000
+Vol: ATR5m=73.0 Regime=low ExpMove=8.4 MinRem=0.1
+Bayesian: z=-1.0791 PostUp=0.1403 PostDown=0.8597
+Market: YES=0.00 NO=0.00
+Final: Up=0.1403 Down=0.8597
+Edge: 0.8327 (Min Req: 0.050)
+SignedScore: -1.7 (-9.6) (Min Req: 3).
+ScoreDelta: -9.586649882927388
+PriceDelta: -41.63000000000466
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-0 | obi=1.0000 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: score_low=1.65_req=3.0, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 4863ms
+
+2026-03-06T20:45:11  INFO      engine  New 15m window: 1772847900 (01:45:00 UTC)
+2026-03-06T20:45:12  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:45:12  INFO      polymarket_client  No redeemable positions found (Data API)
+2026-03-06T20:45:12  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:45:12  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:45:12  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:45:13  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:45:13  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:45:13  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:45:13  INFO      logic  signal: score=-0.39 dir=DOWN postUp=0.4850 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.39_req=3.0', 'early_window_rem=14.8min', 'bb_squeeze=0.0029']
+2026-03-06T20:45:14  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+2026-03-06T20:45:14  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772847914 | window=1772847900-1772848800 | rem=14.8min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=125.6 MinRem=14.8
+Bayesian: z=0.0000 PostUp=0.4850 PostDown=0.5150
+Market: YES=0.48 NO=0.52
+Final: Up=0.4850 Down=0.5150
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: -0.4 (+1.3) (Min Req: 3).
+ScoreDelta: 1.2621998439031836
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-0 | obi=-0.0104 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.39_req=3.0, early_window_rem=14.8min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 2144ms
+
+2026-03-06T20:45:27  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:45:27  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:45:27  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:45:28  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:45:28  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:45:28  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:45:28  INFO      logic  signal: score=-0.87 dir=DOWN postUp=0.4550 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.87_req=3.0', 'early_window_rem=14.6min', 'bb_squeeze=0.0029']
+2026-03-06T20:45:28  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+
+--- PnL Dashboard ---
+Balance: $4.57
+Trades: 0
+Win Rate: 0%
+
+2026-03-06T20:45:28  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772847928 | window=1772847900-1772848800 | rem=14.6min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=124.5 MinRem=14.6
+Bayesian: z=0.0000 PostUp=0.4550 PostDown=0.5450
+Market: YES=0.46 NO=0.55
+Final: Up=0.4550 Down=0.5450
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: -0.9 (-0.5) (Min Req: 3).
+ScoreDelta: -0.4800000000000001
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-2 | obi=-0.0598 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.87_req=3.0, early_window_rem=14.6min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 2027ms
+
+2026-03-06T20:45:42  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:45:42  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:45:43  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:45:45  INFO      engine  Outcome logged for window 1772847000: BTC closed at 68237.03
+2026-03-06T20:45:46  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:45:46  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:45:47  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:45:47  INFO      logic  signal: score=-0.87 dir=DOWN postUp=0.4650 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.87_req=3.0', 'early_window_rem=14.3min', 'bb_squeeze=0.0029']
+2026-03-06T20:45:48  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+2026-03-06T20:45:48  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772847948 | window=1772847900-1772848800 | rem=14.3min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=123.4 MinRem=14.3
+Bayesian: z=0.0000 PostUp=0.4650 PostDown=0.5350
+Market: YES=0.46 NO=0.54
+Final: Up=0.4650 Down=0.5350
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: -0.9 (Min Req: 3).
+ScoreDelta: N/A
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-1 | obi=-0.0400 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.87_req=3.0, early_window_rem=14.3min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 6137ms
+
+2026-03-06T20:46:03  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:46:03  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:46:05  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:46:08  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:46:08  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:46:09  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:46:09  INFO      logic  signal: score=-0.87 dir=DOWN postUp=0.4550 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.87_req=3.0', 'early_window_rem=14.1min', 'bb_squeeze=0.0029']
+2026-03-06T20:46:09  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+2026-03-06T20:46:09  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772847969 | window=1772847900-1772848800 | rem=14.1min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=122.4 MinRem=14.1
+Bayesian: z=0.0000 PostUp=0.4550 PostDown=0.5450
+Market: YES=0.46 NO=0.55
+Final: Up=0.4550 Down=0.5450
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: -0.9 (Min Req: 3).
+ScoreDelta: N/A
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-1 | obi=-0.0396 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.87_req=3.0, early_window_rem=14.1min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 13031ms
+
+2026-03-06T20:46:12  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:46:12  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:46:13  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:46:15  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:46:15  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:46:16  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:46:16  INFO      logic  signal: score=-0.87 dir=DOWN postUp=0.4450 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.87_req=3.0', 'early_window_rem=13.8min', 'bb_squeeze=0.0029']
+2026-03-06T20:46:16  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+2026-03-06T20:46:16  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772847976 | window=1772847900-1772848800 | rem=13.8min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=121.3 MinRem=13.8
+Bayesian: z=0.0000 PostUp=0.4450 PostDown=0.5550
+Market: YES=0.45 NO=0.56
+Final: Up=0.4450 Down=0.5550
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: -0.9 (Min Req: 3).
+ScoreDelta: N/A
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-1 | obi=-0.0388 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.87_req=3.0, early_window_rem=13.8min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 4768ms
+
+2026-03-06T20:46:27  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:46:27  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:46:28  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:46:29  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:46:29  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:46:30  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:46:30  INFO      logic  signal: score=0.41 dir=DOWN postUp=0.4650 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.41_req=3.0', 'early_window_rem=13.6min', 'bb_squeeze=0.0029']
+2026-03-06T20:46:30  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+
+--- PnL Dashboard ---
+Balance: $4.57
+Trades: 0
+Win Rate: 0%
+
+2026-03-06T20:46:30  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772847990 | window=1772847900-1772848800 | rem=13.6min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=120.2 MinRem=13.6
+Bayesian: z=0.0000 PostUp=0.4650 PostDown=0.5350
+Market: YES=0.46 NO=0.54
+Final: Up=0.4650 Down=0.5350
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: 0.4 (+1.3) (Min Req: 3).
+ScoreDelta: 1.2799999999999998
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-1 | obi=-0.0401 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.41_req=3.0, early_window_rem=13.6min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 3721ms
+
+2026-03-06T20:46:42  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:46:42  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:46:42  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:46:44  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:46:44  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:46:44  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:46:44  INFO      logic  signal: score=-0.87 dir=DOWN postUp=0.4550 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.87_req=3.0', 'early_window_rem=13.3min', 'bb_squeeze=0.0029']
+2026-03-06T20:46:45  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+2026-03-06T20:46:45  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772848005 | window=1772847900-1772848800 | rem=13.3min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=119.1 MinRem=13.3
+Bayesian: z=0.0000 PostUp=0.4550 PostDown=0.5450
+Market: YES=0.46 NO=0.55
+Final: Up=0.4550 Down=0.5450
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: -0.9 (-1.3) (Min Req: 3).
+ScoreDelta: -1.2799999999999998
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-1 | obi=-0.0359 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.87_req=3.0, early_window_rem=13.3min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 3431ms
+
+2026-03-06T20:46:58  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:46:58  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:46:59  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:47:01  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:47:01  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:47:02  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:47:02  INFO      logic  signal: score=0.41 dir=DOWN postUp=0.4650 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.41_req=3.0', 'early_window_rem=13.1min', 'bb_squeeze=0.0029']
+2026-03-06T20:47:02  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+2026-03-06T20:47:02  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772848022 | window=1772847900-1772848800 | rem=13.1min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=117.9 MinRem=13.1
+Bayesian: z=0.0000 PostUp=0.4650 PostDown=0.5350
+Market: YES=0.46 NO=0.54
+Final: Up=0.4650 Down=0.5350
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: 0.4 (+1.3) (Min Req: 3).
+ScoreDelta: 1.2799999999999998
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-1 | obi=-0.0338 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.41_req=3.0, early_window_rem=13.1min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 5405ms
+
+2026-03-06T20:47:15  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:47:15  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:47:16  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:47:19  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:47:19  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:47:20  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:47:20  INFO      logic  signal: score=0.41 dir=DOWN postUp=0.4650 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.41_req=3.0', 'early_window_rem=12.8min', 'bb_squeeze=0.0029']
+2026-03-06T20:47:20  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+2026-03-06T20:47:20  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772848040 | window=1772847900-1772848800 | rem=12.8min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=116.8 MinRem=12.8
+Bayesian: z=0.0000 PostUp=0.4650 PostDown=0.5350
+Market: YES=0.46 NO=0.54
+Final: Up=0.4650 Down=0.5350
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: 0.4 (Min Req: 3).
+ScoreDelta: N/A
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-0 | obi=-0.0357 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.41_req=3.0, early_window_rem=12.8min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 8754ms
+
+2026-03-06T20:47:27  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&redeemable=true "HTTP/1.1 200 OK"
+2026-03-06T20:47:27  INFO      polymarket_client  Unclaimed positions: $0.00 (none found)
+2026-03-06T20:47:27  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b&limit=50 "HTTP/1.1 200 OK"
+2026-03-06T20:47:29  INFO      httpx  HTTP Request: GET https://clob.polymarket.com/balance-allowance?asset_type=COLLATERAL&signature_type=0 "HTTP/2 200 OK"
+2026-03-06T20:47:29  INFO      polymarket_client  get_margin: raw_balance=4567559 parsed_balance=4.567559 parsed_available=None
+2026-03-06T20:47:29  INFO      polymarket_client  wallet_usdc: USDC.e=$4.5676 native=$0.0000 total=$4.5676
+2026-03-06T20:47:29  INFO      logic  signal: score=0.41 dir=DOWN postUp=0.4650 edge=-0.0099 regime=low monster=False gates=['edge_insufficient=-0.0099_req=0.035', 'score_low=0.41_req=3.0', 'early_window_rem=12.6min', 'bb_squeeze=0.0029']
+2026-03-06T20:47:30  INFO      httpx  HTTP Request: GET https://data-api.polymarket.com/positions?user=0xe97898edd2210dd2e59a71742c6785f969734f7b "HTTP/1.1 200 OK"
+
+--- PnL Dashboard ---
+Balance: $4.57
+Trades: 0
+Win Rate: 0%
+
+2026-03-06T20:47:30  INFO      engine  
+=== BTC 15m Quant Engine ===
+Position: FLAT
+now=1772848050 | window=1772847900-1772848800 | rem=12.6min
+Strike=68216.93 | Price=68216.93 | Dist=0.0
+StrikeSource: binance_5m_close (locked=true)
+Polymarket: https://polymarket.com/event/btc-updown-15m-1772847900
+Vol: ATR5m=73.0 Regime=low ExpMove=115.7 MinRem=12.6
+Bayesian: z=0.0000 PostUp=0.4650 PostDown=0.5350
+Market: YES=0.46 NO=0.54
+Final: Up=0.4650 Down=0.5350
+Edge: -0.0099 (Min Req: 0.050)
+SignedScore: 0.4 (Min Req: 3).
+ScoreDelta: N/A
+PriceDelta: N/A
+Balance: USDC=4.57
+TP: price=0.97 timeRiskLow=0.85 maxLoss=0.08
+Micro: cvdS=1.2 | cvd=-0 | obi=-0.0268 | vpinProxy=0.0000 | deepImb=0.5000 | macd=-1.0
+Sizing: 0 (Min Notional: 5.75).
+Decision: NO_TRADE | Exec=false | Mode=none | Exit=HOLD
+SkipGates: edge_insufficient=-0.0099_req=0.035, score_low=0.41_req=3.0, early_window_rem=12.6min, bb_squeeze=0.0029
+REDEEM_READY_PREVIEW: 0
+RUNTIME: 3728ms
+
