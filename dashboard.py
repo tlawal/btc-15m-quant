@@ -51,7 +51,6 @@ async def debug_balance():
         "trading_halted": engine.state.trading_halted if engine and engine.state else None,
     }
 
-    # Try live balance fetch
     if engine and engine.pm:
         try:
             wallet = await engine.pm.get_wallet_usdc_balance()
@@ -63,6 +62,30 @@ async def debug_balance():
             result["live_margin"] = margin
         except Exception as e:
             result["live_margin_error"] = str(e)
+
+    # Check heartbeat file
+    hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
+    result["hb_path"] = hb_path
+    result["hb_exists"] = os.path.exists(hb_path)
+    if result["hb_exists"]:
+        result["hb_mtime"] = os.path.getmtime(hb_path)
+        try:
+            with open(hb_path, "r") as f:
+                content = f.read()
+                result["hb_content_len"] = len(content)
+                result["hb_content_preview"] = content[:200]
+        except Exception as e:
+            result["hb_read_error"] = str(e)
+            
+    # Check general logs if we can
+    log_path = "/data/structured_logs.json" if os.path.exists("/data") else "structured_logs.json"
+    if os.path.exists(log_path):
+        try:
+            with open(log_path, "r") as f:
+                lines = f.readlines()
+                result["last_logs"] = lines[-5:]
+        except Exception:
+            pass
 
     return result
 
