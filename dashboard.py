@@ -3,7 +3,7 @@ import json
 import os
 import time
 import logging
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -12,6 +12,31 @@ log = logging.getLogger("dashboard")
 start_time = time.time()
 
 app = FastAPI()
+
+# ── Phase 5: WebSocket connection manager ────────────────────────────────────
+class ConnectionManager:
+    def __init__(self):
+        self.active: list[WebSocket] = []
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.active.append(ws)
+
+    def disconnect(self, ws: WebSocket):
+        if ws in self.active:
+            self.active.remove(ws)
+
+    async def broadcast(self, data: dict):
+        dead = []
+        for ws in self.active:
+            try:
+                await ws.send_json(data)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.disconnect(ws)
+
+ws_manager = ConnectionManager()
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _templates_dir = os.path.join(_HERE, "templates")
 templates = Jinja2Templates(directory=_templates_dir)
@@ -239,6 +264,116 @@ async def get_metrics():
     metrics["bvol_multiplier"] = signal.get("bvol_multiplier")
     
     return metrics
+
+# ── Phase 5 #25: WebSocket real-time push ─────────────────────────────────────
+@app.websocket("/ws")
+async def websocket_endpoint(websocket: WebSocket):
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive; client can send pings
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket)
+
+
+async def broadcast_cycle_update(data: dict):
+    """Called from engine after each cycle to push live data to all WS clients."""
+    await ws_manager.broadcast(data)
+
+
+# ── Phase 5 #26: Per-signal accuracy metrics (7-day rolling) ─────────────────
+@app.get("/api/signal-accuracy")
+async def signal_accuracy():
+    if not engine:
+        return JSONResponse({"status": "loading"}, status_code=503)
+    accuracies = engine.optimizer.get_signal_accuracies()
+    disabled = list(engine.optimizer.get_disabled_signals())
+    return {
+        "signals": accuracies,
+        "disabled_signals": disabled,
+        "kelly_multiplier": engine.optimizer.get_kelly_multiplier(),
+    }
+
+
+# ── Phase 5 #27: Trade P&L attribution by signal ────────────────────────────
+@app.get("/api/attribution")
+async def trade_attribution():
+    if not engine or not engine.state:
+        return JSONResponse({"status": "loading"}, status_code=503)
+
+    closed = [t for t in engine.state.trade_history if t.outcome in ("WIN", "LOSS")]
+    if not closed:
+        return {"message": "No closed trades yet", "attributions": {}}
+
+    # Attribution: for each signal, compute avg PnL when signal was positive vs negative
+    from collections import defaultdict
+    signal_pnl = defaultdict(lambda: {"pos_pnl": [], "neg_pnl": [], "neutral": 0})
+
+    for t in closed:
+        feats = getattr(engine.state, "entry_features", {})
+        pnl = t.pnl or 0.0
+        for sig_name in ["ema_score", "vwap_score", "rsi_score", "macd_score",
+                         "cvd_score", "ofi_score", "tob_score", "cvd_velocity_score",
+                         "pm_flow_score", "liq_vacuum_score", "oracle_lag_score",
+                         "funding_rate_score", "misprice_score"]:
+            val = feats.get(sig_name, 0.0)
+            if val > 0:
+                signal_pnl[sig_name]["pos_pnl"].append(pnl)
+            elif val < 0:
+                signal_pnl[sig_name]["neg_pnl"].append(pnl)
+            else:
+                signal_pnl[sig_name]["neutral"] += 1
+
+    result = {}
+    for sig, data in signal_pnl.items():
+        pos = data["pos_pnl"]
+        neg = data["neg_pnl"]
+        result[sig] = {
+            "pos_avg_pnl": round(sum(pos) / len(pos), 4) if pos else None,
+            "pos_count": len(pos),
+            "neg_avg_pnl": round(sum(neg) / len(neg), 4) if neg else None,
+            "neg_count": len(neg),
+            "neutral_count": data["neutral"],
+        }
+    return {"attributions": result}
+
+
+# ── Phase 5 #28: Regime performance breakdown ────────────────────────────────
+@app.get("/api/regime-performance")
+async def regime_performance():
+    if not engine:
+        return JSONResponse({"status": "loading"}, status_code=503)
+    try:
+        metrics = await engine.state_mgr.calculate_performance_metrics()
+        return {"regimes": metrics.get("regimes", {}), "overall": metrics}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Phase 5 #29: Order fill analytics ────────────────────────────────────────
+@app.get("/api/fill-analytics")
+async def fill_analytics():
+    if not engine or not engine.state:
+        return JSONResponse({"status": "loading"}, status_code=503)
+
+    trades = engine.state.trade_history
+    if not trades:
+        return {"message": "No trades yet"}
+
+    filled = [t for t in trades if t.outcome != "OPEN"]
+    slippages = [t.slippage for t in filled if t.slippage is not None]
+
+    result = {
+        "total_orders": len(trades),
+        "filled": len(filled),
+        "fill_rate": round(len(filled) / len(trades), 3) if trades else 0,
+        "avg_slippage_pct": round(sum(slippages) / len(slippages) * 100, 4) if slippages else None,
+        "max_slippage_pct": round(max(slippages) * 100, 4) if slippages else None,
+        "min_slippage_pct": round(min(slippages) * 100, 4) if slippages else None,
+    }
+    return result
+
 
 async def run_dashboard(engine_instance, port=8000):
     global engine

@@ -35,6 +35,7 @@ from dashboard import run_dashboard
 from utils import (
     setup_logging, send_telegram, Timer,
     fmt_entry, fmt_exit, fmt_halt, fmt_status, fmt_engine_block, fmt_pnl_dashboard,
+    fmt_performance_summary, fmt_signal_decay_alert,
     current_window_start, minutes_remaining as calc_minutes_remaining,
     window_start_iso, window_end_iso, AlertTier, json_logger
 )
@@ -457,6 +458,17 @@ class Engine:
         if funding_rate is not None:
             log.debug(f"Perps Funding Rate: {funding_rate:.5f}")
 
+        # ── Phase 3: Polymarket trade flow ──────────────────────────────────────
+        pm_net_flow = 0.0
+        if self.state.last_condition_id and self.pm.can_trade:
+            try:
+                pm_trades = await self.pm.get_market_trades(
+                    self.state.last_condition_id, since_ts=win_start
+                )
+                pm_net_flow = pm_trades.get("net_flow", 0.0)
+            except Exception as e:
+                log.debug(f"PM trade flow fetch: {e}")
+
         # Phase 4: Strategy optimization (decay detection + dynamic thresholds)
         score_offset, edge_offset = self.optimizer.detect_decay()
 
@@ -476,6 +488,9 @@ class Engine:
             deep_ofi          = book.deep_ofi,
             microprice        = book.microprice,
             is_stale_micro    = is_stale_micro,
+            tob_imbalance     = book.tob_imbalance,
+            cvd_velocity      = self.feeds.cvd_ws.get_cvd_slope(),
+            pm_net_flow       = pm_net_flow,
             cvd_delta         = cvd_delta_for_signals,
             true_cvd          = self.state.cvd,
             accumulated_ofi   = self.state.accumulated_ofi,
@@ -618,6 +633,34 @@ class Engine:
         if self._status_counter % 4 == 0: # Print every ~1 min
             print(fmt_pnl_dashboard(self.state.trade_history, balance))
 
+        # Phase 5 #30: Hourly Telegram performance summary (~240 cycles = 1hr)
+        if self._status_counter % 240 == 0 and self._status_counter > 0:
+            try:
+                closed = [t for t in self.state.trade_history if t.outcome in ("WIN", "LOSS")]
+                wins = sum(1 for t in closed if t.outcome == "WIN")
+                wr = wins / len(closed) if closed else 0.0
+                pnls = [t.pnl for t in closed if t.pnl is not None]
+                total_pnl = sum(pnls)
+                await send_telegram(
+                    self.feeds.session,
+                    fmt_performance_summary(
+                        win_rate=wr, total_trades=len(closed),
+                        total_pnl=total_pnl, balance=balance,
+                        sharpe=0.0, kelly_mult=self.optimizer.get_kelly_multiplier(),
+                    )
+                )
+                # Alert on signal decay
+                decayed = list(self.optimizer.get_disabled_signals())
+                if decayed:
+                    accuracies = self.optimizer.get_signal_accuracies()
+                    await send_telegram(
+                        self.feeds.session,
+                        fmt_signal_decay_alert(decayed, accuracies),
+                        tier=AlertTier.WARN
+                    )
+            except Exception as e:
+                log.debug(f"Hourly summary telegram: {e}")
+
         # Heartbeat file
         await self._write_heartbeat(now_ts, balance, runtime_ms, margin=margin, wallet_usdc=wallet_usdc, sig=sig)
 
@@ -658,6 +701,26 @@ class Engine:
         # ── Update Prometheus Metrics ─────────────────────────────────────────
         metrics_exporter.update_metrics(self.state, asdict(self.state), sig)
 
+        # ── Phase 5: WebSocket push to dashboard clients ─────────────────────
+        try:
+            from dashboard import broadcast_cycle_update
+            await broadcast_cycle_update({
+                "ts": now_ts,
+                "btc_price": btc_price,
+                "balance": balance,
+                "score": sig.signed_score,
+                "direction": sig.direction,
+                "posterior_up": sig.posterior_final_up,
+                "edge": sig.target_edge,
+                "regime": sig.regime,
+                "monster": sig.monster_signal,
+                "gates": sig.skip_gates,
+                "min_rem": min_rem,
+                "position": self.state.held_position.side,
+            })
+        except Exception:
+            pass  # WS broadcast is best-effort
+
         # ── Save state ────────────────────────────────────────────────────────
         await self.state_mgr.save(self.state)
 
@@ -692,8 +755,9 @@ class Engine:
                 for c in klines_5m:
                     if c.ts_ms >= win_start_ms:
                         return {"strike": c.open, "source": "binance_5m_open"}
-                # If no kline exactly at window start, use the latest kline's close
-                return {"strike": klines_5m[-1].close, "source": "binance_5m_close"}
+                # Use the open of the kline nearest to (but before) window start
+                best = min(klines_5m, key=lambda c: abs(c.ts_ms - win_start_ms))
+                return {"strike": best.open, "source": "binance_5m_nearest_open"}
         except Exception as e:
             log.debug(f"Strike P3 (Binance 5m) failed: {e}")
 
@@ -701,15 +765,10 @@ class Engine:
         if self.state.prev_hl_mid:
             return {"strike": self.state.prev_hl_mid, "source": "binance_mid_prev"}
 
-        # Priority 5: Live BTC price (last resort)
-        try:
-            p = await self.feeds.get_btc_price()
-            if p:
-                log.warning(f"Strike fallback to live BTC price: ${p:.2f}")
-                return {"strike": p, "source": "live_price_fallback"}
-        except Exception as e:
-            log.debug(f"Strike P5 (live price) failed: {e}")
-
+        # Priority 5: REFUSED — never use live/current price as strike
+        # Live price contaminates the signal by removing the distance-from-open
+        # that the entire Bayesian framework depends on.
+        log.error("All strike sources failed — cannot determine window open price")
         return {"strike": None, "source": "none"}
 
     # ── Binance book fetch ─────────────────────────────────────────────────────
@@ -783,7 +842,8 @@ class Engine:
                         tr.outcome    = outcome
                         break
                 
-                # Phase 4: Record closed trade to DB
+                # Phase 4: Record closed trade to DB + optimizer feedback
+                entry_feats = getattr(self.state, "entry_features", None)
                 await self.state_mgr.record_closed_trade(
                     ts=int(time.time()),
                     market_slug=self.state.last_market_slug or "unknown",
@@ -793,9 +853,13 @@ class Engine:
                     pnl_usd=(actual_px - entry_px) * pos.size,
                     outcome_win=1 if outcome == "WIN" else 0,
                     regime=getattr(self.state, "entry_regime", None),
-                    features=getattr(self.state, "entry_features", None),
+                    features=entry_feats,
                     kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
                 )
+                # Phase 4: Feed optimizer for signal decay + Sharpe-Kelly
+                if entry_feats:
+                    self.optimizer.record_signal_outcome(entry_feats, outcome == "WIN")
+                self.optimizer.record_trade_pnl(pnl_pct)
 
                 # Notify
                 margin = await self.pm.get_margin()
@@ -1157,7 +1221,8 @@ class Engine:
             loss_streak = self.state.loss_streak,
             monster_signal = sig.monster_signal,
             win_rate    = win_rate,
-            profit_factor = profit_factor
+            profit_factor = profit_factor,
+            kelly_multiplier = self.optimizer.get_kelly_multiplier(),
         )
         if not position_usd:
             log.info(f"Position size below minimum (bal={balance:.2f})")
@@ -1277,6 +1342,11 @@ class Engine:
                 "min_rem":    round(min_rem, 2),
                 "window":     self.state.last_window_start_sec,
                 "strike":     self.state.locked_strike_price,
+                "direction":  sig.direction,
+                "monster":    sig.monster_signal,
+                "regime":     sig.regime,
+                "gates":      sig.skip_gates,
+                "kelly_mult": self.optimizer.get_kelly_multiplier(),
             })
             
             # Phase 5: Structured JSON logging

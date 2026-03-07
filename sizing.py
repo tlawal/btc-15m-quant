@@ -18,6 +18,7 @@ def compute_position_size(
     monster_signal: bool = False,
     win_rate:       Optional[float] = None,
     profit_factor:  Optional[float] = None,
+    kelly_multiplier: float = 1.0,
 ) -> Optional[float]:
     """
     Returns position size in USD, or None if below minimum.
@@ -45,8 +46,8 @@ def compute_position_size(
     q = 1.0 - p
     full_kelly = max(0.0, (p * b - q) / b) if b > 0 else 0.0
 
-    # True quarter-Kelly
-    quarter_kelly = full_kelly * 0.25
+    # True quarter-Kelly, scaled by Sharpe-calibrated multiplier
+    quarter_kelly = full_kelly * 0.25 * kelly_multiplier
 
     # Position = fraction of bankroll to bet, capped at risk budget
     position_usd = balance * quarter_kelly

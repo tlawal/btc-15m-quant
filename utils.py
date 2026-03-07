@@ -172,6 +172,28 @@ def fmt_status(
     )
 
 
+def fmt_performance_summary(
+    win_rate: float, total_trades: int, total_pnl: float,
+    balance: float, sharpe: float, kelly_mult: float,
+) -> str:
+    return (
+        f"📈 <b>PERFORMANCE SUMMARY</b>\n"
+        f"Trades: {total_trades} | Win Rate: {win_rate*100:.1f}%\n"
+        f"Total PnL: ${total_pnl:.2f} | Sharpe: {sharpe:.2f}\n"
+        f"Kelly Mult: {kelly_mult:.2f}x | Balance: ${balance:.2f}"
+    )
+
+
+def fmt_signal_decay_alert(decayed_signals: list[str], accuracies: dict) -> str:
+    lines = [f"⚠️ <b>SIGNAL DECAY DETECTED</b>"]
+    for sig in decayed_signals[:5]:
+        stats = accuracies.get(sig, {})
+        acc = stats.get("accuracy", 0)
+        n = stats.get("n_samples", 0)
+        lines.append(f"  {sig}: {acc*100:.1f}% accuracy (n={n})")
+    return "\n".join(lines)
+
+
 # ── Window helpers ────────────────────────────────────────────────────────────
 
 def current_window_start(now_ts: Optional[int] = None) -> int:

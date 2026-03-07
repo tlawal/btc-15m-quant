@@ -50,6 +50,7 @@ class DeepBook:
     mid:            Optional[float] = None
     microprice:     Optional[float] = None
     tob_crossed:    bool = False
+    tob_imbalance:  float = 0.5   # best_bid_sz / (best_bid_sz + best_ask_sz)
     is_stale:       bool = False
 
 
@@ -77,6 +78,7 @@ class BinanceCVDWebsocket:
         self.running = False
         self._task = None
         self.cvd_history = []  # rolling buffer for slope calculation
+        self.cvd_timestamps = []  # timestamps for linear regression
 
     async def start(self):
         """Start the WebSocket in the background with auto-reconnect."""
@@ -118,8 +120,10 @@ class BinanceCVDWebsocket:
 
                                 # Update rolling history for slope
                                 self.cvd_history.append(self.cvd)
-                                if len(self.cvd_history) > 10:
+                                self.cvd_timestamps.append(trade_ts)
+                                if len(self.cvd_history) > 30:
                                     self.cvd_history.pop(0)
+                                    self.cvd_timestamps.pop(0)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -131,10 +135,23 @@ class BinanceCVDWebsocket:
         return self.cvd
 
     def get_cvd_slope(self) -> float:
-        """Return simple 2-step slope from rolling CVD history."""
-        if len(self.cvd_history) < 3:
+        """Return linear regression slope of CVD over rolling window.
+        Units: CVD change per second (velocity)."""
+        n = len(self.cvd_history)
+        if n < 5:
             return 0.0
-        return self.cvd_history[-1] - self.cvd_history[-3]
+        # Use timestamps for proper time-weighted regression
+        ts = self.cvd_timestamps[-n:]
+        vals = self.cvd_history[-n:]
+        t0 = ts[0]
+        xs = [(t - t0) / 1000.0 for t in ts]  # seconds since start
+        mean_x = sum(xs) / n
+        mean_y = sum(vals) / n
+        num = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, vals))
+        den = sum((x - mean_x) ** 2 for x in xs)
+        if den < 1e-9:
+            return 0.0
+        return num / den  # CVD per second
 
     def get_volumes(self) -> tuple:
         """Return (cvd, buy_vol, sell_vol)."""
@@ -146,6 +163,7 @@ class BinanceCVDWebsocket:
         self.buy_vol = 0.0
         self.sell_vol = 0.0
         self.cvd_history.clear()
+        self.cvd_timestamps.clear()
         self.window_start_ms = window_start_ms
 
     def stop(self):
@@ -513,6 +531,13 @@ class DataFeeds:
 
         tob_crossed = bool(best_bid_px and best_ask_px and best_bid_px >= best_ask_px)
 
+        # TOB imbalance: level-1 size ratio (separate from 20-level deep_imbalance)
+        tob_imbalance = 0.5
+        if best_bid_sz and best_ask_sz:
+            tob_total = best_bid_sz + best_ask_sz
+            if tob_total > 0:
+                tob_imbalance = best_bid_sz / tob_total
+
         return DeepBook(
             bid_depth20    = bid20,
             ask_depth20    = ask20,
@@ -526,6 +551,7 @@ class DataFeeds:
             mid            = mid,
             microprice     = microprice,
             tob_crossed    = tob_crossed,
+            tob_imbalance  = tob_imbalance,
             is_stale       = False,
         )
 

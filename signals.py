@@ -62,6 +62,11 @@ class SignalResult:
     imbalance_score:      float  = 0.0
     flow_accel_score:     float  = 0.0
 
+    # Phase 3: new signal scores
+    tob_score:            float  = 0.0
+    cvd_velocity_score:   float  = 0.0
+    pm_flow_score:        float  = 0.0
+
     # Phase 2: new signal scores
     liq_vacuum_score:     float  = 0.0
     bb_position_score:    float  = 0.0
@@ -146,6 +151,9 @@ class SignalResult:
             "oracle_lag_score":   self.oracle_lag_score,
             "funding_rate_score": self.funding_rate_score,
             "funding_rate":       self.funding_rate,
+            "tob_score":          self.tob_score,
+            "cvd_velocity_score": self.cvd_velocity_score,
+            "pm_flow_score":      self.pm_flow_score,
             "vpin_proxy":         self.vpin_proxy,
             "deep_imbalance":     self.deep_imbalance,
             "deep_ofi":           self.deep_ofi,
@@ -185,13 +193,17 @@ def compute_signals(
     oracle_px:        Optional[float],
     oracle_update_ts: Optional[int],
     funding_rate:     Optional[float],
+    # Phase 3: TOB + CVD velocity + Polymarket flow
+    tob_imbalance:    float = 0.5,
+    cvd_velocity:     float = 0.0,
+    pm_net_flow:      float = 0.0,
     # Polymarket
-    yes_mid:          Optional[float],
-    no_mid:           Optional[float],
-    yes_ask:          Optional[float],
-    no_ask:           Optional[float],
-    total_bid_size:   float,
-    total_ask_size:   float,
+    yes_mid:          Optional[float] = None,
+    no_mid:           Optional[float] = None,
+    yes_ask:          Optional[float] = None,
+    no_ask:           Optional[float] = None,
+    total_bid_size:   float = 0.0,
+    total_ask_size:   float = 0.0,
     # Phase 5
     inference_engine: Optional[object] = None,
     # Phase 4 Optimization
@@ -235,11 +247,29 @@ def compute_signals(
         res.posterior_fair_up   = normal_cdf(res.z_score)
         res.posterior_fair_down = 1.0 - res.posterior_fair_up
 
+    # ── Time-to-expiry probability decay ──────────────────────────────────────
+    # As window approaches expiry, posterior should converge toward observed outcome.
+    # With < 2 min remaining, the z-score becomes more deterministic — amplify conviction.
+    # With > 10 min remaining, dampen conviction toward 0.5 (uncertainty is high).
+    if res.posterior_fair_up is not None and minutes_remaining > 0:
+        window_min = Config.WINDOW_SEC / 60.0
+        t_frac = minutes_remaining / window_min  # 1.0 at start, 0.0 at expiry
+        if t_frac > 0.67:  # first third: dampen toward 0.5
+            dampen = 0.7 + 0.3 * (1.0 - t_frac) / 0.33  # 0.7 at start → 1.0 at 67%
+            res.posterior_fair_up = 0.5 + (res.posterior_fair_up - 0.5) * dampen
+            res.posterior_fair_down = 1.0 - res.posterior_fair_up
+        elif t_frac < 0.20:  # last 20%: amplify conviction
+            amplify = 1.0 + 0.3 * (0.20 - t_frac) / 0.20  # 1.0 at 20% → 1.3 at expiry
+            raw = 0.5 + (res.posterior_fair_up - 0.5) * amplify
+            res.posterior_fair_up = clamp(raw, 1e-6, 1 - 1e-6)
+            res.posterior_fair_down = 1.0 - res.posterior_fair_up
+
     # Bayesian update: blend fair value with market prior in logit space.
+    # Signal weight 0.7 (was 0.5) — our model should dominate over market noise.
     if res.posterior_fair_up is not None and yes_mid is not None:
         mkt_prior = clamp(yes_mid, 0.01, 0.99)
         signal_lo = logit(res.posterior_fair_up)
-        po        = logit(mkt_prior) + 0.5 * signal_lo
+        po        = logit(mkt_prior) + 0.7 * signal_lo
         up        = clamp(inv_logit(po), 1e-6, 1 - 1e-6)
         res.posterior_final_up   = up
         res.posterior_final_down = 1.0 - up
@@ -419,8 +449,37 @@ def compute_signals(
     res.imbalance_score  = imbalance_score
     res.flow_accel_score = flow_accel
 
-    # Weighted micro
+    # ── Phase 3: TOB imbalance (level-1, separate from 20-level depth) ────────
+    tob_score = 0.0
+    if tob_imbalance > 0.65:
+        tob_score = 1.5
+    elif tob_imbalance < 0.35:
+        tob_score = -1.5
+    elif tob_imbalance > 0.55:
+        tob_score = 0.5
+    elif tob_imbalance < 0.45:
+        tob_score = -0.5
+    res.tob_score = tob_score
+
+    # ── Phase 3: CVD velocity (linear regression slope, units: BTC/sec) ─────
+    cvd_vel_score = 0.0
+    if abs(cvd_velocity) > 0.5:        # strong velocity
+        cvd_vel_score = 2.0 if cvd_velocity > 0 else -2.0
+    elif abs(cvd_velocity) > 0.15:     # moderate velocity
+        cvd_vel_score = 1.0 if cvd_velocity > 0 else -1.0
+    res.cvd_velocity_score = cvd_vel_score
+
+    # ── Phase 3: Polymarket trade flow signal ──────────────────────────────────
+    pm_flow_score = 0.0
+    if abs(pm_net_flow) > 50:        # strong directional flow
+        pm_flow_score = 1.5 if pm_net_flow > 0 else -1.5
+    elif abs(pm_net_flow) > 20:      # moderate flow
+        pm_flow_score = 0.7 if pm_net_flow > 0 else -0.7
+    res.pm_flow_score = pm_flow_score
+
+    # Weighted micro (includes Phase 3 TOB + CVD velocity + PM flow)
     signed += cvd_score * 0.7 + ofi_score + imbalance_score + flow_accel
+    signed += tob_score * 0.6 + cvd_vel_score * 0.8 + pm_flow_score * 0.5
 
     # ── Phase 2: NEW SIGNAL COMPONENTS ────────────────────────────────────────
 
@@ -552,6 +611,19 @@ def compute_signals(
     # Stale micro penalty
     if is_stale_micro and abs(signed) < 5.0:
         signed *= 0.8
+
+    # ── Phase 3: Window-specific signal calibration ───────────────────────────
+    # Early in the window (first 2 min): signals are noisy, dampen non-micro scores.
+    # Late in the window (last 3 min): micro signals dominate, boost them.
+    window_min = Config.WINDOW_SEC / 60.0
+    t_frac = minutes_remaining / window_min if window_min > 0 else 0.5
+    if t_frac > 0.87:  # first ~2 min of 15 min window
+        # Dampen all technical scores but preserve micro
+        signed *= 0.75
+    elif t_frac < 0.20:  # last ~3 min
+        # Late phase: micro signals are more predictive — boost their contribution
+        micro_boost = (tob_score * 0.6 + cvd_vel_score * 0.8) * 0.3  # 30% extra
+        signed += micro_boost
 
     # Apply belief-vol multiplier
     signed *= res.bvol_multiplier

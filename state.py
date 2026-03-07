@@ -62,6 +62,7 @@ class TradeRecord:
     score: float
     window: int
     slippage: Optional[float] = None
+    size: Optional[float] = None
 
 
 @dataclass
