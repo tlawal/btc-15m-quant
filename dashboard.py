@@ -101,6 +101,30 @@ async def debug_balance():
 
     return result
 
+@app.get("/api/logs")
+async def get_historical_logs(limit: int = 240):
+    """
+    Returns the last N log entries from structured_logs.json.
+    1 hour = 240 cycles (15s per cycle).
+    """
+    log_path = "/data/structured_logs.json" if os.path.exists("/data") else "structured_logs.json"
+    if not os.path.exists(log_path):
+        return JSONResponse(status_code=404, content={"error": "Log file not found"})
+    
+    entries = []
+    try:
+        # Read from end of file efficiently or readlines and slice
+        with open(log_path, "r") as f:
+            lines = f.readlines()
+            for line in lines[-limit:]:
+                try:
+                    entries.append(json.loads(line))
+                except:
+                    pass
+        return {"count": len(entries), "logs": entries}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
+
 # Shared state reference set by the Engine
 engine = None
 
