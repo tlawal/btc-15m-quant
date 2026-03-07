@@ -237,6 +237,8 @@ class Engine:
             try:
                 await self._cycle()
             except Exception as e:
+                import traceback
+                self.last_cycle_error = traceback.format_exc()
                 log.exception(f"Cycle error: {e}")
             elapsed = time.monotonic() - t0
             sleep   = max(0.0, Config.LOOP_INTERVAL_SEC - elapsed)

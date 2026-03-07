@@ -49,6 +49,7 @@ async def debug_balance():
         "private_key_set": bool(Config.POLYMARKET_PRIVATE_KEY),
         "can_trade": engine.pm.can_trade if engine else None,
         "trading_halted": engine.state.trading_halted if engine and engine.state else None,
+        "last_cycle_error": getattr(engine, "last_cycle_error", None),
     }
 
     if engine and engine.pm:
