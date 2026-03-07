@@ -5,6 +5,7 @@ Utilities: structured logging setup, Telegram alerts, and small helpers.
 import logging
 import sys
 import time
+import os
 from typing import Optional
 import aiohttp
 
