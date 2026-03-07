@@ -161,14 +161,52 @@ async def read_root(request: Request):
     try:
         return templates.TemplateResponse("index.html", {"request": request})
     except Exception:
-        log.exception("Failed to render index.html from templates dir %s", _templates_dir)
-    return HTMLResponse(
-        "<html><body>"
-        "<h2>Dashboard template missing</h2>"
-        "<p>The API is up. The UI template <code>templates/index.html</code> was not found in the runtime container.</p>"
-        "<p>Try visiting <code>/api/metrics</code> instead, or ensure the templates folder is deployed.</p>"
-        "</body></html>"
-    )
+        log.warning("Templates not found, serving inline fallback UI")
+        return HTMLResponse("""
+        <html>
+        <head>
+            <title>BTC Quant - Emergency UI</title>
+            <style>
+                body { background: #0f172a; color: #f8fafc; font-family: monospace; padding: 20px; }
+                .card { background: #1e293b; border-radius: 8px; padding: 20px; border: 1px solid #334155; }
+                pre { background: #000; padding: 10px; border-radius: 4px; overflow: auto; }
+                .status { color: #10b981; font-weight: bold; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h2>📊 BTC Quant - Emergency Dashboard</h2>
+                <p>Status: <span id="status" class="status">Loading...</span></p>
+                <p>Build: <span id="build">--</span> | DB: <span id="db">--</span></p>
+                <hr style="border-color: #334155">
+                <h4>Live Metrics</h4>
+                <pre id="metrics">Waiting for data...</pre>
+                <h4>Recent Logs</h4>
+                <pre id="logs">Waiting for logs...</pre>
+            </div>
+            <script>
+                async function update() {
+                    try {
+                        const r = await fetch('/api/metrics');
+                        const data = await r.json();
+                        document.getElementById('status').innerText = data.status || 'Running';
+                        document.getElementById('build').innerText = data.version || 'v2.2';
+                        document.getElementById('db').innerText = data.db_url || 'default';
+                        document.getElementById('metrics').innerText = JSON.stringify(data, null, 2);
+                    } catch(e) { document.getElementById('status').innerText = 'API Error'; }
+                    
+                    try {
+                        const r2 = await fetch('/api/logs?limit=10');
+                        const data2 = await r2.json();
+                        document.getElementById('logs').innerText = data2.logs.map(l => `[${l.type}] ${JSON.stringify(l.data)}`).join('\\n');
+                    } catch(e) {}
+                }
+                setInterval(update, 3000);
+                update();
+            </script>
+        </body>
+        </html>
+        """)
 
 @app.post("/api/kill")
 async def kill_switch(request: Request):
@@ -389,7 +427,7 @@ async def run_dashboard(engine_instance, port=8000):
     global engine
     engine = engine_instance
     import uvicorn
-    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="error", log_config=None)
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info", log_config=None)
     server = uvicorn.Server(config)
     
     # We must run `serve` as a task, but await it so it occupies this background task

@@ -92,8 +92,8 @@ async def send_telegram(
 class StructuredJSONLogger:
     """Phase 5: Structured JSON logging to persistent storage on /data."""
     def __init__(self, log_dir="/data"):
-        # Fallback to local if /data doesn't exist
-        self.log_dir = log_dir if os.path.exists(log_dir) else "."
+        self.log_dir = log_dir
+        os.makedirs(self.log_dir, exist_ok=True)
         self.filepath = os.path.join(self.log_dir, "structured_logs.json")
 
     def log(self, event_type: str, data: dict):

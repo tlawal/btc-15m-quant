@@ -11,3 +11,7 @@ tcp_proxy_port = 8000
 healthcheck_path = "/health"
 healthcheck_timeout = 5
 healthcheck_interval = 30
+
+[[mounts]]
+mountPath = "/data"
+volume = "btc-quant-storage"
