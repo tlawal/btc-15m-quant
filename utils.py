@@ -40,7 +40,15 @@ def setup_logging():
         level=level,
         format=fmt,
         datefmt="%Y-%m-%dT%H:%M:%S",
+        force=True,
     )
+    
+    # Force sys.stdout to be unbuffered so logs appear immediately in Docker/Railway
+    if hasattr(sys.stdout, 'reconfigure'):
+        try:
+            sys.stdout.reconfigure(line_buffering=True)
+        except Exception:
+            pass
     # Quiet noisy libs
     for lib in ("aiohttp", "asyncio", "urllib3", "websockets"):
         logging.getLogger(lib).setLevel(logging.WARNING)

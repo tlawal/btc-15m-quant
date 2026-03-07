@@ -16,6 +16,7 @@ COPY .env.example ./
 
 # Persistent state volume — mount /data in Railway
 ENV DATABASE_URL=sqlite+aiosqlite:////data/state.db
+ENV PYTHONUNBUFFERED=1
 
 # Non-root user
 RUN useradd -m -u 1001 quant && mkdir -p /data && chown quant:quant /data
