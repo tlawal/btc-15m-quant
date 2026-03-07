@@ -526,7 +526,9 @@ class Engine:
             print(fmt_pnl_dashboard(self.state.trade_history, balance))
 
         # Heartbeat file
+        print("DEBUG: starting _write_heartbeat", flush=True)
         await self._write_heartbeat(now_ts, balance, runtime_ms, margin=margin, wallet_usdc=wallet_usdc, sig=sig)
+        print("DEBUG: _write_heartbeat finished", flush=True)
 
         # ── Outcome logging for previous window ───────────────────────────────
         if win_rolled:
@@ -556,14 +558,18 @@ class Engine:
             mode="none" if not self.state.held_position.side else self.state.held_position.side,
             exit_reason=str(getattr(self, "_last_exit_reason", "HOLD"))
         )
+        print("DEBUG: fmt_engine_block returned", flush=True)
         log.info(dashboard)
+        print("DEBUG: log.info(dashboard) finished", flush=True)
 
         # Update cycle memory for deltas
         self.state.prev_cycle_score = sig.signed_score
         self.state.prev_cycle_price = btc_price
 
         # ── Save state ────────────────────────────────────────────────────────
+        print("DEBUG: saving state", flush=True)
         await self.state_mgr.save(self.state)
+        print("DEBUG: state saved. _cycle() entirely finished. Yielding loop.", flush=True)
 
     # ── Strike resolution (FIX #2) ────────────────────────────────────────────
 
