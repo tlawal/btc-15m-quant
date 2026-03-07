@@ -139,10 +139,15 @@ class PolymarketClient:
         try:
             loop = asyncio.get_event_loop()
             params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
-            await loop.run_in_executor(
-                None, lambda: self.client.update_balance_allowance(params)
+            await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, lambda: self.client.update_balance_allowance(params)
+                ),
+                timeout=5.0
             )
             log.info("Polymarket approvals OK")
+        except asyncio.TimeoutError:
+            log.warning("ensure_approvals timed out (5s), API might be hanging.")
         except Exception as e:
             log.error(f"ensure_approvals failed: {e}")
 
@@ -325,8 +330,11 @@ class PolymarketClient:
         try:
             loop = asyncio.get_event_loop()
             params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
-            result = await loop.run_in_executor(
-                None, lambda: self.client.get_balance_allowance(params)
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, lambda: self.client.get_balance_allowance(params)
+                ),
+                timeout=5.0
             )
             # Typical result is a dict like {"balance": "123456789", "allowance": "..."}
             # Polygon USDC uses 6 decimals (micro-USDC). We defensively probe common keys.
@@ -347,6 +355,9 @@ class PolymarketClient:
             bal = self._parse_usdc(result)
             log.debug("get_balance: raw=%s parsed_usdc=%s", result, bal)
             return bal
+        except asyncio.TimeoutError:
+            log.warning("get_balance timed out (5s)")
+            return None
         except Exception as e:
             log.warning(f"get_balance: {e}")
             return None
@@ -359,8 +370,11 @@ class PolymarketClient:
         try:
             loop = asyncio.get_event_loop()
             params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
-            result = await loop.run_in_executor(
-                None, lambda: self.client.get_balance_allowance(params)
+            result = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, lambda: self.client.get_balance_allowance(params)
+                ),
+                timeout=5.0
             )
             if not isinstance(result, dict):
                 bal = await self.get_balance()
@@ -388,11 +402,17 @@ class PolymarketClient:
             )
             if available is None:
                 available = bal
-            return {"balance_usdc": bal, "allowance_usdc": allowance, "available_usdc": available}
+            return {
+                "balance_usdc": bal_raw,
+                "allowance_usdc": allowance_raw,
+                "available_usdc": available_raw,
+            }
+        except asyncio.TimeoutError:
+            log.warning("get_margin timed out (5s)")
+            return {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
         except Exception as e:
-            log.warning("get_margin: %s", e)
-            bal = await self.get_balance()
-            return {"balance_usdc": bal, "allowance_usdc": None, "available_usdc": bal}
+            log.warning(f"get_margin: {e}")
+            return {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
 
     async def get_wallet_usdc_balance(self) -> Optional[float]:
         """Fetch ERC20 USDC balance for the trading wallet directly from Polygon RPC.

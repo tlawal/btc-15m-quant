@@ -117,11 +117,18 @@ class Engine:
         if self.pm.can_trade:
             print(f"ENGINE START BUILD={BUILD_VERSION} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS}", flush=True)
             log.info("Engine started. Ensuring Polymarket approvals...")
+            print("DEBUG: Calling pm.ensure_approvals()", flush=True)
             await self.pm.ensure_approvals()
+            print("DEBUG: pm.ensure_approvals() finished", flush=True)
 
             # Record initial balance for 20% loss limit
+            print("DEBUG: Calling pm.get_wallet_usdc_balance()", flush=True)
             wallet_usdc = await self.pm.get_wallet_usdc_balance()
+            print("DEBUG: pm.get_wallet_usdc_balance() finished", flush=True)
+            
+            print("DEBUG: Calling pm.get_margin()", flush=True)
             margin_usdc = await self.pm.get_margin()
+            print("DEBUG: pm.get_margin() finished", flush=True)
             balance = wallet_usdc or 0.0
             if balance <= 1e-6:
                 balance = (margin_usdc or {}).get("available_usdc", 0.0)

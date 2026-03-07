@@ -777,7 +777,12 @@ class ChainlinkOraclePolygon:
                 
                 while self.running:
                     try:
-                        data = await contract.functions.latestRoundData().call()
+                        print("DEBUG: Calling Chainlink contract...", flush=True)
+                        data = await asyncio.wait_for(
+                            contract.functions.latestRoundData().call(),
+                            timeout=5.0
+                        )
+                        print("DEBUG: Chainlink contract returned", flush=True)
                         # answer is data[1], updatedAt is data[3]
                         self.oracle_px = float(data[1]) / 1e8
                         self.last_update = int(data[3])
