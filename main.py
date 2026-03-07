@@ -145,13 +145,19 @@ class Engine:
 
 
     async def start(self):
-        # Phase 1 Checks: DB existence
-        import os
-        db_path = Config.DATABASE_URL.replace("sqlite+aiosqlite:///", "")
-        if db_path.startswith("sqlite:///"):  # Fallback for sync urls
-            db_path = db_path.replace("sqlite:///", "")
-        if not os.path.exists(db_path):
-            log.warning(f"🚨 STARTUP ALERT: Database file {db_path} is missing. A new one will be created.")
+        # Phase 1 Checks: DB existence and write access
+        db_url = Config.DATABASE_URL
+        db_path = db_url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
+        
+        if db_url.startswith("sqlite"):
+            db_dir = os.path.dirname(db_path) or "."
+            if not os.path.exists(db_path):
+                log.warning(f"🚨 STARTUP ALERT: Database file {db_path} is missing. A new one will be created.")
+            
+            if not os.access(db_dir, os.W_OK):
+                log.error(f"❌ CRITICAL: Database directory {db_dir} is NOT WRITABLE. Check Railway Volume permissions.")
+            elif os.path.exists(db_path) and not os.access(db_path, os.W_OK):
+                log.error(f"❌ CRITICAL: Database file {db_path} is NOT WRITABLE.")
 
         await self.feeds.start()
         await self.pm.start()

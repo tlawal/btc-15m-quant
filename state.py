@@ -162,6 +162,25 @@ class EngineState:
 class StateManager:
     def __init__(self, db_url: str = None):
         url = db_url or Config.DATABASE_URL
+        
+        # Robust path check for SQLite
+        if url.startswith("sqlite+aiosqlite:///"):
+            db_path = url.replace("sqlite+aiosqlite:///", "")
+            db_dir = os.path.dirname(db_path)
+            
+            # If path is absolute (starts with /), check directory access
+            if db_path.startswith("/") and db_dir:
+                if not os.path.exists(db_dir):
+                    try:
+                        os.makedirs(db_dir, exist_ok=True)
+                    except Exception as e:
+                        log.error(f"Cannot create DB directory {db_dir}: {e}")
+                        
+                if not os.access(db_dir if os.path.exists(db_dir) else ".", os.W_OK):
+                    fallback_url = "sqlite+aiosqlite:///./state.db"
+                    log.warning(f"🚨 PERMISSION DENIED: Directory {db_dir} is not writable. Falling back to {fallback_url}")
+                    url = fallback_url
+        
         self.engine = create_async_engine(url, echo=False)
         self._session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
         self._state: Optional[EngineState] = None
@@ -178,10 +197,12 @@ class StateManager:
             # Alembic's command.upgrade is synchronous; use run_in_executor for safety inside async
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, command.upgrade, alembic_cfg, "head")
-            log.info("Alembic migrations applied successfully")
+            log.info(f"Alembic migrations applied successfully to {self.engine.url}")
         except Exception as e:
-            log.error(f"Failed to run Alembic migrations: {e}")
-            raise
+            log.error(f"Failed to run Alembic migrations on {self.engine.url}: {e}")
+            # If migrations fail, we still try to proceed but logs will show the error
+            if "sqlite" in str(self.engine.url):
+                log.warning("Database might be in an inconsistent state or read-only.")
             
         if "sqlite" in str(self.engine.url):
             async with self.engine.begin() as conn:
