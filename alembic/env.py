@@ -22,6 +22,13 @@ sys.path.append(os.getcwd())
 from models import metadata
 target_metadata = metadata
 
+# Dynamically set the database URL from our application Config
+from config import Config
+db_url = Config.DATABASE_URL
+if db_url.startswith("sqlite+aiosqlite:///"):
+    db_url = db_url.replace("sqlite+aiosqlite:///", "sqlite:///")
+config.set_main_option("sqlalchemy.url", db_url)
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
