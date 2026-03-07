@@ -83,9 +83,12 @@ async def debug_balance():
         "polygon_rpc_url_preview": (Config.POLYGON_RPC_URL[:40] + "...") if Config.POLYGON_RPC_URL else "NOT SET",
         "usdc_contract": Config.POLYGON_USDC_ADDRESS,
         "private_key_set": bool(Config.POLYMARKET_PRIVATE_KEY),
-        "can_trade": engine.pm.can_trade if engine else None,
+        "can_trade": engine.pm.can_trade if engine and engine.pm else None,
         "trading_halted": engine.state.trading_halted if engine and engine.state else None,
         "last_cycle_error": getattr(engine, "last_cycle_error", None),
+        "db_url": Config.DATABASE_URL,
+        "db_engine_url": str(engine.state_mgr.engine.url) if engine and engine.state_mgr else "N/A",
+        "is_fallback": "state.db" in Config.DATABASE_URL and ("data" not in Config.DATABASE_URL),
     }
 
     if engine and engine.pm:
@@ -200,8 +203,15 @@ async def debug_templates():
 
 @app.get("/api/metrics")
 async def get_metrics():
-    if not engine or not engine.state:
-        return JSONResponse({"status": "loading"}, status_code=503)
+    if not engine:
+        return JSONResponse({"status": "starting"}, status_code=503)
+        
+    if not engine.state or not getattr(engine, "_running", False):
+        return JSONResponse({
+            "status": "initializing",
+            "db_url": Config.DATABASE_URL,
+            "can_trade": engine.pm.can_trade
+        }, status_code=503)
     
     state = engine.state
     

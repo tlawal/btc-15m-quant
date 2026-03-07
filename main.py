@@ -168,28 +168,30 @@ class Engine:
             log.info("Engine started. Ensuring Polymarket approvals...")
             await self.pm.ensure_approvals()
 
-            # Record initial balance for 20% loss limit
-            wallet_usdc = await self.pm.get_wallet_usdc_balance()
-            margin_usdc = await self.pm.get_margin()
-            balance = wallet_usdc or 0.0
-            if balance <= 1e-6:
-                balance = (margin_usdc or {}).get("available_usdc", 0.0)
-            if balance <= 1e-6:
-                balance = (margin_usdc or {}).get("balance_usdc", 0.0)
-                
-            if getattr(self.state, "session_start_balance", None) is None or self.state.session_start_balance == 0:
-                self.state.session_start_balance = balance
-                log.info(f"Session start balance recorded: ${balance:.2f} (20% limit = ${balance * 0.20:.2f})")
-        else:
-            # Run signals + market discovery, but do not attempt trading endpoints.
-            self.state.trading_halted = True
-            log.warning(
-                "Polymarket trading credentials missing; running in READONLY mode (no orders, no balance, no positions)."
-            )
-
-        # Phase 6: Start Dashboard in background
+        # Phase 6: Start Dashboard in background IMMEDIATELY
+        # This ensures /api/debug and other checks are available even if next steps hang.
         self._dashboard_task = asyncio.create_task(run_dashboard(self))
         log.info("Dashboard server started on port 8000")
+
+        # Record initial balance for 20% loss limit
+        # Wrap in timeout to prevent startup hang if network/API is slow
+        try:
+            async with asyncio.timeout(10):
+                wallet_usdc = await self.pm.get_wallet_usdc_balance()
+                margin_usdc = await self.pm.get_margin()
+                balance = wallet_usdc or 0.0
+                if balance <= 1e-6:
+                    balance = (margin_usdc or {}).get("available_usdc", 0.0)
+                if balance <= 1e-6:
+                    balance = (margin_usdc or {}).get("balance_usdc", 0.0)
+                    
+                if getattr(self.state, "session_start_balance", None) is None or self.state.session_start_balance == 0:
+                    self.state.session_start_balance = balance
+                    log.info(f"Session start balance recorded: ${balance:.2f} (20% limit = ${balance * 0.20:.2f})")
+        except asyncio.TimeoutError:
+            log.warning("Timeout while fetching initial balance; dashboard will show 0 until first successful cycle.")
+        except Exception as e:
+            log.warning(f"Failed to fetch initial balance: {e}")
 
         # Start real-time CVD WebSocket
         await self.cvd_ws.start()
@@ -226,11 +228,15 @@ class Engine:
     async def run(self):
         await self.start()
         
-        # Also run once at startup
+        # Also run once at startup - non-blocking to prevent UI hang
         try:
-            redeemed_startup = await self.pm.redeem_winning_positions()
-            if redeemed_startup > 0:
-                log.info(f"✅ STARTUP CLAIM: ${redeemed_startup:.2f}")
+            # Wrap in timeout to prevent startup hang
+            async with asyncio.timeout(15):
+                redeemed_startup = await self.pm.redeem_winning_positions()
+                if redeemed_startup > 0:
+                    log.info(f"✅ STARTUP CLAIM: ${redeemed_startup:.2f}")
+        except asyncio.TimeoutError:
+            log.warning("Startup redeem timed out; will retry in background cycle.")
         except Exception as e:
             log.error(f"Startup redeem failed: {e}")
             

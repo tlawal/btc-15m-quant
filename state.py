@@ -180,6 +180,7 @@ class StateManager:
                     fallback_url = "sqlite+aiosqlite:///./state.db"
                     log.warning(f"🚨 PERMISSION DENIED: Directory {db_dir} is not writable. Falling back to {fallback_url}")
                     url = fallback_url
+                    Config.DATABASE_URL = url  # Sync globally
         
         self.engine = create_async_engine(url, echo=False)
         self._session_factory = async_sessionmaker(self.engine, expire_on_commit=False)
@@ -194,15 +195,18 @@ class StateManager:
             alembic_cfg = AlembicConfig(alembic_ini_path)
             alembic_cfg.set_main_option("script_location", os.path.join(_HERE, "alembic"))
             
+            # Sync Alembic with our engine's actual URL (handles fallback automatically)
+            alembic_cfg.set_main_option("sqlalchemy.url", str(self.engine.url).replace("sqlite+aiosqlite:///", "sqlite:///"))
+            
             # Alembic's command.upgrade is synchronous; use run_in_executor for safety inside async
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, command.upgrade, alembic_cfg, "head")
             log.info(f"Alembic migrations applied successfully to {self.engine.url}")
         except Exception as e:
             log.error(f"Failed to run Alembic migrations on {self.engine.url}: {e}")
-            # If migrations fail, we still try to proceed but logs will show the error
-            if "sqlite" in str(self.engine.url):
-                log.warning("Database might be in an inconsistent state or read-only.")
+            # If migrations fail on a writable fallback, we have a bigger problem
+            if "state.db" in str(self.engine.url) and "sqlite" in str(self.engine.url):
+                log.error("CRITICAL: Alembic failed on local fallback state.db")
             
         if "sqlite" in str(self.engine.url):
             async with self.engine.begin() as conn:
