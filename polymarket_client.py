@@ -403,9 +403,9 @@ class PolymarketClient:
             if available is None:
                 available = bal
             return {
-                "balance_usdc": bal_raw,
-                "allowance_usdc": allowance_raw,
-                "available_usdc": available_raw,
+                "balance_usdc": bal,
+                "allowance_usdc": allowance,
+                "available_usdc": available,
             }
         except asyncio.TimeoutError:
             log.warning("get_margin timed out (5s)")

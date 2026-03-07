@@ -497,7 +497,7 @@ class Engine:
 
         # ── Periodic status message ────────────────────────────────────────────
         self._status_counter += 1
-        if self._status_counter % 20 == 0:   # every ~5 min
+        if self._status_counter % 1 == 0:   # every cycle (~15s)
             pos_str = (
                 f"{self.state.held_position.side} @ {self.state.held_position.avg_entry_price:.3f}"
                 if self.state.held_position.side else "FLAT"

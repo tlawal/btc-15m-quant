@@ -177,7 +177,7 @@ async def run_dashboard(engine_instance, port=8000):
     global engine
     engine = engine_instance
     import uvicorn
-    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="error")
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="error", log_config=None)
     server = uvicorn.Server(config)
     
     # We must run `serve` as a task, but await it so it occupies this background task
