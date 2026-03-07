@@ -29,6 +29,7 @@ from polymarket_client import PolymarketClient
 from indicators import compute_local_indicators
 from signals import SignalResult, compute_signals
 from exit_policy import evaluate_exit
+from sizing import compute_position_size
 from inference import InferenceEngine
 from dashboard import run_dashboard
 from utils import (
