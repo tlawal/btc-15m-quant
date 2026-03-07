@@ -8,7 +8,7 @@ Architecture:
   - Graceful shutdown on SIGINT/SIGTERM
 """
 
-BUILD_VERSION = "v2.1-USDC-E-FIX"
+BUILD_VERSION = "v2.2-INIT-FIX"
 
 import asyncio
 import aiofiles
@@ -145,8 +145,14 @@ class Engine:
 
 
     async def start(self):
+        # Phase 0: Start Dashboard IMMEDIATELLY
+        # This ensures /api/debug and other checks are available even if next steps hang.
+        self._dashboard_task = asyncio.create_task(run_dashboard(self))
+        log.info("Dashboard server started on port 8000 (pre-init)")
+
         # Phase 1 Checks: DB existence and write access
         db_url = Config.DATABASE_URL
+        log.info(f"Using database: {db_url}")
         db_path = db_url.replace("sqlite+aiosqlite:///", "").replace("sqlite:///", "")
         
         if db_url.startswith("sqlite"):
@@ -159,19 +165,36 @@ class Engine:
             elif os.path.exists(db_path) and not os.access(db_path, os.W_OK):
                 log.error(f"❌ CRITICAL: Database file {db_path} is NOT WRITABLE.")
 
-        await self.feeds.start()
+        # Phase 2: Data Feeds
+        try:
+            async with asyncio.timeout(15):
+                await self.feeds.start()
+        except asyncio.TimeoutError:
+            log.warning("Data feeds startup timed out; proceeding anyway.")
+
+        # Phase 3: Trade Manager (Polymarket)
         await self.pm.start()
-        self.state = await self.state_mgr.load()
-        self.optimizer.state = self.state
+
+        # Phase 4: State & Optimizer
+        try:
+            async with asyncio.timeout(20):
+                self.state = await self.state_mgr.load()
+                self.optimizer.state = self.state
+        except asyncio.TimeoutError:
+            log.error("CRITICAL: Database load/migration timed out!")
+            # Fallback to empty state if possible, though this is risky
+            from state import EngineState
+            self.state = EngineState()
+            self.optimizer.state = self.state
+
         if self.pm.can_trade:
             print(f"ENGINE START BUILD={BUILD_VERSION} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS}", flush=True)
             log.info("Engine started. Ensuring Polymarket approvals...")
-            await self.pm.ensure_approvals()
-
-        # Phase 6: Start Dashboard in background IMMEDIATELY
-        # This ensures /api/debug and other checks are available even if next steps hang.
-        self._dashboard_task = asyncio.create_task(run_dashboard(self))
-        log.info("Dashboard server started on port 8000")
+            try:
+                async with asyncio.timeout(10):
+                    await self.pm.ensure_approvals()
+            except Exception as e:
+                log.warning(f"Polymarket approvals check failed or timed out: {e}")
 
         # Record initial balance for 20% loss limit
         # Wrap in timeout to prevent startup hang if network/API is slow
