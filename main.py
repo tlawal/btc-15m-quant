@@ -929,11 +929,11 @@ class Engine:
 
         try:
             # Write to /data if on Railway, otherwise local
-            hb_path = "/data/heartbeat.json" if os.path.exists("/data") else "heartbeat.json"
+            hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
             async with aiofiles.open(hb_path, mode='w') as f:
-                await f.write(json.dumps(hb, indent=2))
+                await f.write(json.dumps(hb, indent=2, default=str))
         except Exception as e:
-            log.debug(f"Heartbeat write aborted: {e}")
+            log.error(f"Heartbeat write aborted: {e}", exc_info=True)
 
     # ── Exit handler ──────────────────────────────────────────────────────────
 

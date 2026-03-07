@@ -122,7 +122,7 @@ async def get_metrics():
     state = engine.state
     
     # Heartbeat data (mostly for latencies and status)
-    hb_path = "/data/heartbeat.json" if os.path.exists("/data") else "heartbeat.json"
+    hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
     hb = {}
     if os.path.exists(hb_path):
         try:
