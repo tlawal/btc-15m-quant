@@ -36,13 +36,24 @@ async def health():
 async def debug_balance():
     """Live debug: check balance in real-time and show env config."""
     from config import Config
+    from eth_account import Account
     try:
         from main import BUILD_VERSION
     except:
         BUILD_VERSION = "unknown"
 
+    wallet_addr = None
+    if Config.POLYMARKET_PRIVATE_KEY and len(Config.POLYMARKET_PRIVATE_KEY) > 20:
+        try:
+            pk = Config.POLYMARKET_PRIVATE_KEY
+            if pk.startswith("0x"): pk = pk[2:]
+            wallet_addr = Account.from_key(pk).address
+        except:
+            pass
+
     result = {
         "build_version": BUILD_VERSION,
+        "wallet_address": wallet_addr,
         "polygon_rpc_url_set": bool(Config.POLYGON_RPC_URL),
         "polygon_rpc_url_preview": (Config.POLYGON_RPC_URL[:40] + "...") if Config.POLYGON_RPC_URL else "NOT SET",
         "usdc_contract": Config.POLYGON_USDC_ADDRESS,
