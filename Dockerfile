@@ -9,6 +9,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source
 COPY *.py ./
 COPY templates ./templates
+COPY alembic ./alembic
+COPY alembic.ini ./
 RUN test -f /app/templates/index.html || (echo "ERROR: templates/index.html missing" && exit 1)
 COPY .env.example ./
 
