@@ -172,7 +172,11 @@ class StateManager:
         
         # Run Alembic migrations synchronously
         try:
-            alembic_cfg = AlembicConfig("alembic.ini")
+            _HERE = os.path.dirname(os.path.abspath(__file__))
+            alembic_ini_path = os.path.join(_HERE, "alembic.ini")
+            alembic_cfg = AlembicConfig(alembic_ini_path)
+            alembic_cfg.set_main_option("script_location", os.path.join(_HERE, "alembic"))
+            
             # Alembic's command.upgrade is synchronous; use run_in_executor for safety inside async
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, command.upgrade, alembic_cfg, "head")
