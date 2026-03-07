@@ -166,11 +166,8 @@ class StateManager:
         self._state: Optional[EngineState] = None
 
     async def init_db(self):
-        async with self.engine.begin() as conn:
-            await conn.execute(text("PRAGMA journal_mode=WAL;"))
-            await conn.execute(text("PRAGMA synchronous=NORMAL;"))
-        
-        # Run Alembic migrations synchronously
+        # Run Alembic migrations synchronously BEFORE acquiring any async connections 
+        # to prevent SQLite database locked errors.
         try:
             _HERE = os.path.dirname(os.path.abspath(__file__))
             alembic_ini_path = os.path.join(_HERE, "alembic.ini")
@@ -183,9 +180,11 @@ class StateManager:
             log.info("Alembic migrations applied successfully")
         except Exception as e:
             log.error(f"Failed to run Alembic migrations: {e}")
-            # Fallback to manual init if migrations fail? 
-            # Better to allow the error if we want robust schema management.
             raise
+            
+        async with self.engine.begin() as conn:
+            await conn.execute(text("PRAGMA journal_mode=WAL;"))
+            await conn.execute(text("PRAGMA synchronous=NORMAL;"))
         
         log.info("State DB initialised with Alembic")
 
