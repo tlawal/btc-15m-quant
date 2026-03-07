@@ -1,0 +1,50 @@
+DEBUG: fmt_engine_block returned
+DEBUG: log.info(dashboard) finished
+DEBUG: saving state
+DEBUG: state saved. _cycle() entirely finished. Yielding loop.
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
+DEBUG: Calling Chainlink contract...
+DEBUG: starting _write_heartbeat
+DEBUG: _write_heartbeat finished
+DEBUG: fmt_engine_block returned
+DEBUG: log.info(dashboard) finished
+DEBUG: saving state
+DEBUG: state saved. _cycle() entirely finished. Yielding loop.
+DEBUG: Chainlink contract returned
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
+DEBUG: starting _write_heartbeat
+DEBUG: _write_heartbeat finished
+DEBUG: fmt_engine_block returned
+DEBUG: log.info(dashboard) finished
+DEBUG: saving state
+DEBUG: state saved. _cycle() entirely finished. Yielding loop.
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
+
+--- PnL Dashboard ---
+Balance: $6.77
+Trades: 0
+Win Rate: 0%
+
+DEBUG: starting _write_heartbeat
+DEBUG: _write_heartbeat finished
+DEBUG: fmt_engine_block returned
+DEBUG: log.info(dashboard) finished
+DEBUG: saving state
+DEBUG: state saved. _cycle() entirely finished. Yielding loop.
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
+DEBUG: Calling Chainlink contract...
+DEBUG: Chainlink contract returned
