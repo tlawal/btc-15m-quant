@@ -91,7 +91,7 @@ class Config:
 
     # ── Polygon RPC / Tokens ──────────────────────────────────────────────────
     # Switch to a dedicated Alchemy or QuickNode endpoint for better stability
-    POLYGON_RPC_URL            = os.getenv("POLYGON_RPC_URL", "https://polygon-mainnet.g.alchemy.com/v2/your-api-key")
+    POLYGON_RPC_URL            = os.getenv("POLYGON_RPC_URL", "https://polygon-rpc.com/")
     # Polymarket uses USDC.e (bridged) on Polygon — NOT native USDC
     # USDC.e: 0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174 (6 decimals)
     # Native: 0x3c499c542cef5e3811e1192ce70d8cc03d5c3359 (6 decimals)
