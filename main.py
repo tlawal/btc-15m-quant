@@ -154,6 +154,7 @@ class Engine:
         await self.feeds.start()
         await self.pm.start()
         self.state = await self.state_mgr.load()
+        self.optimizer.state = self.state
         if self.pm.can_trade:
             print(f"ENGINE START BUILD={BUILD_VERSION} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS}", flush=True)
             log.info("Engine started. Ensuring Polymarket approvals...")
