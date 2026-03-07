@@ -24,6 +24,8 @@ metric_ofi_score = Gauge('btc15m_sig_ofi_score', 'Feature: OFI Score')
 metric_flow_accel = Gauge('btc15m_sig_flow_accel', 'Feature: Flow Acceleration')
 metric_signed_score = Gauge('btc15m_sig_signed_score', 'Total Signed Score')
 metric_req_score = Gauge('btc15m_sig_req_score', 'Required Min Score')
+metric_sigma_b = Gauge('btc15m_sig_sigma_b', 'Belief volatility sigma_B')
+metric_bvol_mult = Gauge('btc15m_sig_bvol_mult', 'Belief-volatility multiplier')
 
 # Execution Counters
 metric_trades_executed = Counter('btc15m_trades_executed_total', 'Total number of trades executed')
@@ -70,6 +72,8 @@ def update_metrics(state, heartbeat: dict, signal_res=None):
             metric_flow_accel.set(signal_res.flow_accel_score)
             metric_signed_score.set(signal_res.signed_score)
             metric_req_score.set(signal_res.min_score)
+            metric_sigma_b.set(getattr(signal_res, "sigma_b", 0.0))
+            metric_bvol_mult.set(getattr(signal_res, "bvol_multiplier", 0.0))
 
     except Exception as e:
         log.error(f"Error updating Prometheus metrics: {e}")

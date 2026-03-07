@@ -32,6 +32,9 @@ class SignalResult:
     posterior_fair_down:  Optional[float] = None
     posterior_final_up:   Optional[float] = None
     posterior_final_down: Optional[float] = None
+    # Optional, score-adjusted posteriors (for analysis/experiments)
+    posterior_adj_up:     Optional[float] = None
+    posterior_adj_down:   Optional[float] = None
 
     # Belief volatility
     sigma_b:              float  = 0.15
@@ -116,6 +119,7 @@ class SignalResult:
             "z_score":            self.z_score,
             "posterior_fair_up":  self.posterior_fair_up,
             "posterior_final_up": self.posterior_final_up,
+            "posterior_adj_up":   self.posterior_adj_up,
             "sigma_b":            self.sigma_b,
             "bvol_multiplier":    self.bvol_multiplier,
             "signed_score":       self.signed_score,
@@ -266,7 +270,14 @@ def compute_signals(
         res.sigma_b = Config.BELIEF_VOL_DEFAULT
 
     # Belief-vol multiplier
-    raw_mult = 1.0 + (res.sigma_b - Config.BELIEF_VOL_DEFAULT)
+    time_factor = 1.0
+    if Config.BELIEF_VOL_TIME_DECAY_ENABLED:
+        window_min = Config.WINDOW_SEC / 60.0
+        if window_min > 0:
+            # Scale effect of belief volatility by fraction of window remaining.
+            time_factor = clamp(minutes_remaining / window_min, 0.0, 1.0)
+
+    raw_mult = 1.0 + (res.sigma_b - Config.BELIEF_VOL_DEFAULT) * time_factor
     max_mult = Config.BELIEF_VOL_LATE_MAX if minutes_remaining < 5.0 else Config.BELIEF_VOL_MULT_MAX
     res.bvol_multiplier = clamp(raw_mult, Config.BELIEF_VOL_MULT_MIN, max_mult)
 
@@ -512,17 +523,9 @@ def compute_signals(
     signed += accum_ofi_score * 0.8
 
     # Prediction Market Mispricing Detection
-    misprice_score = 0.0
-    if res.posterior_final_up is not None and yes_mid is not None and no_mid is not None:
-        model_yes = res.posterior_final_up
-        mkt_yes = yes_mid
-        disagreement = model_yes - mkt_yes
-        if abs(disagreement) > 0.10:
-            misprice_score = 1.5 * (1.0 if disagreement > 0 else -1.0)
-        elif abs(disagreement) > 0.05:
-            misprice_score = 0.5 * (1.0 if disagreement > 0 else -1.0)
-    res.misprice_score = misprice_score
-    signed += misprice_score
+    # NOTE: Mispricing is applied after direction is known so it can be aligned
+    # with the intended trade side (YES/NO). Here we just initialise.
+    res.misprice_score = 0.0
 
     # Multi-Timeframe Momentum
     mtf_momentum_score = 0.0
@@ -598,6 +601,49 @@ def compute_signals(
     elif res.direction == "DOWN" and obi > 0.3:
         res.signed_score -= 1.0
     res.abs_score = abs(res.signed_score)
+
+    # Direction-aware Prediction Market Mispricing Detection (YES & NO)
+    if (
+        res.direction in ("UP", "DOWN")
+        and res.posterior_final_up is not None
+        and res.posterior_final_down is not None
+        and yes_mid is not None
+        and no_mid is not None
+    ):
+        if res.direction == "UP":
+            model_p = res.posterior_final_up
+            mkt_p = clamp(yes_mid, 0.01, 0.99)
+        else:
+            # For NO, compare DOWN probability to NO price
+            model_p = res.posterior_final_down
+            mkt_p = clamp(no_mid, 0.01, 0.99)
+
+        edge_prob = model_p - mkt_p
+        misprice_score = 0.0
+        if abs(edge_prob) > 0.10:
+            misprice_score = 1.5 * (1.0 if edge_prob > 0 else -1.0)
+        elif abs(edge_prob) > 0.05:
+            misprice_score = 0.5 * (1.0 if edge_prob > 0 else -1.0)
+
+        res.misprice_score = misprice_score
+        if misprice_score != 0.0:
+            res.signed_score += misprice_score
+            res.abs_score = abs(res.signed_score)
+
+    # Optional: Couple strong signed_score back into a lightly adjusted posterior.
+    if (
+        Config.SCORE_POSTERIOR_COUPLING_ENABLED
+        and res.posterior_final_up is not None
+        and res.posterior_final_down is not None
+    ):
+        # Normalise score into [-1, 1] bucket via division by 10
+        score_term = clamp(res.signed_score / 10.0, -1.0, 1.0)
+        raw_shift = Config.SCORE_POSTERIOR_COUPLING_K * score_term
+        shift = clamp(raw_shift, -Config.SCORE_POSTERIOR_MAX_SHIFT, Config.SCORE_POSTERIOR_MAX_SHIFT)
+
+        adj_up = clamp(res.posterior_final_up + shift, 1e-6, 1 - 1e-6)
+        res.posterior_adj_up = adj_up
+        res.posterior_adj_down = 1.0 - adj_up
 
     # ── Edge computation (fee-adjusted) ───────────────────────────────────────
     fee_rate = 0.02
@@ -698,6 +744,21 @@ def compute_signals(
         log.info(f"LOW_VOLUME_BLOCK: volume={cvd_total_vol:.1f} on 95%+ conviction")
 
     res.skip_gates = gates
+
+    # Structured gate evaluation log highlighting the primary blocking reason.
+    primary_gate = gates[0] if gates else "CLEAR"
+    edge_val = res.target_edge or 0.0
+    log.info(
+        "gate_eval: dir=%s primary=%s edge=%.4f req_edge=%.3f "
+        "score=%.2f req_score=%.1f minutes_rem=%.1f",
+        res.direction,
+        primary_gate,
+        edge_val,
+        effective_required_edge,
+        res.abs_score,
+        res.min_score,
+        minutes_remaining,
+    )
 
     p_up_str = f"{res.posterior_final_up:.4f}" if res.posterior_final_up else "N/A"
     e_str = f"{res.target_edge:.4f}" if res.target_edge else "N/A"

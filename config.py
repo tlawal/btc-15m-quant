@@ -11,8 +11,20 @@ class Config:
     BELIEF_VOL_LOOKBACK_SEC    = 180      # rolling σ_B window (3 min)
     BELIEF_VOL_DEFAULT         = 0.15
     BELIEF_VOL_MULT_MIN        = 0.70
-    BELIEF_VOL_MULT_MAX        = 2.00
-    BELIEF_VOL_LATE_MAX        = 1.50     # cap when < 5 min remain
+    # Belief-volatility multiplier caps: keep regression toward 0.5 gentle, not crushing.
+    BELIEF_VOL_MULT_MAX        = 1.30     # normal cap when more than 5 min remain
+    BELIEF_VOL_LATE_MAX        = 1.15     # tighter cap when < 5 min remain
+    # Optional: scale belief-volatility effect by time remaining in the window.
+    # When enabled, high σ_B early in the candle has more influence than very late.
+    BELIEF_VOL_TIME_DECAY_ENABLED = False
+
+    # ── Score → posterior coupling (optional) ──────────────────────────────────
+    # Allows a very strong signed_score to gently tilt the Bayesian posterior.
+    # This is deliberately small and off by default; downstream consumers can
+    # inspect both raw and adjusted posteriors.
+    SCORE_POSTERIOR_COUPLING_ENABLED = False
+    SCORE_POSTERIOR_MAX_SHIFT        = 0.03   # max absolute probability shift
+    SCORE_POSTERIOR_COUPLING_K       = 0.01   # scale applied to (score / 10)
 
     # ── Regime-adaptive thresholds (FIX #7) ──────────────────────────────────
     # ATR regime boundaries (5m ATR on BTC in USD)
@@ -26,7 +38,8 @@ class Config:
     REQUIRED_EDGE_LOW          = 0.050
     REQUIRED_EDGE_NORMAL       = 0.035
     REQUIRED_EDGE_HIGH         = 0.025
-    DEFAULT_ATR                = 150.0    # Fallback for Bayesian posterior if TAAPI is 429
+    # Fallback ATR used when local ATR computation is unavailable.
+    DEFAULT_ATR                = 150.0
 
     # ── Late-window conviction override ──────────────────────────────────────
     # When near expiry with very high posterior and large distance-from-strike,
@@ -78,6 +91,11 @@ class Config:
     MAX_EXPOSURE_USD           = 100.0    # total notional across all positions
     KILL_SWITCH                = os.getenv("KILL_SWITCH", "false").lower() == "true"
     KILL_SWITCH_PASSWORD       = os.getenv("KILL_SWITCH_PASSWORD", "admin")
+
+    # ── Execution modes ───────────────────────────────────────────────────────
+    # When enabled, the engine records hypothetical trades in state/DB but does
+    # not hit Polymarket trading endpoints. Safe for testing gates and sizing.
+    PAPER_TRADE_ENABLED        = os.getenv("PAPER_TRADE_ENABLED", "false").lower() == "true"
 
     # ── Strike resolution priority (FIX #2) ──────────────────────────────────
     # 1. Binance 15m kline open

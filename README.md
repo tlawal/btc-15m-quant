@@ -39,7 +39,7 @@ The bot now features a full-service monitoring and self-learning stack:
 Set the following in Railway:
 - `POLYMARKET_PRIVATE_KEY`
 - `POLYMARKET_API_KEY`, `POLYMARKET_API_SECRET`, `POLYMARKET_API_PASSPHRASE`
-- `TAAPI_KEY`
+- *(optional, dev only)* `TAAPI_KEY` for the standalone `test_taapi.py` script — the live engine uses only local indicators.
 - `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`
 - `DATABASE_URL` (Use `sqlite+aiosqlite:////data/state.db` or a Postgres URL)
 

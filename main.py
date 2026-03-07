@@ -1013,6 +1013,52 @@ class Engine:
         if not reason:
             return False
 
+        # Paper-trade mode: apply exits locally without touching Polymarket.
+        if Config.PAPER_TRADE_ENABLED:
+            pnl_pct = (current_px - entry_px) / entry_px if entry_px > 0 else 0.0
+
+            if pnl_pct < 0:
+                self.state.loss_streak += 1
+            else:
+                self.state.loss_streak = 0
+
+            outcome = "WIN" if pnl_pct >= 0 else "LOSS"
+            for tr in reversed(self.state.trade_history):
+                if tr.side == pos.side and tr.outcome == "OPEN":
+                    tr.exit_price = current_px
+                    tr.pnl        = pnl_pct
+                    tr.outcome    = outcome
+                    break
+
+            # Record to DB for performance stats
+            try:
+                await self.state_mgr.record_closed_trade(
+                    ts=int(time.time()),
+                    market_slug=self.state.last_market_slug or "unknown",
+                    size=pos.size,
+                    entry_price=entry_px,
+                    exit_price=current_px,
+                    pnl_usd=(current_px - entry_px) * pos.size if entry_px > 0 else 0.0,
+                    outcome_win=1 if outcome == "WIN" else 0,
+                    regime=getattr(self.state, "entry_regime", None),
+                    features=getattr(self.state, "entry_features", None),
+                    kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
+                )
+            except Exception as e:
+                log.error(f"Failed to record paper exit to DB: {e}")
+
+            self.state.total_trades += 1
+            if outcome == "WIN":
+                self.state.total_wins += 1
+            else:
+                self.state.total_losses += 1
+
+            self.state.total_pnl_usd += (current_px - entry_px) * pos.size if entry_px > 0 else 0.0
+            self.state.held_position = HeldPosition()
+            self._last_exit_reason = reason
+            log.info(f"PAPER EXIT: {pos.side} reason={reason} pnl={pnl_pct*100:.2f}%")
+            return True
+
         # Cancel open limit orders first
         if self.state.last_condition_id:
             for oid in await self.pm.get_open_orders(self.state.last_condition_id):
@@ -1089,7 +1135,8 @@ class Engine:
             return
 
         if sig.skip_gates:
-            log.debug(f"Entry blocked: {sig.skip_gates}")
+            primary_gate = sig.skip_gates[0] if sig.skip_gates else "unknown"
+            log.info(f"Entry blocked by gate: {primary_gate} (all={sig.skip_gates})")
             return
 
         if sig.direction == "NEUTRAL":
@@ -1135,6 +1182,43 @@ class Engine:
 
         # Store kelly fraction used for logging
         self.state.last_kelly_fraction = position_usd / balance if balance > 0 else 0
+
+        # Paper-trade mode: record hypothetical entry without sending an order.
+        if Config.PAPER_TRADE_ENABLED:
+            self.state.held_position = HeldPosition(
+                side               = side_name,
+                token_id           = token_id,
+                entry_price        = entry_px,
+                avg_entry_price    = entry_px,
+                size               = shares,
+                size_usd           = position_usd,
+                entry_signed_score = sig.signed_score,
+                condition_id       = market_info.condition_id,
+                order_id           = None,
+                is_pending         = False,
+                placed_at_ts       = int(time.time()),
+                intended_entry_price = entry_px,
+            )
+            self.state.entry_features = sig.to_feature_dict()
+            self.state.entry_regime = sig.regime
+            self.state.trades_this_window += 1
+
+            self.state.trade_history.append(TradeRecord(
+                ts          = int(time.time()),
+                side        = side_name,
+                entry_price = entry_px,
+                exit_price  = None,
+                pnl         = None,
+                outcome     = "OPEN",
+                score       = sig.signed_score,
+                window      = self.state.last_window_start_sec or 0,
+                size        = shares,
+            ))
+            if len(self.state.trade_history) > 100:
+                self.state.trade_history = self.state.trade_history[-100:]
+
+            log.info(f"PAPER ENTRY: {side_name} @ {entry_px:.3f} size={shares} score={sig.signed_score:.2f}")
+            return
 
         # Generate deterministic nonce for idempotency
         import hashlib

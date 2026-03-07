@@ -229,6 +229,14 @@ async def get_metrics():
             for t in state.trade_history[-10:]
         ]
     })
+
+    # Surface gate + belief-volatility info at the top level for the UI.
+    signal = metrics.get("signal") or {}
+    skip_gates = signal.get("skip_gates") or []
+    metrics["gate_primary"] = skip_gates[0] if skip_gates else "CLEAR"
+    metrics["gate_all"] = skip_gates
+    metrics["sigma_b"] = signal.get("sigma_b")
+    metrics["bvol_multiplier"] = signal.get("bvol_multiplier")
     
     return metrics
 
