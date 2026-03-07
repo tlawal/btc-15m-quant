@@ -736,7 +736,7 @@ class PolymarketClient:
     # ── Order execution ───────────────────────────────────────────────────────
 
     async def limit_buy(
-        self, token_id: str, price: float, size: float, order_type: str = "GTC"
+        self, token_id: str, price: float, size: float, order_type: str = "GTC", nonce: int = 0
     ) -> Optional[str]:
         """Place a limit buy order. Returns order_id or None."""
         if not self.can_trade:
@@ -748,6 +748,7 @@ class PolymarketClient:
                 price    = round(price, 4),
                 size     = round(size, 2),
                 side     = "BUY",
+                nonce    = nonce,
             )
             ot = OrderType.GTC if order_type == "GTC" else OrderType.FOK
             loop = asyncio.get_event_loop()
@@ -763,7 +764,7 @@ class PolymarketClient:
             return None
 
     async def market_buy(
-        self, token_id: str, amount_usd: float
+        self, token_id: str, amount_usd: float, nonce: int = 0
     ) -> Optional[str]:
         """Market IOC buy for `amount_usd` dollars of a token."""
         if not self.can_trade:
@@ -774,6 +775,7 @@ class PolymarketClient:
                 token_id = token_id,
                 amount   = amount_usd,
                 side     = "BUY",
+                nonce    = nonce,
             )
             loop = asyncio.get_event_loop()
             signed = await loop.run_in_executor(
@@ -788,7 +790,7 @@ class PolymarketClient:
             return None
 
     async def market_sell(
-        self, token_id: str, amount_shares: float
+        self, token_id: str, size: float, nonce: int = 0
     ) -> Optional[str]:
         """Market IOC sell for `amount_shares` of a token."""
         if not self.can_trade:
@@ -797,8 +799,9 @@ class PolymarketClient:
         try:
             args = MarketOrderArgs(
                 token_id = token_id,
-                amount   = amount_shares,
+                amount   = size,
                 side     = "SELL",
+                nonce    = nonce,
             )
             loop = asyncio.get_event_loop()
             signed = await loop.run_in_executor(
@@ -813,7 +816,7 @@ class PolymarketClient:
             return None
 
     async def limit_sell(
-        self, token_id: str, price: float, size: float, order_type: str = "GTC"
+        self, token_id: str, price: float, size: float, order_type: str = "GTC", nonce: int = 0
     ) -> Optional[str]:
         if not self.can_trade:
             self._warn_no_creds_once("limit_sell")
@@ -824,6 +827,7 @@ class PolymarketClient:
                 price    = round(price, 4),
                 size     = round(size, 2),
                 side     = "SELL",
+                nonce    = nonce,
             )
             ot = OrderType.FOK if order_type in ("IOC", "FOK") else OrderType.GTC
             loop = asyncio.get_event_loop()

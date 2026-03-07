@@ -83,6 +83,21 @@ async def read_root(request: Request):
         "</body></html>"
     )
 
+@app.post("/api/kill")
+async def kill_switch(request: Request):
+    try:
+        data = await request.json()
+        pwd = data.get("password")
+        from config import Config
+        if pwd == Config.KILL_SWITCH_PASSWORD:
+            Config.KILL_SWITCH = True
+            log.warning("KILL SWITCH ACTIVATED VIA DASHBOARD")
+            return {"status": "success", "message": "Kill switch activated"}
+        else:
+            return JSONResponse({"status": "error", "message": "Invalid password"}, status_code=403)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
 
 @app.get("/debug/templates")
 async def debug_templates():

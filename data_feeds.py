@@ -102,6 +102,10 @@ class BinanceCVDWebsocket:
                         data = _json.loads(msg)
                         if data.get("topic") == "publicTrade.BTCUSDT" and "data" in data:
                             for trade in data["data"]:
+                                trade_ts = int(trade["T"])
+                                if getattr(self, 'window_start_ms', 0) > 0 and trade_ts < self.window_start_ms:
+                                    continue
+                                    
                                 qty = float(trade["v"])
                                 side = trade["S"]  # "Buy" or "Sell"
                                 if side == "Buy":
@@ -136,12 +140,13 @@ class BinanceCVDWebsocket:
         """Return (cvd, buy_vol, sell_vol)."""
         return self.cvd, self.buy_vol, self.sell_vol
 
-    def reset(self):
+    def reset(self, window_start_ms: int = 0):
         """Reset CVD and volumes (call on each new 15m window)."""
         self.cvd = 0.0
         self.buy_vol = 0.0
         self.sell_vol = 0.0
         self.cvd_history.clear()
+        self.window_start_ms = window_start_ms
 
     def stop(self):
         self.running = False
@@ -417,16 +422,13 @@ class DataFeeds:
             log.warning(f"get_real_cvd error: {e}")
             return CVDResult(0.0, 0.0, 0.0)
 
-    async def get_cvd_with_cb_fallback(self) -> tuple[CVDResult, CVDResult, CVDResult]:
+    async def get_cvd_with_cb_fallback(self, start_ms: int, end_ms: int) -> tuple[CVDResult, CVDResult, CVDResult]:
         """
         Phase 4: Multi-source CVD fetch with fallback.
         Returns (best_cvd, bin_cvd, cb_cvd).
         """
-        now_ms = int(time.time() * 1000)
-        start_ms = now_ms - 60_000
-        
-        bin_task = asyncio.create_task(self.get_real_cvd(start_ms, now_ms))
-        cb_task  = asyncio.create_task(self.get_coinbase_cvd(start_ms, now_ms))
+        bin_task = asyncio.create_task(self.get_real_cvd(start_ms, end_ms))
+        cb_task  = asyncio.create_task(self.get_coinbase_cvd(start_ms, end_ms))
         
         bin_cvd, cb_cvd = await asyncio.gather(bin_task, cb_task)
         

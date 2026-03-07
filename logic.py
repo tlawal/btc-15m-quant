@@ -559,11 +559,14 @@ def compute_signals(
         res.signed_score -= 1.0
     res.abs_score = abs(res.signed_score)
 
-    # ── Edge computation ──────────────────────────────────────────────────────
+    # ── Edge computation (fee-adjusted) ───────────────────────────────────────
+    fee_rate = 0.02
     if res.posterior_final_up is not None and yes_ask is not None:
-        res.edge_up = res.posterior_final_up - yes_ask
+        ev_win_up = 1.0 - fee_rate * (1.0 - yes_ask)
+        res.edge_up = (res.posterior_final_up * ev_win_up) - yes_ask
     if res.posterior_final_down is not None and no_ask is not None:
-        res.edge_down = res.posterior_final_down - no_ask
+        ev_win_down = 1.0 - fee_rate * (1.0 - no_ask)
+        res.edge_down = (res.posterior_final_down * ev_win_down) - no_ask
 
     if res.direction == "UP":
         res.target_side = "YES"

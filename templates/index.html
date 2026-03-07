@@ -665,7 +665,9 @@
 
                             return `
                                 <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                    <td style="padding:8px 12px;">${slugTrim}</td>
+                                    <td style="padding:8px 12px;">
+                                        <a href="https://polymarket.com/event/${t.marketSlug}" target="_blank" style="color:#60a5fa; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${slugTrim}</a>
+                                    </td>
                                     <td style="padding:8px 12px; font-weight:bold; color:${outcomeColor};">${outcomeName}</td>
                                     <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.size.toFixed(2)}</td>
                                     <td style="padding:8px 12px; text-align:right; font-family:monospace;">$${entryValue.toFixed(2)}</td>
@@ -690,7 +692,9 @@
                             const slugTrim = t.slug.length > 35 ? t.slug.substring(0, 35) + '...' : t.slug;
                             return `
                                 <tr style="border-bottom:1px solid rgba(255,255,255,0.05);">
-                                    <td style="padding:8px 12px;">${slugTrim}</td>
+                                    <td style="padding:8px 12px;">
+                                        <a href="https://polymarket.com/event/${t.slug}" target="_blank" style="color:#60a5fa; text-decoration:none;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">${slugTrim}</a>
+                                    </td>
                                     <td style="padding:8px 12px; font-weight:bold; color:${pnlColor};">${t.outcome}</td>
                                     <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.size.toFixed(2)}</td>
                                     <td style="padding:8px 12px; text-align:right; font-family:monospace;">${t.entry_price.toFixed(4)}</td>
@@ -922,7 +926,38 @@
         fetch('/health').then(r => r.json()).then(d => { if (d.build) $('build-ver').innerText = d.build });
         setInterval(updateUI, 5000);
         updateUI();
+
+        function activateKillSwitch() {
+            const pwd = prompt("Enter KILL SWITCH password to halt trading:");
+            if (!pwd) return;
+            fetch('/api/kill', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password: pwd })
+            })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.status === 'success') {
+                        alert('Kill Switch Activated! No new entries will be placed.');
+                        updateUI();
+                    } else {
+                        alert('Error: ' + d.message);
+                    }
+                })
+                .catch(e => alert('Failed to activate kill switch: ' + e));
+        }
     </script>
+
+    <!-- Floating Kill Switch Button -->
+    <button onclick="activateKillSwitch()"
+        class="fixed bottom-6 right-6 bg-red-600/80 hover:bg-red-600 text-white font-bold py-2 px-4 rounded shadow-lg shadow-red-500/20 border border-red-500 z-50 flex items-center gap-2 backdrop-blur-sm transition-colors">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
+            </path>
+        </svg>
+        KILL SWITCH
+    </button>
 </body>
 
 </html>

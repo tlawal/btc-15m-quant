@@ -101,6 +101,14 @@ class Engine:
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
     async def start(self):
+        # Phase 1 Checks: DB existence
+        import os
+        db_path = Config.DATABASE_URL.replace("sqlite+aiosqlite:///", "")
+        if db_path.startswith("sqlite:///"):  # Fallback for sync urls
+            db_path = db_path.replace("sqlite:///", "")
+        if not os.path.exists(db_path):
+            log.warning(f"🚨 STARTUP ALERT: Database file {db_path} is missing. A new one will be created.")
+
         await self.feeds.start()
         await self.pm.start()
         self.state = await self.state_mgr.load()
@@ -108,6 +116,19 @@ class Engine:
             print(f"ENGINE START BUILD={BUILD_VERSION} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS}", flush=True)
             log.info("Engine started. Ensuring Polymarket approvals...")
             await self.pm.ensure_approvals()
+
+            # Record initial balance for 20% loss limit
+            wallet_usdc = await self.pm.get_wallet_usdc_balance()
+            margin_usdc = await self.pm.get_margin()
+            balance = wallet_usdc or 0.0
+            if balance <= 1e-6:
+                balance = (margin_usdc or {}).get("available_usdc", 0.0)
+            if balance <= 1e-6:
+                balance = (margin_usdc or {}).get("balance_usdc", 0.0)
+                
+            if getattr(self.state, "session_start_balance", None) is None or self.state.session_start_balance == 0:
+                self.state.session_start_balance = balance
+                log.info(f"Session start balance recorded: ${balance:.2f} (20% limit = ${balance * 0.20:.2f})")
         else:
             # Run signals + market discovery, but do not attempt trading endpoints.
             self.state.trading_halted = True
@@ -188,7 +209,7 @@ class Engine:
             self.state.strike_window_start  = win_start
             self.state.cvd                  = 0.0   # reset CVD each window
             self.state.accumulated_ofi      = 0.0   # Phase 2: reset accumulated OFI
-            self.cvd_ws.reset()                      # Reset real-time CVD WebSocket
+            self.cvd_ws.reset(win_start * 1000)      # Reset real-time CVD WebSocket
 
         self.state.last_window_start_sec = win_start
         # Dashboard visibility: show unclaimed positions every cycle
@@ -216,8 +237,8 @@ class Engine:
             # 3. Klines (parallel sources in DataFeeds)
             k5m_task = asyncio.create_task(self.feeds.get_klines("BTCUSDT", "5m", 30))
             k1m_task = asyncio.create_task(self.feeds.get_klines("BTCUSDT", "1m", 30))
-            # 4. CVD (parallel sources)
-            cvd_task = asyncio.create_task(self.feeds.get_cvd_with_cb_fallback())
+            # 4. CVD (parallel sources) - exact window boundary
+            cvd_task = asyncio.create_task(self.feeds.get_cvd_with_cb_fallback(win_start * 1000, now_ts * 1000))
             # 5. Micro book
             book_task = asyncio.create_task(self._fetch_binance_book())
 
@@ -346,8 +367,8 @@ class Engine:
             cvd_delta_for_signals = self.state.prev_cvd_slope
             log.debug(f"CVD_WS: cvd={ws_cvd:.2f} slope={self.state.prev_cvd_slope:.2f} buy={ws_buy:.2f} sell={ws_sell:.2f}")
         else:
-            # Fallback to REST-based CVD
-            self.state.cvd         += cvd_res.cvd_delta
+            # Fallback to REST-based CVD (exact boundary accumulated within get_cvd)
+            self.state.cvd         = cvd_res.cvd_delta
             self.state.prev_cvd_slope = cvd_res.cvd_delta
             cvd_total_vol = cvd_res.buy_vol + cvd_res.sell_vol
             cvd_delta_for_signals = cvd_res.cvd_delta
@@ -916,8 +937,10 @@ class Engine:
             for t in self.state.trade_history
             if t.ts >= today_start and t.outcome == "LOSS" and t.pnl is not None
         )
-        if daily_loss >= Config.DAILY_LOSS_LIMIT_USD:
-            log.warning("Daily loss limit reached ($%.2f >= $%.2f) — no new entries", daily_loss, Config.DAILY_LOSS_LIMIT_USD)
+        session_start = getattr(self.state, "session_start_balance", 0.0) or 0.0
+        max_daily_loss = session_start * 0.20 if session_start > 0 else Config.DAILY_LOSS_LIMIT_USD
+        if daily_loss >= max_daily_loss:
+            log.warning("Daily loss limit reached ($%.2f >= $%.2f, 20%% of session start) — no new entries", daily_loss, max_daily_loss)
             return
 
         if sig.skip_gates:
@@ -958,11 +981,16 @@ class Engine:
         if shares < 1:
             return
 
+        # Generate deterministic nonce for idempotency
+        import hashlib
+        nonce_str = f"{win_start}_{side_name}_{round(entry_px, 4)}_{shares}_{market_info.condition_id}"
+        nonce = int(hashlib.sha256(nonce_str.encode()).hexdigest(), 16) % (2**31 - 1)
+
         # Place order
         if sig.monster_signal:
-            order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="FOK")
+            order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="FOK", nonce=nonce)
         else:
-            order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="GTC")
+            order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="GTC", nonce=nonce)
 
         if not order_id:
             log.error("Entry order failed")

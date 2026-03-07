@@ -85,6 +85,7 @@ class EngineState:
     total_losses: int                     = 0
     total_pnl_usd: float                  = 0.0
     unclaimed_usdc: float                 = 0.0
+    session_start_balance: Optional[float] = None
 
     # ── Microstructure memory ─────────────────────────────────────────────────
     prev_bid_depth20: Optional[float]     = None
@@ -156,6 +157,8 @@ class StateManager:
 
     async def init_db(self):
         async with self.engine.begin() as conn:
+            await conn.execute(text("PRAGMA journal_mode=WAL;"))
+            await conn.execute(text("PRAGMA synchronous=NORMAL;"))
             await conn.execute(text(
                 "CREATE TABLE IF NOT EXISTS kv "
                 "(key TEXT PRIMARY KEY, value TEXT NOT NULL)"

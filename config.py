@@ -77,6 +77,7 @@ class Config:
     DAILY_LOSS_LIMIT_PCT       = 0.10     # stop if daily loss > 10% of starting balance
     MAX_EXPOSURE_USD           = 100.0    # total notional across all positions
     KILL_SWITCH                = os.getenv("KILL_SWITCH", "false").lower() == "true"
+    KILL_SWITCH_PASSWORD       = os.getenv("KILL_SWITCH_PASSWORD", "admin")
 
     # ── Strike resolution priority (FIX #2) ──────────────────────────────────
     # 1. Binance 15m kline open
@@ -132,3 +133,16 @@ class Config:
         if balance <= 200:
             return cls.RISK_TIER_200
         return cls.RISK_TIER_OVER
+
+    @classmethod
+    def validate(cls):
+        missing = []
+        # Require Polymarket credentials to run
+        for key in ["POLYMARKET_PRIVATE_KEY", "POLYMARKET_API_KEY", "POLYMARKET_API_SECRET", "POLYMARKET_API_PASSPHRASE"]:
+            if not getattr(cls, key):
+                missing.append(key)
+        if missing:
+            raise ValueError(f"CRITICAL: Missing required environment variables: {', '.join(missing)}")
+
+# Fail fast at module load time if running the bot
+Config.validate()
