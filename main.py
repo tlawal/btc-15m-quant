@@ -667,7 +667,7 @@ class Engine:
         self.state.prev_cycle_price = btc_price
 
         # ── Update Prometheus Metrics ─────────────────────────────────────────
-        metrics_exporter.update_metrics(self.state, self.state.to_dict(), sig)
+        metrics_exporter.update_metrics(self.state, asdict(self.state), sig)
 
         # ── Save state ────────────────────────────────────────────────────────
         print("DEBUG: saving state", flush=True)
