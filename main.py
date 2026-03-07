@@ -756,6 +756,27 @@ class Engine:
         except Exception:
             pass  # WS broadcast is best-effort
 
+        # Phase 5: Write heartbeat for dashboard
+        hb_data = {
+            "wallet_usdc": wallet_usdc or 0.0,
+            "regime": sig.regime if "sig" in locals() else "Normal",
+            "signed_score": sig.signed_score if "sig" in locals() else 0.0,
+            "posterior_final_up": sig.posterior_final_up if "sig" in locals() else 0.0,
+            "edge": sig.target_edge if "sig" in locals() else 0.0,
+            "required_edge": sig.required_edge if "sig" in locals() else 0.0,
+            "cvd": getattr(self.state, "cvd", 0.0),
+            "accum_ofi": getattr(self.state, "accumulated_ofi", 0.0),
+            "latency_ms": self.state.latencies.get("data_fetch_all", 0),
+            "signal_direction": sig.direction if "sig" in locals() else "NEUTRAL",
+            "target_action": getattr(sig, "action", "NONE") if "sig" in locals() else "NONE",
+            "gates": sig.skip_gates if "sig" in locals() else [],
+            "balance": balance or 0.0,
+            "unclaimed_usdc": self.state.unclaimed_usdc or 0.0
+        }
+        hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
+        async with aiofiles.open(hb_path, "w") as f:
+            await f.write(json.dumps(hb_data))
+
         # ── Save state ────────────────────────────────────────────────────────
         await self.state_mgr.save(self.state)
 
