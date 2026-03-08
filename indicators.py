@@ -119,7 +119,7 @@ def compute_local_indicators(
     tr_smooth = tr.ewm(alpha=1/14, adjust=False).mean()
     plus_di = 100 * (plus_dm.ewm(alpha=1/14, adjust=False).mean() / tr_smooth)
     minus_di = 100 * (minus_dm.ewm(alpha=1/14, adjust=False).mean() / tr_smooth)
-    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, float('nan'))
     res.adx14 = dx.ewm(alpha=1/14, adjust=False).mean().iloc[-1]
 
     # Stochastic

@@ -159,6 +159,10 @@ class EngineState:
     # ── Nightly AI review tracking ─────────────────────────────────────────────
     last_review_date: Optional[str]       = None
 
+    # ── Trade context (survives serialization) ────────────────────────────────
+    entry_features: Optional[dict]        = None
+    entry_regime: Optional[str]           = None
+
     # ── Tier 1: Cross-window memory ───────────────────────────────────────────
     window_outcomes: List[str]            = field(default_factory=list)  # ["UP","DOWN",...]
     last_funding_rate: Optional[float]    = None  # previous cycle's funding rate
@@ -326,6 +330,8 @@ class StateManager:
             "prev_cycle_price":       state.prev_cycle_price,
             "performance_metrics":    state.performance_metrics,
             "last_review_date":       state.last_review_date,
+            "entry_features":         state.entry_features,
+            "entry_regime":           state.entry_regime,
         }
         async with self._session_factory() as session:
             async with session.begin():

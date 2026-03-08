@@ -20,6 +20,7 @@ def compute_position_size(
     profit_factor:  Optional[float] = None,
     kelly_multiplier: float = 1.0,
     book: Optional[object] = None,
+    edge: Optional[float] = None,
 ) -> Optional[float]:
     """
     Returns position size in USD, or None if below minimum.
@@ -34,6 +35,11 @@ def compute_position_size(
         if balance >= Config.MIN_TRADE_USD and monster_floor >= Config.MIN_TRADE_USD:
             log.info(f"MONSTER_FORCE_MIN: forced ${monster_floor:.2f} on 90%+ conviction (balance=${balance:.2f})")
             return monster_floor
+
+    # Never trade on negative edge — even for monster signals
+    if edge is not None and edge < 0:
+        log.info(f"sizing: negative edge ({edge:.4f}) — skipping position")
+        return None
 
     risk_pct = Config.get_risk_pct(balance)
     max_loss_usd = balance * risk_pct

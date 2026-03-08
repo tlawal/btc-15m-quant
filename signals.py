@@ -328,17 +328,16 @@ def compute_signals(
     state.prev_x             = current_x
 
     # ── Technical scoring ─────────────────────────────────────────────────────
-    signed = 0.0
+    # Compute individual scores for logging / feature dict.
+    # Final accumulation into `signed` happens via group-max below.
 
     # EMA crossover ±2
     if indic.ema9 is not None and indic.ema20 is not None:
         res.ema_score = 2.0 if indic.ema9 > indic.ema20 else -2.0
-        signed += res.ema_score
 
     # VWAP ±1
     if indic.vwma15 is not None:
         res.vwap_score = 1.0 if btc_price > indic.vwma15 else -1.0
-        signed += res.vwap_score
 
     # RSI
     if indic.rsi14 is not None:
@@ -346,15 +345,13 @@ def compute_signals(
             res.rsi_score = 1.0
         elif indic.rsi14 < 30:
             res.rsi_score = -1.0
-        signed += res.rsi_score
 
-    # ATR amplifier ±1
+    # ATR amplifier ±1 (feeds into trend group via atr_score — kept on res for logging)
     if atr14 and atr14 > 120.0:
         if res.ema_score > 0:
             res.atr_score = 1.0
         elif res.ema_score < 0:
             res.atr_score = -1.0
-        signed += res.atr_score
 
     # MACD histogram
     if indic.macd_hist is not None:
@@ -362,7 +359,6 @@ def compute_signals(
             res.macd_score = 1.0
         elif indic.macd_hist < 0:
             res.macd_score = -1.0
-        signed += res.macd_score
 
     # Stochastic
     if indic.stoch_k is not None:
@@ -375,15 +371,13 @@ def compute_signals(
             res.stoch_score -= 0.5
         elif indic.stoch_k > 80 and res.ema_score > 0:
             res.stoch_score += 0.5
-        signed += res.stoch_score
 
-    # MFI divergence
+    # MFI divergence (feeds momentum_group via mfi_score)
     if indic.mfi14 is not None and state.prev_mfi is not None and state.prev_price is not None:
         if btc_price > state.prev_price and indic.mfi14 < state.prev_mfi:
             res.mfi_score = -2.0   # bearish divergence
         elif btc_price < state.prev_price and indic.mfi14 > state.prev_mfi:
             res.mfi_score = 2.0    # bullish divergence
-        signed += res.mfi_score
 
     # Multi-period OBV divergence
     if indic.obv_slope is not None and indic.price_slope is not None:
@@ -395,7 +389,6 @@ def compute_signals(
             res.obv_score = 2.5     # bullish divergence
         elif (p_sl > 0 and o_sl > 0) or (p_sl < 0 and o_sl < 0):
             res.obv_score = 0.5 * (1.0 if p_sl > 0 else -1.0)  # confirmation
-        signed += res.obv_score
 
     # ── Microstructure ────────────────────────────────────────────────────────
     res.vpin_proxy      = vpin_proxy
@@ -489,9 +482,7 @@ def compute_signals(
         pm_flow_score = 0.7 if pm_net_flow > 0 else -0.7
     res.pm_flow_score = pm_flow_score
 
-    # Weighted micro (includes Phase 3 TOB + CVD velocity + PM flow)
-    signed += cvd_score * 0.7 + ofi_score + imbalance_score + flow_accel
-    signed += tob_score * 0.6 + cvd_vel_score * 0.8 + pm_flow_score * 0.5
+    # (Micro scores are accumulated via group-max in the final signed= block below)
 
     # ── Tier 1: Whale Flow ────────────────────────────────────────────────────
     whale_flow_score = 0.0
@@ -505,7 +496,6 @@ def compute_signals(
     if minutes_remaining < 5.0 and whale_flow_score != 0.0:
         whale_flow_score *= 1.5
     res.whale_flow_score = whale_flow_score
-    signed += whale_flow_score * 0.9
 
     # ── Tier 1: Volatility Surface Spread Skew ────────────────────────────────
     spread_skew_score = 0.0
@@ -524,7 +514,6 @@ def compute_signals(
         elif skew_ratio <= 0.67:
             spread_skew_score = -1.0
     res.spread_skew_score = spread_skew_score
-    signed += spread_skew_score * 0.7
 
     # ── Tier 1: Multi-Window Momentum ─────────────────────────────────────────
     window_momentum_score = 0.0
@@ -542,7 +531,6 @@ def compute_signals(
         elif len(recent) >= 2 and downs >= 2:
             window_momentum_score = -0.5
     res.window_momentum_score = window_momentum_score
-    signed += window_momentum_score
 
     # ── Tier 2: Liquidation Cascade ───────────────────────────────────────────
     liq_cascade_score = 0.0
@@ -555,7 +543,6 @@ def compute_signals(
     elif liq_cascade < -500_000:
         liq_cascade_score = 1.5
     res.liq_cascade_score = liq_cascade_score
-    signed += liq_cascade_score * 0.6
 
     # ── Tier 2: Funding Rate Delta ────────────────────────────────────────────
     funding_delta_score = 0.0
@@ -572,7 +559,6 @@ def compute_signals(
         elif delta < -0.0002:
             funding_delta_score = 1.0
     res.funding_delta_score = funding_delta_score
-    signed += funding_delta_score * 0.5
 
     # ── Phase 2: NEW SIGNAL COMPONENTS ────────────────────────────────────────
 
@@ -589,7 +575,6 @@ def compute_signals(
         elif divergence_pct < -0.0015:
             oracle_lag_score = -2.0
     res.oracle_lag_score = oracle_lag_score
-    signed += oracle_lag_score
 
     # Spread Pressure
     res.spread_pressure_score = 0.0
@@ -606,7 +591,6 @@ def compute_signals(
     if spread_compression != 0.0:
         push_dir = 1.0 if imbalance_score > 0 else (-1.0 if imbalance_score < 0 else 0)
         res.spread_pressure_score = spread_compression * push_dir
-    signed += res.spread_pressure_score
 
     # Perpetual Funding Rate Divergence
     res.funding_rate_score = 0.0
@@ -621,7 +605,7 @@ def compute_signals(
         elif funding_rate < -0.00015:
             res.funding_rate_score = 0.5
             
-    signed += res.funding_rate_score
+    # (funding_rate_score accumulated in group block below)
 
     # Liquidity Vacuum Detection
     liq_vacuum_score = 0.0
@@ -637,7 +621,6 @@ def compute_signals(
         elif bid_ask_ratio < 0.50:
             liq_vacuum_score = -1.0
     res.liq_vacuum_score = liq_vacuum_score
-    signed += liq_vacuum_score * 0.8
 
     # Bollinger Band Position
     bb_position_score = 0.0
@@ -654,7 +637,6 @@ def compute_signals(
         elif bb_pos < 0.30:
             bb_position_score = -0.5
     res.bb_position_score = bb_position_score
-    signed += bb_position_score
 
     # Cross-Exchange CVD Confirmation
     cross_exch_score = 0.0
@@ -663,7 +645,6 @@ def compute_signals(
     else:
         cross_exch_score = -0.3 * (1.0 if signed > 0 else -1.0)
     res.cross_exch_score = cross_exch_score
-    signed += cross_exch_score
 
     # Accumulated OFI Score
     accum_ofi_score = 0.0
@@ -672,7 +653,6 @@ def compute_signals(
     elif abs(accumulated_ofi) > Config.OFI_STRONG:
         accum_ofi_score = 1.0 if accumulated_ofi > 0 else -1.0
     res.accum_ofi_score = accum_ofi_score
-    signed += accum_ofi_score * 0.8
 
     # Prediction Market Mispricing Detection
     # NOTE: Mispricing is applied after direction is known so it can be aligned
@@ -689,7 +669,6 @@ def compute_signals(
         elif not price_above_vwma and not price_above_ema9:
             mtf_momentum_score = -1.0
     res.mtf_momentum_score = mtf_momentum_score
-    signed += mtf_momentum_score * 0.6
 
     # ADX + Stochastic Momentum Boost
     adx_stoch_boost = 0.0
@@ -699,32 +678,67 @@ def compute_signals(
         elif indic.adx14 > 25 and indic.stoch_k < indic.stoch_d and indic.stoch_k > 20:
             adx_stoch_boost = -1.0
     res.adx_stoch_boost = adx_stoch_boost
-    signed += adx_stoch_boost
 
+    # OBI (computed here for use in group block and later penalty)
+    obi_denom = total_bid_size + total_ask_size
+    obi = (total_bid_size - total_ask_size) / obi_denom if obi_denom > 0 else 0.0
+    res.obi = obi
+
+    # ── Phase 4: Group-based scoring (prevents correlated inflation) ──────────
+    # Each group contributes its maximum-magnitude element, not the sum.
+    # This caps theoretical max at ~6 groups × ~3 each ≈ ±18 instead of ±30+.
+    def _signed_max(*vals):
+        """Return the value with the largest absolute magnitude."""
+        filtered = [v for v in vals if v is not None]
+        return max(filtered, key=abs) if filtered else 0.0
+
+    trend_group    = _signed_max(res.ema_score, res.vwap_score, res.macd_score, res.mtf_momentum_score)
+    momentum_group = _signed_max(res.rsi_score, res.stoch_score, res.mfi_score)
+    flow_group     = _signed_max(res.cvd_score, res.ofi_score, res.flow_accel_score, res.accum_ofi_score)
+    micro_group    = _signed_max(res.imbalance_score, res.spread_pressure_score, res.liq_vacuum_score)
+    new_sig_group  = _signed_max(
+        res.whale_flow_score,
+        res.spread_skew_score,
+        res.window_momentum_score,
+        res.liq_cascade_score,
+        res.funding_delta_score,
+    )
+    # Standalone / modifier signals added separately (they ARE additive by design)
+    signed = (
+        trend_group + momentum_group + flow_group + micro_group + new_sig_group
+        + res.obv_score          # standalone divergence indicator
+        + res.adx_stoch_boost    # compound trend×momentum modifier
+        + res.oracle_lag_score   # oracle divergence
+        + res.funding_rate_score # absolute funding level
+        + res.bb_position_score  # BB position
+        + res.cross_exch_score   # cross-exchange confirmation
+        + tob_score * 0.6 + cvd_vel_score * 0.8 + pm_flow_score * 0.5
+    )
+    log.debug(
+        f"Score groups: trend={trend_group:.2f} mom={momentum_group:.2f} "
+        f"flow={flow_group:.2f} micro={micro_group:.2f} new={new_sig_group:.2f} "
+        f"obv={res.obv_score:.2f} adx_boost={res.adx_stoch_boost:.2f} → {signed:.2f}"
+    )
+
+    # ── Post-group modifiers ──────────────────────────────────────────────────
     # Stale micro penalty
     if is_stale_micro and abs(signed) < 5.0:
         signed *= 0.8
 
-    # ── Phase 3: Window-specific signal calibration ───────────────────────────
-    # Early in the window (first 2 min): signals are noisy, dampen non-micro scores.
-    # Late in the window (last 3 min): micro signals dominate, boost them.
+    # Window-specific calibration
     window_min = Config.WINDOW_SEC / 60.0
     t_frac = minutes_remaining / window_min if window_min > 0 else 0.5
-    if t_frac > 0.87:  # first ~2 min of 15 min window
-        # Dampen all technical scores but preserve micro
+    if t_frac > 0.87:  # first ~2 min: dampen
         signed *= 0.75
-    elif t_frac < 0.20:  # last ~3 min
-        # Late phase: micro signals are more predictive — boost their contribution
-        micro_boost = (tob_score * 0.6 + cvd_vel_score * 0.8) * 0.3  # 30% extra
+    elif t_frac < 0.20:  # last ~3 min: add micro boost
+        micro_boost = (tob_score * 0.6 + cvd_vel_score * 0.8) * 0.3
         signed += micro_boost
 
-    # Apply belief-vol multiplier
+    # Belief-vol multiplier
     signed *= res.bvol_multiplier
 
-    # OBI penalty
-    obi_denom = total_bid_size + total_ask_size
-    obi = (total_bid_size - total_ask_size) / obi_denom if obi_denom > 0 else 0.0
-    res.obi = obi
+    # Cap raw score to prevent extreme values from dominating the EMA
+    signed = max(-8.0, min(8.0, signed))
 
     res.signed_score = signed
     # Phase 7: EMA smoothing to reduce single-cycle noise
@@ -839,7 +853,7 @@ def compute_signals(
         res.posterior_final_down if res.direction == "DOWN" else 0.0
     ) or 0.0
     res.monster_signal = (
-        res.abs_score >= Config.MONSTER_SCORE or
+        res.abs_score >= Config.MONSTER_SCORE and
         chosen_posterior >= Config.MONSTER_POSTERIOR
     )
 

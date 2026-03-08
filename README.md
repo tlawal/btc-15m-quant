@@ -34,9 +34,13 @@ utils.py         — Logging, Telegram alerts, formatting
 - **Bayesian posterior blending** — logit-space signal weight (0.7), time-decay curve
 - **Belief-vol sigma_B** — rolling 3-min belief volatility regresses posterior toward 0.5 in high-noise regimes (capped at 1.0)
 - **EMA score smoothing** — `signed_score = 0.6 * raw + 0.4 * prev` to reduce single-cycle noise
+- **Group-max scoring** — 5 signal groups (Trend, Momentum, Flow, Microstructure, New Signals) each contribute only their strongest member; prevents correlated feature inflation; raw score capped at ±8.0
 - **Microstructure signals** — TOB imbalance, CVD velocity, deep OFI (10-level), VPIN proxy
+- **Tier 1 signals** — Whale flow (Polymarket fills ≥$50), spread skew (NO/YES spread ratio), multi-window momentum
+- **Tier 2 signals** — Liquidation cascade (Binance forced orders), funding rate delta
 - **Regime-adaptive thresholds** — min score and required edge scale with 15m ATR (low/normal/high)
-- **Monster signal override** — `abs_score >= 8.0 OR posterior >= 0.90` bypasses most gates, uses FOK at ask
+- **Monster signal** — requires BOTH `abs_score >= 8.0 AND posterior >= 0.90`; uses FOK at ask
+- **Negative-edge block** — never sizes a position when model edge < 0, even on monster signals
 
 ### Execution
 - **Smart entry pricing** — passive `bid+1tick` for GTC, aggressive `ask` for FOK monster signals
@@ -45,7 +49,9 @@ utils.py         — Logging, Telegram alerts, formatting
 - **Stale order replace** — cancel + re-place after 12s if entry GTC not filled
 - **Exit timeout FOK** — if exit order pending > 60s, force-replaces as FOK at `bid - 1 tick`
 - **State checkpoint** — saves state before every order placement (crash-safe)
-- **Startup reconciliation** — checks pending orders on restart before entering main loop
+- **Startup reconciliation** — checks pending orders AND live API positions on restart; populates `held_position` from Polymarket if local state is out of sync
+- **Slippage tracking** — actual fill price vs intended price logged per trade; warns if > 1%
+- **Market quality filter** — skips cycle if spreads > 8%, book depth < 20 USDC, or klines > 5 min stale
 
 ### Risk Management
 - `MIN_TRADE_USD = 5.75` — minimum notional per trade (Polymarket CLOB minimum ~$5)
@@ -53,7 +59,7 @@ utils.py         — Logging, Telegram alerts, formatting
 - `MAX_EXPOSURE_USD = 100.00` — blocks new entries if already at exposure limit
 - `MAX_TRADES_PER_HOUR = 8` — rolling 1-hour entry limit
 - `STREAK_HALT_AT = 3` — halts trading after 3 consecutive losses
-- `DAILY_LOSS_LIMIT_PCT = 10%` — stops if daily realized loss > 10% of session start
+- `DAILY_LOSS_LIMIT_PCT = 10%` — stops if rolling 24h realized loss > 10% of session start balance
 - **BTC price sanity** — skips cycle if price outside [$10k, $500k] or indicator diverges > 5%
 - **No-trade alert** — CRITICAL Telegram after 100 consecutive skipped cycles
 

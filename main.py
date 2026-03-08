@@ -8,7 +8,7 @@ Architecture:
   - Graceful shutdown on SIGINT/SIGTERM
 """
 
-BUILD_VERSION = "v2.2-INIT-FIX"
+BUILD_VERSION = "v2.3-AUDIT-FIXES"
 
 import asyncio
 import aiofiles
@@ -193,6 +193,29 @@ class Engine:
             from state import EngineState
             self.state = EngineState()
             self.optimizer.state = self.state
+
+        # Startup position reconciliation — sync held position with Polymarket API
+        if self.pm.can_trade and not self.state.held_position.side:
+            try:
+                async with asyncio.timeout(10):
+                    api_positions = await self.pm.get_open_positions()
+                    for pos in (api_positions or []):
+                        token_id = pos.get("asset_id") or pos.get("token_id")
+                        size = float(pos.get("size") or pos.get("balance") or 0)
+                        price = float(pos.get("price") or 0.5)
+                        if token_id and size > 0:
+                            outcome = (pos.get("outcome") or "").lower()
+                            side = "YES" if ("yes" in outcome or "up" in outcome) else "NO"
+                            log.warning(f"STARTUP RECONCILE: API position found — {side} size={size:.2f} @ {price:.3f}")
+                            self.state.held_position.side = side
+                            self.state.held_position.token_id = token_id
+                            self.state.held_position.size = size
+                            self.state.held_position.entry_price = price
+                            self.state.held_position.avg_entry_price = price
+                            self.state.held_position.is_pending = False
+                            break
+            except Exception as e:
+                log.warning(f"Startup position reconciliation failed: {e}")
 
         if self.pm.can_trade:
             print(f"ENGINE START BUILD={BUILD_VERSION} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS}", flush=True)
@@ -540,6 +563,27 @@ class Engine:
             liq_cascade = await self.feeds.get_liquidation_cascade(lookback_s=60)
         except Exception as e:
             log.debug(f"liq_cascade fetch: {e}")
+
+        # ── Market Quality Filter ──────────────────────────────────────────────
+        spread_yes = (ob.yes_ask - ob.yes_bid) if (ob.yes_ask and ob.yes_bid) else 1.0
+        spread_no  = (ob.no_ask - ob.no_bid)   if (ob.no_ask  and ob.no_bid)  else 1.0
+        book_depth = (ob.total_bid_size or 0) + (ob.total_ask_size or 0)
+        if spread_yes > 0.08 and spread_no > 0.08:
+            log.debug(f"Market quality skip: spreads too wide (YES={spread_yes:.3f} NO={spread_no:.3f})")
+            await self.state_mgr.save(self.state)
+            return
+        if book_depth < 20:
+            log.debug(f"Market quality skip: book too thin (depth={book_depth:.1f})")
+            await self.state_mgr.save(self.state)
+            return
+
+        # Kline staleness check
+        if k5m and len(k5m) > 0:
+            last_candle_age_sec = (int(time.time() * 1000) - k5m[-1].ts_ms) / 1000
+            if last_candle_age_sec > 300:
+                log.warning(f"Stale kline data: last candle is {last_candle_age_sec:.0f}s old — skipping cycle")
+                await self.state_mgr.save(self.state)
+                return
 
         # Phase 6: Institutional Signal Optimization
         score_offset, edge_offset = self.optimizer.get_adjusted_thresholds(0.0, 0.0)
@@ -1017,12 +1061,14 @@ class Engine:
                 pos.avg_entry_price = actual_px
                 
                 # Update TradeRecord in history
+                if abs(slippage) > 0.01:
+                    log.warning(f"HIGH SLIPPAGE: {slippage*100:.2f}% (intended={intended_px:.3f} actual={actual_px:.3f})")
                 for tr in reversed(self.state.trade_history):
                     if tr.side == pos.side and tr.outcome == "OPEN":
                         tr.entry_price = actual_px
                         tr.slippage = slippage
                         break
-                
+
                 log.info(f"ENTRY CONFIRMED: {pos.side} @ {actual_px} slippage={slippage*100:.4f}%")
 
         elif st in ("CANCELED", "EXPIRED"):
@@ -1163,7 +1209,7 @@ class Engine:
         sharpe = 0.0
         if len(pnl_list) >= 2:
             try:
-                sharpe = (statistics.mean(pnl_list) / statistics.stdev(pnl_list)) * (len(pnl_list) ** 0.5)
+                sharpe = statistics.mean(pnl_list) / statistics.stdev(pnl_list)
             except (ZeroDivisionError, statistics.StatisticsError):
                 sharpe = 0.0
         gross_profit = sum(p for p in pnl_list if p > 0)
@@ -1357,22 +1403,22 @@ class Engine:
         now_sec = int(time.time())
         hour_ago = now_sec - 3600
         recent_trades = [
-            t for t in self.state.trade_history 
-            if t.ts >= hour_ago and t.outcome == "OPEN"  # Only count *entries*
+            t for t in self.state.trade_history
+            if t.ts >= hour_ago  # Count all entries placed in last hour
         ]
         if len(recent_trades) >= getattr(Config, "MAX_TRADES_PER_HOUR", 6):
             log.warning(f"Hourly trade limit reached ({len(recent_trades)}/hour) — no new entries")
             return
 
         # Daily loss limit: sum realized losses from today's trades
-        today_start = now_sec - 86400
+        today_start = now_sec - 86400  # rolling 24h window (not calendar day reset)
         daily_loss = sum(
             abs(t.pnl or 0) * (t.entry_price or 0) * (getattr(t, 'size', 0) or 0)
             for t in self.state.trade_history
             if t.ts >= today_start and t.outcome == "LOSS" and t.pnl is not None
         )
         session_start = getattr(self.state, "session_start_balance", 0.0) or 0.0
-        max_daily_loss = session_start * 0.20 if session_start > 0 else Config.DAILY_LOSS_LIMIT_USD
+        max_daily_loss = session_start * Config.DAILY_LOSS_LIMIT_PCT if session_start > 0 else Config.DAILY_LOSS_LIMIT_USD
         if daily_loss >= max_daily_loss:
             log.warning("Daily loss limit reached ($%.2f >= $%.2f, 20%% of session start) — no new entries", daily_loss, max_daily_loss)
             return
@@ -1429,6 +1475,7 @@ class Engine:
             profit_factor = profit_factor,
             kelly_multiplier = self.optimizer.get_kelly_multiplier(),
             book = ob,
+            edge = sig.edge_up if sig.direction == "UP" else sig.edge_down,
         )
         if not position_usd:
             log.info(f"Position size below minimum (bal={balance:.2f})")
