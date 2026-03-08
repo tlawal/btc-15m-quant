@@ -194,6 +194,15 @@ class Engine:
             self.state = EngineState()
             self.optimizer.state = self.state
 
+        # Reset prev_cycle_score if restarted across a window boundary.
+        # Without this, a stale negative score from a previous window suppresses the
+        # first post-restart signal via EMA smoothing (e.g. 0.6×5.0 + 0.4×(-3.0) = 1.8).
+        if self.state.last_window_start_sec is not None:
+            _current_win = current_window_start(int(time.time()))
+            if _current_win != self.state.last_window_start_sec:
+                self.state.prev_cycle_score = None
+                log.info("prev_cycle_score cleared on cross-window restart")
+
         # Startup position reconciliation — sync held position with Polymarket API
         if self.pm.can_trade and not self.state.held_position.side:
             try:
