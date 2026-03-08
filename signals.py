@@ -867,10 +867,15 @@ def compute_signals(
         res.posterior_final_up   if res.direction == "UP" else
         res.posterior_final_down if res.direction == "DOWN" else 0.0
     ) or 0.0
-    res.monster_signal = (
+    # Standard monster: high technical score + high posterior
+    _standard_monster = (
         res.abs_score >= Config.MONSTER_SCORE and
         chosen_posterior >= Config.MONSTER_POSTERIOR
     )
+    # Near-certain override: posterior >= 0.995 with any meaningful directional signal.
+    # At 99.5%+ conviction the posterior is more reliable than a technical score of 8.0.
+    _near_certain_override = (chosen_posterior >= 0.995 and res.abs_score >= 1.0)
+    res.monster_signal = _standard_monster or _near_certain_override
 
     # ── Skip gates ────────────────────────────────────────────────────────────
     gates = []
@@ -893,18 +898,18 @@ def compute_signals(
     best_posterior = max(res.posterior_final_up or 0, res.posterior_final_down or 0)
 
     if market_price is None:
-        effective_required_edge = 0.035
+        effective_required_edge = 0.018
     else:
-        if best_posterior >= 0.95:                                              # monster sure-thing
-            effective_required_edge = 0.005 if minutes_remaining < 3 else 0.012
+        if best_posterior >= 0.95:                                              # near-certain sure-thing
+            effective_required_edge = 0.003 if minutes_remaining < 3 else 0.005
         elif minutes_remaining < 2:
-            effective_required_edge = 0.010
+            effective_required_edge = 0.005
         elif minutes_remaining < 3 and best_posterior >= 0.80:                  # late + strong conviction
-            effective_required_edge = 0.015
+            effective_required_edge = 0.006
         elif market_price < 0.10 or market_price > 0.90:
-            effective_required_edge = 0.012
+            effective_required_edge = 0.007  # was 0.012 — high market_price means small absolute edge is still +EV
         else:
-            effective_required_edge = 0.035
+            effective_required_edge = 0.018  # was 0.035
 
     # Ultra-late force
     if minutes_remaining < 1.0 and best_posterior >= 0.97:

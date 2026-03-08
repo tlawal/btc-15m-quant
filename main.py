@@ -1433,7 +1433,29 @@ class Engine:
             log.warning(f"Exposure limit reached (${current_exposure:.2f} >= ${Config.MAX_EXPOSURE_USD:.2f}) — no new entries")
             return
 
-        if sig.skip_gates:
+        # Low-balance near-certain override: bypass non-fatal gates when posterior is
+        # near-certain (≥97%) and we have a small but real edge. This breaks the
+        # zero-trade deadlock at sub-$20 balance where edge gates are too conservative.
+        _best_posterior = max(
+            sig.posterior_final_up or 0.0,
+            sig.posterior_final_down or 0.0,
+        )
+        _fatal_gates = {"neutral_direction", "monster_too_early"}
+        _has_fatal = any(any(f in g for f in _fatal_gates) for g in (sig.skip_gates or []))
+        _override_active = (
+            balance < Config.LOW_BALANCE_THRESHOLD_USD
+            and _best_posterior >= 0.97
+            and sig.target_edge is not None and sig.target_edge > 0.005
+            and min_rem >= 2.0 and min_rem <= 12.0
+            and sig.direction != "NEUTRAL"
+            and not _has_fatal
+        )
+        if _override_active:
+            log.info(
+                f"LOW_BAL_NEAR_CERTAIN_OVERRIDE: posterior={_best_posterior:.4f} "
+                f"edge={sig.target_edge:.4f} gates_bypassed={sig.skip_gates}"
+            )
+        elif sig.skip_gates:
             primary_gate = sig.skip_gates[0] if sig.skip_gates else "unknown"
             log.info(f"Entry blocked by gate: {primary_gate} (all={sig.skip_gates})")
             return

@@ -41,7 +41,7 @@ class Config:
     # Balance-adaptive edge: when wallet is small, use lower edge requirement
     # This prevents the bot from being perpetually blocked at low capital.
     LOW_BALANCE_THRESHOLD_USD  = 20.0   # apply lower edge when balance < this
-    REQUIRED_EDGE_LOW_BALANCE  = 0.020  # relaxed edge requirement at low balance
+    REQUIRED_EDGE_LOW_BALANCE  = 0.007  # relaxed edge requirement at low balance (was 0.020 — too high for sub-$20)
     # Fallback ATR used when local ATR computation is unavailable.
     DEFAULT_ATR                = 150.0
 
@@ -54,7 +54,7 @@ class Config:
     LATE_CONVICTION_MIN_REM    = 3.0      # must be within last 3 min of window
     LATE_CONVICTION_POSTERIOR  = 0.80     # model must be ≥80% confident (was 0.93, too strict)
     LATE_CONVICTION_DISTANCE   = 40.0     # price must be ≥$40 from strike
-    LATE_CONVICTION_EDGE       = 0.020    # relaxed edge requirement (2.0% instead of 3.5%)
+    LATE_CONVICTION_EDGE       = 0.006    # relaxed edge requirement (was 0.020 — too high for near-certain late trades)
 
     # ── ADX trend filter (FIX #5) ─────────────────────────────────────────────
     ADX_TREND_THRESHOLD        = 20.0     # below = choppy, block directional entry
