@@ -160,6 +160,26 @@ async def get_signal_history(limit: int = 240):
     except Exception:
         return []
 
+@app.get("/api/review")
+async def get_review():
+    """Return the latest nightly AI review markdown."""
+    data_dir = "/data" if os.path.isdir("/data") else "."
+    try:
+        # Find latest nightly_review_*.md
+        files = sorted(
+            [f for f in os.listdir(data_dir) if f.startswith("nightly_review_") and f.endswith(".md")],
+            reverse=True
+        )
+        if not files:
+            return {"date": None, "content": None, "error": "No review available yet"}
+        latest = files[0]
+        date_str = latest.replace("nightly_review_", "").replace(".md", "")
+        with open(os.path.join(data_dir, latest), "r") as f:
+            content = f.read()
+        return {"date": date_str, "content": content}
+    except Exception as e:
+        return {"date": None, "content": None, "error": str(e)}
+
 @app.get("/api/logs")
 async def get_logs(limit: int = 240):
     log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"

@@ -18,8 +18,8 @@ COPY .env.example ./
 ENV DATABASE_URL=sqlite+aiosqlite:////data/state.db
 ENV PYTHONUNBUFFERED=1
 
-# Non-root user - temporarily disabled to resolve Railway volume permission issues
-# RUN useradd -m -u 1001 quant && mkdir -p /data && chown quant:quant /data
-# USER quant
+# Non-root user for security
+RUN useradd -m -u 1001 quant && mkdir -p /data && chown quant:quant /data
+USER quant
 
 CMD ["python", "main.py"]

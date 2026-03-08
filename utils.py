@@ -96,7 +96,18 @@ class StructuredJSONLogger:
         os.makedirs(self.log_dir, exist_ok=True)
         self.filepath = os.path.join(self.log_dir, "structured_logs.json")
 
+    def _rotate_if_needed(self, max_bytes: int = 10 * 1024 * 1024):
+        """Rotate log file if it exceeds max_bytes (default 10MB)."""
+        try:
+            if os.path.exists(self.filepath) and os.path.getsize(self.filepath) > max_bytes:
+                rotated = self.filepath + ".1"
+                os.replace(self.filepath, rotated)
+                log.info(f"Log rotated: {self.filepath} -> {rotated}")
+        except Exception as e:
+            log.warning(f"Log rotation failed: {e}")
+
     def log(self, event_type: str, data: dict):
+        self._rotate_if_needed()
         entry = {
             "ts": int(time.time()),
             "type": event_type,

@@ -20,3 +20,4 @@ web3==7.14.1
 alembic==1.18.4
 prometheus_client==0.21.0
 asyncpg==0.29.0
+anthropic>=0.40.0

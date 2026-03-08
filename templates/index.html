@@ -795,6 +795,17 @@
         }
     </script>
 
+    <!-- Panel 9: Nightly AI Review -->
+    <div class="mx-4 mb-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div class="flex items-center justify-between mb-3">
+            <div class="text-xs font-semibold text-slate-400 uppercase tracking-widest">Nightly AI Review</div>
+            <span id="review-date" class="text-[0.6rem] text-slate-500 font-mono">loading...</span>
+        </div>
+        <div id="review-content" class="text-[0.7rem] text-slate-300 font-mono leading-relaxed overflow-auto max-h-72 whitespace-pre-wrap">
+            Waiting for first nightly review (runs at 00:05 UTC)...
+        </div>
+    </div>
+
     <!-- Panel 7: Signal Time Series -->
     <div class="mx-4 mb-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4" style="padding-bottom:0">
         <div class="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Signal Time Series (last 60 min)</div>
@@ -905,6 +916,23 @@
     // Fetch signal history every 30s
     updatePlotlyCharts();
     setInterval(updatePlotlyCharts, 30000);
+
+    // Fetch nightly review once on load, then every 5 minutes
+    async function updateReviewPanel() {
+        try {
+            const res = await fetch('/api/review');
+            const data = await res.json();
+            if (data.content) {
+                document.getElementById('review-date').innerText = data.date || '';
+                document.getElementById('review-content').innerText = data.content;
+            } else if (data.error && data.error !== 'No review available yet') {
+                document.getElementById('review-date').innerText = 'error';
+                document.getElementById('review-content').innerText = data.error;
+            }
+        } catch(e) { /* silent */ }
+    }
+    updateReviewPanel();
+    setInterval(updateReviewPanel, 300000);
     </script>
 
     <!-- Floating Kill Switch -->

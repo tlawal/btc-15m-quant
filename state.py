@@ -156,6 +156,9 @@ class EngineState:
     # ── Belief volatility ─────────────────────────────────────────────────────
     belief_vol_samples: List[BeliefVolSample] = field(default_factory=list)
 
+    # ── Nightly AI review tracking ─────────────────────────────────────────────
+    last_review_date: Optional[str]       = None
+
 
 # ── State manager ─────────────────────────────────────────────────────────────
 
@@ -318,6 +321,7 @@ class StateManager:
             "prev_cycle_score":       state.prev_cycle_score,
             "prev_cycle_price":       state.prev_cycle_price,
             "performance_metrics":    state.performance_metrics,
+            "last_review_date":       state.last_review_date,
         }
         async with self._session_factory() as session:
             async with session.begin():

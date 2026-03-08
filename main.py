@@ -41,6 +41,7 @@ from utils import (
 )
 from optimizer import SignalOptimizer
 from attribution import FeatureAttributor
+from reviewer import run_nightly_review
 import metrics_exporter
 
 setup_logging()
@@ -462,6 +463,16 @@ class Engine:
             await self.state_mgr.save(self.state)
             return
 
+        # ── BTC price sanity check ────────────────────────────────────────────
+        if btc_price < 10000 or btc_price > 500000:
+            log.error(f"BTC price sanity check failed: {btc_price:.2f} — skipping cycle")
+            await self.state_mgr.save(self.state)
+            return
+        if indic.close and abs(indic.close - btc_price) / btc_price > 0.05:
+            log.error(f"Indicator close ({indic.close:.2f}) diverged >5% from BTC price ({btc_price:.2f}) — skipping cycle")
+            await self.state_mgr.save(self.state)
+            return
+
         # ── Real CVD: prefer WebSocket, fall back to REST ─────────────────────
         ws_cvd, ws_buy, ws_sell = self.cvd_ws.get_volumes()
         ws_total = ws_buy + ws_sell
@@ -793,6 +804,14 @@ class Engine:
 
         # Heartbeat is written by _write_heartbeat() earlier in _cycle()
 
+        # ── Nightly AI review (00:05 UTC) ─────────────────────────────────────
+        utc_now = datetime.now(timezone.utc)
+        today_str = utc_now.strftime("%Y-%m-%d")
+        if utc_now.hour == 0 and utc_now.minute == 5 and self.state.last_review_date != today_str:
+            self.state.last_review_date = today_str
+            asyncio.create_task(run_nightly_review(session=self.feeds.session))
+            log.info(f"Nightly AI review triggered for {today_str}")
+
         # ── Save state ────────────────────────────────────────────────────────
         await self.state_mgr.save(self.state)
 
@@ -991,7 +1010,34 @@ class Engine:
         elif st in ("OPEN", "LIVE"):
             # Stale order replacement: if >12s old, cancel and re-place at current price
             age_s = int(time.time()) - (pos.placed_at_ts or 0)
-            if age_s > 12 and not pos.exit_reason:
+            if age_s > 60 and pos.exit_reason:
+                # Exit order stale >60s — force FOK at bid-1tick for guaranteed fill
+                log.warning(f"EXIT TIMEOUT ({age_s}s): re-placing {pos.order_id} as FOK")
+                try:
+                    ob = await self.pm.get_order_books(pos.token_id, pos.token_id)
+                    if ob and pos.side == "YES":
+                        force_px = max((ob.yes_bid or 0.01) - 0.01, 0.01)
+                    elif ob and pos.side == "NO":
+                        force_px = max((ob.no_bid or 0.01) - 0.01, 0.01)
+                    else:
+                        force_px = max((pos.intended_exit_price or 0.50) - 0.01, 0.01)
+                    new_oid = await self.pm.replace_order(
+                        old_order_id=pos.order_id,
+                        token_id=pos.token_id,
+                        new_price=force_px,
+                        size=pos.size,
+                        order_type="FOK",
+                    )
+                    if new_oid:
+                        pos.order_id = new_oid
+                        pos.placed_at_ts = int(time.time())
+                        log.info(f"EXIT FOK placed @ {force_px} -> {new_oid}")
+                    else:
+                        log.error("Exit FOK replace failed — position may be stuck")
+                except Exception as e:
+                    log.warning(f"Exit timeout replace error: {e}")
+
+            elif age_s > 12 and not pos.exit_reason:
                 log.info(f"STALE ORDER ({age_s}s): replacing {pos.order_id}")
                 # Fetch current orderbook for fresh price
                 try:
@@ -1294,6 +1340,13 @@ class Engine:
             log.warning("Daily loss limit reached ($%.2f >= $%.2f, 20%% of session start) — no new entries", daily_loss, max_daily_loss)
             return
 
+        # ── Exposure cap ──────────────────────────────────────────────────────
+        current_exposure = self.state.held_position.size_usd or 0.0
+        # position_usd not computed yet — check against conservative max
+        if current_exposure >= Config.MAX_EXPOSURE_USD:
+            log.warning(f"Exposure limit reached (${current_exposure:.2f} >= ${Config.MAX_EXPOSURE_USD:.2f}) — no new entries")
+            return
+
         if sig.skip_gates:
             primary_gate = sig.skip_gates[0] if sig.skip_gates else "unknown"
             log.info(f"Entry blocked by gate: {primary_gate} (all={sig.skip_gates})")
@@ -1392,6 +1445,9 @@ class Engine:
         import hashlib
         nonce_str = f"{win_start}_{side_name}_{round(entry_px, 4)}_{shares}_{market_info.condition_id}"
         nonce = int(hashlib.sha256(nonce_str.encode()).hexdigest(), 16) % (2**31 - 1)
+
+        # Checkpoint state before placing order (crash recovery)
+        await self.state_mgr.save(self.state)
 
         # Place order
         if sig.monster_signal:
