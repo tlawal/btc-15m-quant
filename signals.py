@@ -641,11 +641,12 @@ def compute_signals(
     res.bb_position_score = bb_position_score
 
     # Cross-Exchange CVD Confirmation
+    # NOTE: The disagreement penalty requires 'signed' which is computed in the
+    # group-max block below. Agreement bonus is set here; penalty applied post-hoc.
     cross_exch_score = 0.0
     if cross_cvd_agree:
         cross_exch_score = 0.5 * (1.0 if cvd_delta > 0 else (-1.0 if cvd_delta < 0 else 0.0))
-    else:
-        cross_exch_score = -0.3 * (1.0 if signed > 0 else -1.0)
+    # else: penalty applied after 'signed' is defined (see post-group block below)
     res.cross_exch_score = cross_exch_score
 
     # Accumulated OFI Score
@@ -723,6 +724,12 @@ def compute_signals(
     )
 
     # ── Post-group modifiers ──────────────────────────────────────────────────
+    # Cross-exchange disagreement penalty (deferred from above — requires 'signed')
+    if not cross_cvd_agree:
+        cross_penalty = -0.3 * (1.0 if signed > 0 else (-1.0 if signed < 0 else 0.0))
+        res.cross_exch_score = cross_penalty
+        signed += cross_penalty
+
     # Stale micro penalty
     if is_stale_micro and abs(signed) < 5.0:
         signed *= 0.8
