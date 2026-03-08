@@ -768,30 +768,7 @@ class Engine:
         except Exception:
             pass  # WS broadcast is best-effort
 
-        # Phase 5: Write heartbeat for dashboard (best-effort, never blocks cycle)
-        try:
-            _sig = sig if "sig" in locals() else None
-            hb_data = {
-                "wallet_usdc": wallet_usdc or 0.0,
-                "regime": _sig.regime if _sig else "normal",
-                "signed_score": _sig.signed_score if _sig else 0.0,
-                "posterior_final_up": _sig.posterior_final_up if _sig else 0.0,
-                "edge": _sig.target_edge if _sig else 0.0,
-                "required_edge": _sig.required_edge if _sig else 0.0,
-                "cvd": getattr(self.state, "cvd", 0.0),
-                "accum_ofi": getattr(self.state, "accumulated_ofi", 0.0),
-                "latency_ms": self.state.latencies.get("data_fetch_all", 0),
-                "signal_direction": _sig.direction if _sig else "NEUTRAL",
-                "gates": _sig.skip_gates if _sig else [],
-                "balance": balance or 0.0,
-                "unclaimed_usdc": self.state.unclaimed_usdc or 0.0,
-                "last_market_slug": getattr(self.state, "last_market_slug", ""),
-            }
-            hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
-            async with aiofiles.open(hb_path, "w") as f:
-                await f.write(json.dumps(hb_data))
-        except Exception as e:
-            log.debug(f"Inline heartbeat write failed: {e}")
+        # Heartbeat is written by _write_heartbeat() earlier in _cycle()
 
         # ── Save state ────────────────────────────────────────────────────────
         await self.state_mgr.save(self.state)

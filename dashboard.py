@@ -229,19 +229,7 @@ async def debug_templates():
 
 @app.get("/api/metrics")
 async def get_metrics():
-    if not engine:
-        return JSONResponse({"status": "starting"}, status_code=503)
-        
-    if not engine.state or not getattr(engine, "_running", False):
-        return JSONResponse({
-            "status": "initializing",
-            "db_url": Config.DATABASE_URL,
-            "can_trade": engine.pm.can_trade
-        }, status_code=503)
-    
-    state = engine.state
-    
-    # Heartbeat data (mostly for latencies and status)
+    # Always try to load heartbeat file first — available even during startup
     hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
     hb = {}
     if os.path.exists(hb_path):
@@ -249,23 +237,29 @@ async def get_metrics():
             with open(hb_path, 'r') as f:
                 hb = json.load(f)
         except: pass
-    if not hb and engine and engine.pm:
-        hb["wallet_usdc"] = await engine.pm.get_wallet_usdc_balance() or 0.0
 
-    # Prepare latest signals for the UI
-    total_trades = state.total_trades
-    wins = state.total_wins
-    win_rate = (wins / total_trades) if total_trades > 0 else 0.0
-    avg_trade = (state.total_pnl_usd / total_trades) if total_trades > 0 else 0.0
-    
+    # If engine isn't ready yet, return heartbeat file data (never a bare 503)
+    if not engine or not engine.state or not getattr(engine, "_running", False):
+        hb.setdefault("status", "initializing")
+        hb.setdefault("wallet_usdc", hb.get("balance", 0.0))
+        # Alias performance → performance_metrics so the JS finds it
+        if "performance" in hb and "performance_metrics" not in hb:
+            hb["performance_metrics"] = hb["performance"]
+        return hb
+
+    state = engine.state
+
+    if not hb and engine.pm:
+        try:
+            hb["wallet_usdc"] = await engine.pm.get_wallet_usdc_balance() or 0.0
+        except: pass
+
     balance = hb.get("wallet_usdc") or hb.get("balance", 0.0)
     open_pos = 1 if state.held_position.side else 0
     exposure = state.held_position.size_usd if state.held_position.side else 0.0
 
-    # Base payload on heartbeat to not drop anything (signal, position, etc.)
+    # Base payload on heartbeat, then overlay live state
     metrics = hb.copy()
-    
-    # Overwrite/inject dynamic runtime metrics + performance
     metrics.update({
         "balance": hb.get("balance", 0.0),
         "status": "Running" if getattr(engine, "_running", False) else "Stopped",
@@ -277,7 +271,7 @@ async def get_metrics():
         "strike_source": getattr(state, "strike_source", "none"),
         "trading_halted": getattr(state, "trading_halted", False),
         "last_market_slug": getattr(state, "last_market_slug", ""),
-        "performance_metrics": getattr(state, "performance_metrics", {}),
+        "performance_metrics": getattr(state, "performance_metrics", None) or hb.get("performance") or {},
         "last_tuned_time": getattr(state, "last_tuned_time", 0),
         "open_positions_api": getattr(state, "open_positions_api", []),
         "recent_trades": [
@@ -294,14 +288,13 @@ async def get_metrics():
         ]
     })
 
-    # Surface gate + belief-volatility info at the top level for the UI.
     signal = metrics.get("signal") or {}
     skip_gates = signal.get("skip_gates") or []
     metrics["gate_primary"] = skip_gates[0] if skip_gates else "CLEAR"
     metrics["gate_all"] = skip_gates
     metrics["sigma_b"] = signal.get("sigma_b")
     metrics["bvol_multiplier"] = signal.get("bvol_multiplier")
-    
+
     return metrics
 
 # ── Phase 5 #25: WebSocket real-time push ─────────────────────────────────────
