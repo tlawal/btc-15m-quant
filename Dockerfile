@@ -18,8 +18,11 @@ COPY .env.example ./
 ENV DATABASE_URL=sqlite+aiosqlite:////data/state.db
 ENV PYTHONUNBUFFERED=1
 
-# Non-root user for security
-RUN useradd -m -u 1001 quant && mkdir -p /data && chown quant:quant /data
-USER quant
+# NOTE: Non-root user disabled — Railway mounts /data volume at runtime,
+# overwriting image-layer chown. The quant user would lose write access to
+# /data/state.db and all persistent files. Re-enable only when Railway adds
+# volume-mount UID configuration or a startup chown entrypoint is added.
+# RUN useradd -m -u 1001 quant && mkdir -p /data && chown quant:quant /data
+# USER quant
 
 CMD ["python", "main.py"]

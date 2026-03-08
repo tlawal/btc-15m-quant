@@ -80,7 +80,7 @@ class Config:
     RISK_TIER_200              = 0.20     # $100–200
     RISK_TIER_OVER             = 0.15     # > $200
     STREAK_HALVE               = True     # halve size after 2 consecutive losses
-    MIN_TRADE_USD              = 5.75
+    MIN_TRADE_USD              = 5.75    # Polymarket CLOB minimum is ~$5
     MAX_TRADES_PER_WINDOW      = 3
     STREAK_HALT_AT             = 3        # halt trading after N consecutive losses
 
