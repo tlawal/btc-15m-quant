@@ -19,6 +19,7 @@ def compute_position_size(
     win_rate:       Optional[float] = None,
     profit_factor:  Optional[float] = None,
     kelly_multiplier: float = 1.0,
+    book: Optional[object] = None,
 ) -> Optional[float]:
     """
     Returns position size in USD, or None if below minimum.
@@ -51,6 +52,21 @@ def compute_position_size(
 
     # Position = fraction of bankroll to bet, capped at risk budget
     position_usd = balance * quarter_kelly
+    
+    # Phase 6: Institutional execution buffer (haircut)
+    position_usd *= (1.0 - Config.SLIPPAGE_BUFFER_PCT)
+
+    # Phase 6: Depth-aware limit (max 50% of top-of-book depth)
+    if book and hasattr(book, 'bid_sz') and hasattr(book, 'ask_sz'):
+        # bid_sz/ask_sz are in BTC; convert to USD
+        # we care about the side we enter. for now just use a conservative min of both
+        depth_btc = min(book.best_bid_sz, book.best_ask_sz)
+        depth_usd = depth_btc * entry_price # approx
+        depth_limit = depth_usd * 0.50 # cap at 50% of available book depth
+        if position_usd > depth_limit:
+            log.info(f"DEPTH_LIMIT: Capping ${position_usd:.2f} -> ${depth_limit:.2f} (50% of book depth)")
+            position_usd = depth_limit
+
     position_usd = min(position_usd, max_loss_usd)        # Never exceed risk budget
     position_usd = min(position_usd, Config.MAX_TRADE_USD) # Absolute per-trade cap
 

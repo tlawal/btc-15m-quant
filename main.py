@@ -39,7 +39,7 @@ from utils import (
     current_window_start, minutes_remaining as calc_minutes_remaining,
     window_start_iso, window_end_iso, AlertTier, json_logger
 )
-from optimizer import StrategyOptimizer
+from optimizer import SignalOptimizer
 from attribution import FeatureAttributor
 import metrics_exporter
 
@@ -62,8 +62,9 @@ class Engine:
         # Real-time CVD WebSocket
         from data_feeds import BinanceCVDWebsocket
         self.cvd_ws = BinanceCVDWebsocket()
-        self.optimizer = StrategyOptimizer(self.state)
+        self.optimizer = SignalOptimizer(self.state)
         self.attributor = FeatureAttributor(self.state_mgr)
+        self._last_sig = None # Phase 6: Store signal for trade logging
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -100,6 +101,10 @@ class Engine:
                 
                 log.info(f"Recorded redemption win: +{tr.pnl*100:.2f}% (approx profit: ${profit_usd:.2f})")
                 
+                # Phase 6: Log trade for self-learning
+                if self._last_sig:
+                    self.optimizer.log_trade(self._last_sig, "WIN")
+
                 # Immediately recalculate and store metrics inside the event loop if possible
                 if self.state_mgr:
                     asyncio.create_task(self.state_mgr.calculate_performance_metrics())
@@ -504,10 +509,10 @@ class Engine:
             except Exception as e:
                 log.debug(f"PM trade flow fetch: {e}")
 
-        # Phase 4: Strategy optimization (decay detection + dynamic thresholds)
-        score_offset, edge_offset = self.optimizer.detect_decay()
+        # Phase 6: Institutional Signal Optimization
+        score_offset, edge_offset = self.optimizer.get_adjusted_thresholds(0.0, 0.0)
 
-        # ── Compute signals ───────────────────────────────────────────────────
+        # ── Phase 4: Compute full signal suite ───────────────────────────────
         sig = compute_signals(
             indic             = indic,
             btc_price         = btc_price,
@@ -545,6 +550,7 @@ class Engine:
             score_offset      = score_offset,
             edge_offset       = edge_offset,
         )
+        self._last_sig = sig # Phase 6: Store for trade logging feedback
 
         # Store CVD total vol for next cycle's volume-weighted scoring
         self.state.prev_cvd_total_vol = cvd_total_vol
@@ -696,6 +702,12 @@ class Engine:
             except Exception as e:
                 log.debug(f"Hourly summary telegram: {e}")
 
+        # Phase 6: Periodic Institutional Retraining (every hour)
+        if self._status_counter % 240 == 0 and self._status_counter > 0:
+            self.optimizer.retrain_and_adjust()
+            if self.inference:
+                self.inference.reload_model()
+
         # Heartbeat file
         await self._write_heartbeat(now_ts, balance, runtime_ms, margin=margin, wallet_usdc=wallet_usdc, sig=sig)
 
@@ -713,8 +725,8 @@ class Engine:
             px_up = ob.yes_ask or 0.99
             px_dn = ob.no_ask or 0.99
             
-            s_up = compute_position_size(posterior=p_up, entry_price=px_up, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal) or 0.0
-            s_down = compute_position_size(posterior=p_dn, entry_price=px_dn, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal) or 0.0
+            s_up = compute_position_size(posterior=p_up, entry_price=px_up, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, book=ob) or 0.0
+            s_down = compute_position_size(posterior=p_dn, entry_price=px_dn, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, book=ob) or 0.0
             sig.sizing = max(s_up, s_down)
         else:
             sig.sizing = self.state.held_position.size_usd or 0.0
@@ -914,7 +926,9 @@ class Engine:
                 )
                 # Phase 4: Feed optimizer for signal decay + Sharpe-Kelly
                 if entry_feats:
-                    self.optimizer.record_signal_outcome(entry_feats, outcome == "WIN")
+                    # self.optimizer.record_signal_outcome(entry_feats, outcome == "WIN")
+                    if self._last_sig:
+                        self.optimizer.log_trade(self._last_sig, outcome)
                 self.optimizer.record_trade_pnl(pnl_pct)
 
                 # Notify
@@ -1279,6 +1293,7 @@ class Engine:
             win_rate    = win_rate,
             profit_factor = profit_factor,
             kelly_multiplier = self.optimizer.get_kelly_multiplier(),
+            book = ob,
         )
         if not position_usd:
             log.info(f"Position size below minimum (bal={balance:.2f})")

@@ -130,28 +130,16 @@ async def debug_balance():
     return result
 
 @app.get("/api/logs")
-async def get_historical_logs(limit: int = 240):
-    """
-    Returns the last N log entries from structured_logs.json.
-    1 hour = 240 cycles (15s per cycle).
-    """
-    log_path = "/data/structured_logs.json" if os.path.exists("/data") else "structured_logs.json"
+async def get_logs(limit: int = 240):
+    log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
     if not os.path.exists(log_path):
-        return JSONResponse(status_code=404, content={"error": "Log file not found"})
-    
-    entries = []
+        return {"error": "Log file not found"}
     try:
-        # Read from end of file efficiently or readlines and slice
         with open(log_path, "r") as f:
-            lines = f.readlines()
-            for line in lines[-limit:]:
-                try:
-                    entries.append(json.loads(line))
-                except:
-                    pass
-        return {"count": len(entries), "logs": entries}
-    except Exception as e:
-        return JSONResponse(status_code=500, content={"error": str(e)})
+            lines = f.readlines()[-limit:]
+        return [json.loads(line) for line in lines]
+    except:
+        return {"error": "Log file not found"}
 
 # Shared state reference set by the Engine
 engine = None
@@ -261,6 +249,8 @@ async def get_metrics():
             with open(hb_path, 'r') as f:
                 hb = json.load(f)
         except: pass
+    if not hb and engine and engine.pm:
+        hb["wallet_usdc"] = await engine.pm.get_wallet_usdc_balance() or 0.0
 
     # Prepare latest signals for the UI
     total_trades = state.total_trades

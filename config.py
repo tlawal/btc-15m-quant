@@ -65,6 +65,7 @@ class Config:
 
     # ── Exit parameters ───────────────────────────────────────────────────────
     TAKE_PROFIT_PRICE          = 0.97
+    SLIPPAGE_BUFFER_PCT        = 0.008    # Phase 6: 80bps execution buffer
     MAX_DRAWDOWN_PCT           = 0.08
     FORCED_LATE_EXIT_MIN_REM   = 5.0
     FORCED_DISTANCE_EXIT_MIN_REM = 3.0

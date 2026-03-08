@@ -48,3 +48,7 @@ class InferenceEngine:
         except Exception as e:
             log.debug(f"Inference error: {e}")
             return None
+
+    def reload_model(self):
+        """Reload the model and features from disk."""
+        self.__init__()
