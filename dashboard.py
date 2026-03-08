@@ -329,6 +329,7 @@ async def get_metrics():
         "strike_source": getattr(state, "strike_source", "none"),
         "trading_halted": getattr(state, "trading_halted", False),
         "last_market_slug": getattr(state, "last_market_slug", ""),
+        "last_market_expiry": getattr(state, "last_market_expiry", None),
         "performance_metrics": getattr(state, "performance_metrics", None) or hb.get("performance") or {},
         "last_tuned_time": getattr(state, "last_tuned_time", 0),
         "open_positions_api": getattr(state, "open_positions_api", []),

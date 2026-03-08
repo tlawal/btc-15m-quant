@@ -1168,6 +1168,7 @@ class Engine:
             "latencies": self.state.latencies,
             "trades_15m": self.state.trades_this_window,
             "last_market_slug": self.state.last_market_slug,
+            "last_market_expiry": self.state.last_market_expiry,
             "last_condition_id": self.state.last_condition_id,
             "unclaimed_usdc": self.state.unclaimed_usdc,
             "api_trade_history": getattr(self, "api_trade_history", []),

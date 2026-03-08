@@ -123,7 +123,43 @@
         .mrow:last-child { border-bottom:none; }
         .mrow-label { color:#64748b; display:flex; align-items:center; gap:4px; }
         .mrow-val   { font-family:'JetBrains Mono',monospace; font-weight:600; }
-        .info-icon  { width:13px; height:13px; border-radius:50%; border:1px solid #475569; color:#475569; font-size:0.55rem; display:inline-flex; align-items:center; justify-content:center; cursor:help; flex-shrink:0; }
+
+        /* ── Info icon — small superscript-sized circle ── */
+        .info-icon {
+            width:10px; height:10px; border-radius:50%;
+            border:1px solid #334155; color:#475569;
+            font-size:0.45rem; font-weight:700;
+            display:inline-flex; align-items:center; justify-content:center;
+            cursor:pointer; flex-shrink:0;
+            position:relative; vertical-align:middle;
+            transition: border-color 0.15s, color 0.15s;
+        }
+        .info-icon:hover { border-color:#64748b; color:#94a3b8; }
+
+        /* ── Micro popover ── */
+        .mpop {
+            display:none; position:fixed; z-index:9999;
+            width:260px;
+            background:rgba(8,13,24,0.98);
+            border:1px solid rgba(255,255,255,0.13);
+            border-radius:10px;
+            padding:12px 14px;
+            font-size:0.68rem; line-height:1.55;
+            color:#94a3b8;
+            box-shadow:0 16px 48px rgba(0,0,0,0.7);
+            pointer-events:none;
+        }
+        .mpop.active { display:block; }
+        .mpop-title { font-weight:700; color:#e2e8f0; font-size:0.75rem; margin-bottom:6px; }
+        .mpop-what  { color:#94a3b8; margin-bottom:8px; }
+        .mpop-thresh {
+            background:rgba(255,255,255,0.04); border-radius:6px;
+            padding:6px 8px; margin-bottom:8px;
+            font-family:'JetBrains Mono',monospace; font-size:0.62rem;
+            color:#64748b; line-height:1.6;
+        }
+        .mpop-thresh b { color:#cbd5e1; }
+        .mpop-tip { color:#475569; font-size:0.63rem; border-top:1px solid rgba(255,255,255,0.06); padding-top:6px; }
 
         /* ── Accordion ── */
         .accordion-trigger { cursor:pointer; user-select:none; }
@@ -458,64 +494,145 @@
                 <span class="text-slate-500 text-xs" id="micro-arrow">▾</span>
             </div>
             <div class="panel-body" id="micro-body">
-                <!-- Funding first (most important) -->
                 <div class="mrow">
                     <span class="mrow-label">
-                        <span class="info-icon" title="Perpetual futures funding rate. Positive = longs pay shorts (bearish when high). Negative = shorts pay longs (bullish).">i</span>
+                        <span class="info-icon" data-pop="pop-funding">i</span>
                         Funding Rate
                     </span>
                     <span class="mrow-val" id="funding-rate">0.0000</span>
                 </div>
                 <div class="mrow">
                     <span class="mrow-label">
-                        <span class="info-icon" title="Cumulative Volume Delta: running buy volume minus sell volume on Binance BTC perps. Positive = net buying.">i</span>
+                        <span class="info-icon" data-pop="pop-cvd">i</span>
                         Raw CVD
                     </span>
                     <span class="mrow-val" id="raw-cvd">0</span>
                 </div>
                 <div class="mrow">
                     <span class="mrow-label">
-                        <span class="info-icon" title="10-level order flow imbalance. Captures aggressive order placement across the full visible book depth.">i</span>
+                        <span class="info-icon" data-pop="pop-ofi">i</span>
                         Deep OFI
                     </span>
                     <span class="mrow-val" id="raw-ofi">0.00</span>
                 </div>
                 <div class="mrow">
                     <span class="mrow-label">
-                        <span class="info-icon" title="VPIN proxy: Volume-synchronized Probability of Informed Trading. >0.70 means toxic flow — blocks weak signals.">i</span>
+                        <span class="info-icon" data-pop="pop-vpin">i</span>
                         VPIN Proxy
                     </span>
                     <span class="mrow-val" id="vpin-proxy">0.000</span>
                 </div>
                 <div class="mrow">
                     <span class="mrow-label">
-                        <span class="info-icon" title="Order Book Imbalance: (bid_size - ask_size) / total. Positive = bids dominate = bullish pressure.">i</span>
+                        <span class="info-icon" data-pop="pop-obi">i</span>
                         OBI
                     </span>
                     <span class="mrow-val" id="raw-obi">0.000</span>
                 </div>
                 <div class="mrow">
                     <span class="mrow-label">
-                        <span class="info-icon" title="Spread compression on YES side. Compressed spread + strong imbalance = directional momentum forming.">i</span>
+                        <span class="info-icon" data-pop="pop-spread">i</span>
                         Spread Pressure
                     </span>
                     <span class="mrow-val" id="spread-comp">Normal</span>
                 </div>
                 <div class="mrow">
                     <span class="mrow-label">
-                        <span class="info-icon" title="Chainlink oracle price vs Binance spot. Divergence > 0.15% suggests oracle lag — may indicate a move before it's priced in.">i</span>
+                        <span class="info-icon" data-pop="pop-oracle">i</span>
                         Oracle Align
                     </span>
                     <span class="mrow-val" id="oracle-div">--</span>
                 </div>
                 <div class="mrow">
                     <span class="mrow-label">
-                        <span class="info-icon" title="Belief Volatility multiplier. High sigma_B means the posterior is swinging fast — the model dampens conviction.">i</span>
+                        <span class="info-icon" data-pop="pop-bvol">i</span>
                         bVol Multiplier
                     </span>
                     <span class="mrow-val" id="bvol-mult">1.00</span>
                 </div>
             </div>
+        </div>
+
+        <!-- ━━━ Microstructure popovers (fixed-position, JS-positioned) ━━━ -->
+        <div id="pop-funding" class="mpop">
+            <div class="mpop-title">Funding Rate</div>
+            <div class="mpop-what">Perpetual futures funding rate on Binance BTC-PERP. Paid every 8 hours between longs and shorts to keep the perp price anchored to spot.</div>
+            <div class="mpop-thresh">
+                <b>&gt; +0.01%</b> → longs pay shorts — bullish crowding, mean-reversion risk<br>
+                <b>&lt; −0.01%</b> → shorts pay longs — bearish crowding, squeeze risk<br>
+                <b>≈ 0</b> → balanced; funding neutral
+            </div>
+            <div class="mpop-tip">💡 Extreme positive funding often precedes short-term reversals. The bot adds a bearish score when funding is very positive.</div>
+        </div>
+        <div id="pop-cvd" class="mpop">
+            <div class="mpop-title">Raw CVD (Cumulative Volume Delta)</div>
+            <div class="mpop-what">Running total of (buy volume − sell volume) on Binance BTC perp trades since the current 15-minute window opened. Measures who is being aggressive.</div>
+            <div class="mpop-thresh">
+                <b>Positive (+)</b> → market buys dominate — bullish pressure<br>
+                <b>Negative (−)</b> → market sells dominate — bearish pressure<br>
+                <b>Threshold</b>: |CVD| &gt; ~20 = meaningful signal
+            </div>
+            <div class="mpop-tip">💡 CVD divergence from price is a key tell: price rising but CVD falling = weak rally likely to reverse.</div>
+        </div>
+        <div id="pop-ofi" class="mpop">
+            <div class="mpop-title">Deep OFI (Order Flow Imbalance)</div>
+            <div class="mpop-what">Aggregated order flow imbalance across the top 10 price levels of the Binance order book. Captures whether resting liquidity is being added or pulled on each side.</div>
+            <div class="mpop-thresh">
+                <b>&gt; +5</b> → strong buy-side order flow<br>
+                <b>&lt; −5</b> → strong sell-side order flow<br>
+                <b>Score threshold</b>: |OFI| &gt; 15 for a full +1/−1 signal
+            </div>
+            <div class="mpop-tip">💡 Deep OFI leads price moves by 1–3 seconds. Combined with CVD it forms the strongest short-term directional signal in the engine.</div>
+        </div>
+        <div id="pop-vpin" class="mpop">
+            <div class="mpop-title">VPIN Proxy</div>
+            <div class="mpop-what">Volume-synchronized Probability of Informed Trading. Estimates what fraction of recent volume came from informed (directional) traders vs noise traders.</div>
+            <div class="mpop-thresh">
+                <b>&gt; 0.70</b> → toxic flow detected — blocks weak signals<br>
+                <b>0.40–0.70</b> → mixed; use other signals<br>
+                <b>&lt; 0.40</b> → low informed flow; market is noisy
+            </div>
+            <div class="mpop-tip">💡 High VPIN means someone with information is trading hard. The engine blocks entries when VPIN &gt; 0.70 on weak signals to avoid adverse selection.</div>
+        </div>
+        <div id="pop-obi" class="mpop">
+            <div class="mpop-title">OBI (Order Book Imbalance)</div>
+            <div class="mpop-what">Top-of-book imbalance: (bid_size − ask_size) / (bid_size + ask_size) at the best bid/ask on the Binance BTC order book.</div>
+            <div class="mpop-thresh">
+                <b>+1.0</b> → all liquidity on bid side — strong buy pressure<br>
+                <b>−1.0</b> → all liquidity on ask side — strong sell pressure<br>
+                <b>Signal fires</b>: |OBI| &gt; 0.3
+            </div>
+            <div class="mpop-tip">💡 OBI is the fastest signal in the engine — it updates every cycle from live L2 data. Use it as a directional tie-breaker when other signals are mixed.</div>
+        </div>
+        <div id="pop-spread" class="mpop">
+            <div class="mpop-title">Spread Pressure</div>
+            <div class="mpop-what">Measures spread compression on the Polymarket YES side. A narrowing spread combined with strong order book imbalance suggests a directional move is forming.</div>
+            <div class="mpop-thresh">
+                <b>Compressed</b> → spread &lt; normal; momentum forming<br>
+                <b>Normal</b> → typical spread width; no signal<br>
+                <b>Wide</b> → spread &gt; 8%; market quality gate triggers
+            </div>
+            <div class="mpop-tip">💡 If the spread is &gt; 8%, the engine skips the entire cycle — you can't get a fair fill. Check this when trades aren't executing.</div>
+        </div>
+        <div id="pop-oracle" class="mpop">
+            <div class="mpop-title">Oracle Alignment</div>
+            <div class="mpop-what">Compares the Chainlink BTC/USD oracle price on Polygon with the live Binance spot price. A divergence &gt; 0.15% suggests the oracle hasn't updated yet.</div>
+            <div class="mpop-thresh">
+                <b>Aligned</b> → divergence &lt; 0.15%; oracle is fresh<br>
+                <b>Lagged</b> → divergence &gt; 0.15%; oracle may be stale<br>
+                <b>Score boost</b>: oracle lag in your direction = +0.5 edge
+            </div>
+            <div class="mpop-tip">💡 When the oracle lags behind a fast BTC move, the Polymarket market hasn't fully repriced yet. This is a short-lived but real edge.</div>
+        </div>
+        <div id="pop-bvol" class="mpop">
+            <div class="mpop-title">bVol Multiplier (Belief Volatility)</div>
+            <div class="mpop-what">Measures how fast the model's posterior probability is oscillating in the current window. High belief volatility means the model is uncertain and noisy.</div>
+            <div class="mpop-thresh">
+                <b>1.0–1.15</b> → calm; posterior is stable<br>
+                <b>1.15–1.30</b> → moderate oscillation; slight dampening<br>
+                <b>&gt; 1.30</b> → high noise; posterior pulled toward 50%
+            </div>
+            <div class="mpop-tip">💡 When bVol is high, even a strong posterior (e.g. 80%) gets pulled toward 50% by the Bayesian update. This prevents overconfidence in choppy windows.</div>
         </div>
 
         <!-- ━━━ PANEL 5: Active Execution ━━━ -->
@@ -735,8 +852,14 @@ function updateUI() {
         // Build version
         if (d.version) $('build-ver').innerText = d.version;
 
-        // Market expiry for countdown
-        if (d.last_market_expiry) _lastMarketExpiry = d.last_market_expiry;
+        // Market expiry for countdown — prefer explicit field, fall back to slug parsing
+        if (d.last_market_expiry) {
+            _lastMarketExpiry = d.last_market_expiry;
+        } else if (d.last_market_slug) {
+            // slug format: btc-updown-15m-{window_start_unix}
+            const m = d.last_market_slug.match(/(\d{10})$/);
+            if (m) _lastMarketExpiry = parseInt(m[1]) + 900; // window_start + 900s
+        }
 
         // ── Banner ──
         const btcPx = sig.strike_price && sig.distance != null
@@ -1010,6 +1133,48 @@ function toggleAccordion(id) {
     if (body.style.display==='none') { body.style.display='block'; arrow.innerText='▾'; }
     else { body.style.display='none'; arrow.innerText='▸'; }
 }
+
+// ── Microstructure popovers ─────────────────────────────────────────────
+(function() {
+    let _activePop = null;
+    function closePop() {
+        if (_activePop) { _activePop.classList.remove('active'); _activePop = null; }
+    }
+    document.addEventListener('click', function(e) {
+        const icon = e.target.closest('.info-icon');
+        if (icon) {
+            e.stopPropagation();
+            const popId = icon.getAttribute('data-pop');
+            const pop = popId ? document.getElementById(popId) : null;
+            if (!pop) return;
+            if (pop === _activePop) { closePop(); return; }
+            closePop();
+            // Position relative to icon
+            const rect = icon.getBoundingClientRect();
+            const vw = window.innerWidth;
+            pop.style.top = '';
+            pop.style.bottom = '';
+            pop.style.left = '';
+            pop.style.right = '';
+            // Try placing above first
+            const popH = 220; // approx height
+            if (rect.top > popH + 16) {
+                pop.style.bottom = (window.innerHeight - rect.top + 8) + 'px';
+            } else {
+                pop.style.top = (rect.bottom + 8) + 'px';
+            }
+            // Horizontal: prefer centered on icon, clamp to viewport
+            let left = rect.left + rect.width/2 - 130;
+            left = Math.max(8, Math.min(left, vw - 268));
+            pop.style.left = left + 'px';
+            pop.classList.add('active');
+            _activePop = pop;
+        } else if (_activePop) {
+            closePop();
+        }
+    });
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePop(); });
+})();
 
 // ── Kill switch ────────────────────────────────────────────────────────
 function activateKillSwitch() {
