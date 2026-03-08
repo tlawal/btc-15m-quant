@@ -66,6 +66,11 @@ class SignalResult:
     tob_score:            float  = 0.0
     cvd_velocity_score:   float  = 0.0
     pm_flow_score:        float  = 0.0
+    whale_flow_score:     float  = 0.0   # Tier 1: large-fill directional score
+    spread_skew_score:    float  = 0.0   # Tier 1: bid/ask spread asymmetry
+    window_momentum_score:float  = 0.0   # Tier 1: cross-window trend persistence
+    liq_cascade_score:    float  = 0.0   # Tier 2: Binance liquidation cascade
+    funding_delta_score:  float  = 0.0   # Tier 2: funding rate change signal
 
     # Phase 2: new signal scores
     liq_vacuum_score:     float  = 0.0
@@ -200,10 +205,17 @@ def compute_signals(
     # Polymarket
     yes_mid:          Optional[float] = None,
     no_mid:           Optional[float] = None,
+    yes_bid:          Optional[float] = None,
     yes_ask:          Optional[float] = None,
+    no_bid:           Optional[float] = None,
     no_ask:           Optional[float] = None,
     total_bid_size:   float = 0.0,
     total_ask_size:   float = 0.0,
+    # Tier 1 new signals
+    whale_flow:       float = 0.0,   # USD net whale flow (>$50 fills)
+    window_outcomes:  list  = None,  # list of recent window outcomes ["UP","DOWN",...]
+    liq_cascade:      float = 0.0,   # net liquidation USD (positive = long liqs)
+    funding_rate_prev:Optional[float] = None,  # funding rate from 1h ago
     # Phase 5
     inference_engine: Optional[object] = None,
     # Phase 4 Optimization
@@ -480,6 +492,87 @@ def compute_signals(
     # Weighted micro (includes Phase 3 TOB + CVD velocity + PM flow)
     signed += cvd_score * 0.7 + ofi_score + imbalance_score + flow_accel
     signed += tob_score * 0.6 + cvd_vel_score * 0.8 + pm_flow_score * 0.5
+
+    # ── Tier 1: Whale Flow ────────────────────────────────────────────────────
+    whale_flow_score = 0.0
+    if abs(whale_flow) >= 500:       # $500+ in large fills — very strong signal
+        whale_flow_score = 3.0 if whale_flow > 0 else -3.0
+    elif abs(whale_flow) >= 150:     # $150+ — strong signal
+        whale_flow_score = 2.0 if whale_flow > 0 else -2.0
+    elif abs(whale_flow) >= 50:      # $50+ — moderate signal
+        whale_flow_score = 1.0 if whale_flow > 0 else -1.0
+    # Boost whale signal when within last 5 minutes (informed money more predictive near expiry)
+    if minutes_remaining < 5.0 and whale_flow_score != 0.0:
+        whale_flow_score *= 1.5
+    res.whale_flow_score = whale_flow_score
+    signed += whale_flow_score * 0.9
+
+    # ── Tier 1: Volatility Surface Spread Skew ────────────────────────────────
+    spread_skew_score = 0.0
+    yes_spread = (yes_ask - yes_bid) if yes_ask and yes_bid else None
+    no_spread  = (no_ask  - no_bid)  if no_ask  and no_bid  else None
+    if yes_spread and no_spread and yes_spread > 0 and no_spread > 0:
+        skew_ratio = no_spread / yes_spread
+        # Wide NO spread = NO side uncertain = market leans UP
+        if skew_ratio >= 2.5:
+            spread_skew_score = 2.0
+        elif skew_ratio >= 1.5:
+            spread_skew_score = 1.0
+        # Wide YES spread = YES side uncertain = market leans DOWN
+        elif skew_ratio <= 0.4:
+            spread_skew_score = -2.0
+        elif skew_ratio <= 0.67:
+            spread_skew_score = -1.0
+    res.spread_skew_score = spread_skew_score
+    signed += spread_skew_score * 0.7
+
+    # ── Tier 1: Multi-Window Momentum ─────────────────────────────────────────
+    window_momentum_score = 0.0
+    outcomes = window_outcomes or []
+    if len(outcomes) >= 2:
+        recent = outcomes[-3:]  # last 3 windows
+        ups = recent.count("UP")
+        downs = recent.count("DOWN")
+        if len(recent) >= 3 and ups == 3:
+            window_momentum_score = 1.0
+        elif len(recent) >= 3 and downs == 3:
+            window_momentum_score = -1.0
+        elif len(recent) >= 2 and ups >= 2:
+            window_momentum_score = 0.5
+        elif len(recent) >= 2 and downs >= 2:
+            window_momentum_score = -0.5
+    res.window_momentum_score = window_momentum_score
+    signed += window_momentum_score
+
+    # ── Tier 2: Liquidation Cascade ───────────────────────────────────────────
+    liq_cascade_score = 0.0
+    if liq_cascade > 2_000_000:      # >$2M long liquidations → bearish cascade
+        liq_cascade_score = -3.0
+    elif liq_cascade > 500_000:
+        liq_cascade_score = -1.5
+    elif liq_cascade < -2_000_000:   # >$2M short liquidations → bullish cascade
+        liq_cascade_score = 3.0
+    elif liq_cascade < -500_000:
+        liq_cascade_score = 1.5
+    res.liq_cascade_score = liq_cascade_score
+    signed += liq_cascade_score * 0.6
+
+    # ── Tier 2: Funding Rate Delta ────────────────────────────────────────────
+    funding_delta_score = 0.0
+    if funding_rate is not None and funding_rate_prev is not None:
+        delta = funding_rate - funding_rate_prev
+        # Sudden spike in funding → overleveraged longs about to be squeezed → bearish
+        if delta > 0.0004:           # +0.04% jump in 1h
+            funding_delta_score = -2.0
+        elif delta > 0.0002:
+            funding_delta_score = -1.0
+        # Funding collapsing → shorts being squeezed → bullish
+        elif delta < -0.0004:
+            funding_delta_score = 2.0
+        elif delta < -0.0002:
+            funding_delta_score = 1.0
+    res.funding_delta_score = funding_delta_score
+    signed += funding_delta_score * 0.5
 
     # ── Phase 2: NEW SIGNAL COMPONENTS ────────────────────────────────────────
 

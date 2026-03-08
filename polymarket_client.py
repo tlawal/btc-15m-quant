@@ -481,25 +481,46 @@ class PolymarketClient:
 
     async def get_market_trades(self, token_id: str, since_ts: int = 0) -> dict:
         """Fetch recent trades on a specific token from the CLOB.
-        Returns {yes_volume, no_volume, net_flow} where net_flow > 0 means YES-heavy."""
-        result = {"yes_volume": 0.0, "no_volume": 0.0, "net_flow": 0.0}
+        Returns {yes_volume, no_volume, net_flow, whale_flow, whale_yes, whale_no}
+        where whale_flow > 0 means large-fill YES-heavy (top-10% fills = 'whale' threshold).
+        """
+        result = {
+            "yes_volume": 0.0, "no_volume": 0.0, "net_flow": 0.0,
+            "whale_flow": 0.0, "whale_yes": 0.0, "whale_no": 0.0,
+        }
         try:
-            url = f"{POLYMARKET_HOST}/trades?asset_id={token_id}&limit=100"
+            url = f"{POLYMARKET_HOST}/trades?asset_id={token_id}&limit=200"
             async with self.session.get(url) as r:
                 if r.status != 200:
                     return result
                 trades = await r.json()
+
+            # Collect all fills in window
+            fills = []
             for t in trades:
                 ts = int(t.get("timestamp", 0))
                 if ts < since_ts:
                     continue
                 size = float(t.get("size", 0))
                 side = t.get("side", "").upper()
+                price = float(t.get("price", 0))
+                fills.append({"size": size, "side": side, "usd": size * price})
                 if side == "BUY":
                     result["yes_volume"] += size
                 elif side == "SELL":
                     result["no_volume"] += size
+
             result["net_flow"] = result["yes_volume"] - result["no_volume"]
+
+            # Whale detection: fills > $50 USD notional
+            for f in fills:
+                if f["usd"] >= 50.0:
+                    if f["side"] == "BUY":
+                        result["whale_yes"] += f["usd"]
+                    elif f["side"] == "SELL":
+                        result["whale_no"] += f["usd"]
+            result["whale_flow"] = result["whale_yes"] - result["whale_no"]
+
         except Exception as e:
             log.debug(f"get_market_trades: {e}")
         return result

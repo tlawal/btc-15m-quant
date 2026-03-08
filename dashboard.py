@@ -147,7 +147,10 @@ async def get_signal_history(limit: int = 240):
                 entry = json.loads(line)
             except Exception:
                 continue
-            sig = entry.get("signal") or {}
+            # structured_logs format: {"ts":..., "type":"signal", "data":{...}}
+            if entry.get("type") != "signal":
+                continue
+            sig = entry.get("data") or {}
             out.append({
                 "ts":               entry.get("ts", 0),
                 "signed_score":     sig.get("signed_score"),

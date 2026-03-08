@@ -518,17 +518,28 @@ class Engine:
         funding_rate = self.feeds.funding_ws.get_rate()
         if funding_rate is not None:
             log.debug(f"Perps Funding Rate: {funding_rate:.5f}")
+        # Store previous funding rate for delta signal, then update
+        # (last_funding_rate is set at end of cycle, below)
 
         # ── Phase 3: Polymarket trade flow ──────────────────────────────────────
         pm_net_flow = 0.0
+        whale_flow  = 0.0
         if self.state.last_condition_id and self.pm.can_trade:
             try:
                 pm_trades = await self.pm.get_market_trades(
                     self.state.last_condition_id, since_ts=win_start
                 )
                 pm_net_flow = pm_trades.get("net_flow", 0.0)
+                whale_flow  = pm_trades.get("whale_flow", 0.0)
             except Exception as e:
                 log.debug(f"PM trade flow fetch: {e}")
+
+        # ── Tier 2: Liquidation cascade (async, non-blocking) ─────────────────
+        liq_cascade = 0.0
+        try:
+            liq_cascade = await self.feeds.get_liquidation_cascade(lookback_s=60)
+        except Exception as e:
+            log.debug(f"liq_cascade fetch: {e}")
 
         # Phase 6: Institutional Signal Optimization
         score_offset, edge_offset = self.optimizer.get_adjusted_thresholds(0.0, 0.0)
@@ -563,10 +574,16 @@ class Engine:
             funding_rate      = funding_rate,
             yes_mid           = ob.yes_mid,
             no_mid            = ob.no_mid,
+            yes_bid           = ob.yes_bid,
             yes_ask           = ob.yes_ask,
+            no_bid            = ob.no_bid,
             no_ask            = ob.no_ask,
             total_bid_size    = ob.total_bid_size,
             total_ask_size    = ob.total_ask_size,
+            whale_flow        = whale_flow,
+            window_outcomes   = list(self.state.window_outcomes),
+            liq_cascade       = liq_cascade,
+            funding_rate_prev = self.state.last_funding_rate,
             inference_engine  = self.inference,
             score_offset      = score_offset,
             edge_offset       = edge_offset,
@@ -575,6 +592,10 @@ class Engine:
 
         # Store CVD total vol for next cycle's volume-weighted scoring
         self.state.prev_cvd_total_vol = cvd_total_vol
+
+        # Update funding rate memory for delta signal
+        if funding_rate is not None:
+            self.state.last_funding_rate = funding_rate
 
         # Update score/posterior memory
         if not is_stale_micro:
@@ -744,6 +765,22 @@ class Engine:
 
         # Heartbeat file
         await self._write_heartbeat(now_ts, balance, runtime_ms, margin=margin, wallet_usdc=wallet_usdc, sig=sig)
+
+        # ── Signal snapshot → structured_logs (feeds Plotly charts) ──────────
+        json_logger.log("signal", {
+            "signed_score":       sig.signed_score,
+            "abs_score":          sig.abs_score,
+            "posterior_final_up": sig.posterior_final_up,
+            "posterior_final_down": sig.posterior_final_down,
+            "cvd_score":          sig.cvd_score,
+            "ofi_score":          sig.ofi_score,
+            "regime":             sig.regime,
+            "direction":          sig.direction,
+            "monster":            sig.monster_signal,
+            "gates":              sig.skip_gates,
+            "balance":            balance,
+            "btc_price":          btc_price,
+        })
 
         # ── Outcome logging for previous window ───────────────────────────────
         if win_rolled:
@@ -1542,6 +1579,15 @@ class Engine:
                 if k1m: cand = k1m[0].close
             
             if cand:
+                # Determine UP/DOWN outcome vs strike for cross-window momentum
+                strike = self.state.locked_strike_price
+                if strike and strike > 0:
+                    direction = "UP" if cand > strike else "DOWN"
+                    self.state.window_outcomes.append(direction)
+                    if len(self.state.window_outcomes) > 10:  # keep last 10
+                        self.state.window_outcomes = self.state.window_outcomes[-10:]
+                    log.info(f"Window outcome: BTC {cand:.2f} vs strike {strike:.2f} → {direction}")
+
                 outcome_data = {
                     "window_start": win_start,
                     "btc_close":    round(cand, 2),

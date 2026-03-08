@@ -202,6 +202,37 @@ class DataFeeds:
             raise RuntimeError("DataFeeds.start() not called")
         return self._session
 
+    # ── Liquidation Cascade ────────────────────────────────────────────────────
+
+    async def get_liquidation_cascade(self, symbol: str = "BTCUSDT", lookback_s: int = 60) -> float:
+        """Fetch recent forced liquidations from Binance Futures.
+        Returns net USD liquidation value: positive = long liquidations (bearish),
+        negative = short liquidations (bullish).
+        Endpoint: GET https://fapi.binance.com/fapi/v1/forceOrders
+        """
+        try:
+            cutoff_ms = int((time.time() - lookback_s) * 1000)
+            url = f"https://fapi.binance.com/fapi/v1/forceOrders?symbol={symbol}&limit=50"
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as r:
+                if r.status != 200:
+                    return 0.0
+                orders = await r.json()
+            net = 0.0
+            for o in orders:
+                ts = int(o.get("time", 0))
+                if ts < cutoff_ms:
+                    continue
+                qty = float(o.get("origQty", 0))
+                price = float(o.get("price", 0))
+                usd = qty * price
+                side = o.get("side", "")
+                # SELL = long liquidated (bearish), BUY = short liquidated (bullish)
+                net += usd if side == "SELL" else -usd
+            return net
+        except Exception as e:
+            log.debug(f"liquidation_cascade: {e}")
+            return 0.0
+
     # ── Klines ────────────────────────────────────────────────────────────────
 
     async def get_klines(self, symbol: str, interval: str, limit: int) -> list[Candle]:

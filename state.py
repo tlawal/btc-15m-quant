@@ -159,6 +159,10 @@ class EngineState:
     # ── Nightly AI review tracking ─────────────────────────────────────────────
     last_review_date: Optional[str]       = None
 
+    # ── Tier 1: Cross-window memory ───────────────────────────────────────────
+    window_outcomes: List[str]            = field(default_factory=list)  # ["UP","DOWN",...]
+    last_funding_rate: Optional[float]    = None  # previous cycle's funding rate
+
 
 # ── State manager ─────────────────────────────────────────────────────────────
 
