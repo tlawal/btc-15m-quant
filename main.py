@@ -529,7 +529,7 @@ class Engine:
             microprice        = book.microprice,
             is_stale_micro    = is_stale_micro,
             tob_imbalance     = book.tob_imbalance,
-            cvd_velocity      = self.feeds.cvd_ws.get_cvd_slope(),
+            cvd_velocity      = self.cvd_ws.get_cvd_slope(),
             pm_net_flow       = pm_net_flow,
             cvd_delta         = cvd_delta_for_signals,
             true_cvd          = self.state.cvd,
@@ -768,26 +768,29 @@ class Engine:
         except Exception:
             pass  # WS broadcast is best-effort
 
-        # Phase 5: Write heartbeat for dashboard
-        hb_data = {
-            "wallet_usdc": wallet_usdc or 0.0,
-            "regime": sig.regime if "sig" in locals() else "Normal",
-            "signed_score": sig.signed_score if "sig" in locals() else 0.0,
-            "posterior_final_up": sig.posterior_final_up if "sig" in locals() else 0.0,
-            "edge": sig.target_edge if "sig" in locals() else 0.0,
-            "required_edge": sig.required_edge if "sig" in locals() else 0.0,
-            "cvd": getattr(self.state, "cvd", 0.0),
-            "accum_ofi": getattr(self.state, "accumulated_ofi", 0.0),
-            "latency_ms": self.state.latencies.get("data_fetch_all", 0),
-            "signal_direction": sig.direction if "sig" in locals() else "NEUTRAL",
-            "target_action": getattr(sig, "action", "NONE") if "sig" in locals() else "NONE",
-            "gates": sig.skip_gates if "sig" in locals() else [],
-            "balance": balance or 0.0,
-            "unclaimed_usdc": self.state.unclaimed_usdc or 0.0
-        }
-        hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
-        async with aiofiles.open(hb_path, "w") as f:
-            await f.write(json.dumps(hb_data))
+        # Phase 5: Write heartbeat for dashboard (best-effort, never blocks cycle)
+        try:
+            _sig = sig if "sig" in locals() else None
+            hb_data = {
+                "wallet_usdc": wallet_usdc or 0.0,
+                "regime": _sig.regime if _sig else "normal",
+                "signed_score": _sig.signed_score if _sig else 0.0,
+                "posterior_final_up": _sig.posterior_final_up if _sig else 0.0,
+                "edge": _sig.target_edge if _sig else 0.0,
+                "required_edge": _sig.required_edge if _sig else 0.0,
+                "cvd": getattr(self.state, "cvd", 0.0),
+                "accum_ofi": getattr(self.state, "accumulated_ofi", 0.0),
+                "latency_ms": self.state.latencies.get("data_fetch_all", 0),
+                "signal_direction": _sig.direction if _sig else "NEUTRAL",
+                "gates": _sig.skip_gates if _sig else [],
+                "balance": balance or 0.0,
+                "unclaimed_usdc": self.state.unclaimed_usdc or 0.0,
+            }
+            hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
+            async with aiofiles.open(hb_path, "w") as f:
+                await f.write(json.dumps(hb_data))
+        except Exception as e:
+            log.debug(f"Inline heartbeat write failed: {e}")
 
         # ── Save state ────────────────────────────────────────────────────────
         await self.state_mgr.save(self.state)
