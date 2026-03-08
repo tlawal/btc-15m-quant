@@ -407,12 +407,16 @@
                 <!-- Edge summary row -->
                 <div class="grid grid-cols-2 gap-3">
                     <div class="bg-black/20 rounded-lg p-3 text-center">
-                        <div class="text-[0.58rem] text-slate-500 uppercase tracking-wide mb-1">Target Edge</div>
+                        <div class="text-[0.58rem] text-slate-500 uppercase tracking-wide mb-1 flex items-center justify-center gap-1">
+                            <span class="info-icon" data-pop="pop-targetedge">i</span>Target Edge
+                        </div>
                         <div class="mono font-bold text-xl" id="calc-edge">--</div>
                         <div class="text-[0.6rem] text-slate-500">req <span class="text-slate-300 mono" id="req-edge">3.5%</span></div>
                     </div>
                     <div class="bg-black/20 rounded-lg p-3 text-center">
-                        <div class="text-[0.58rem] text-slate-500 uppercase tracking-wide mb-1">Market Price</div>
+                        <div class="text-[0.58rem] text-slate-500 uppercase tracking-wide mb-1 flex items-center justify-center gap-1">
+                            <span class="info-icon" data-pop="pop-mktprice">i</span>Market Price
+                        </div>
                         <div class="mono font-bold text-xl text-slate-200" id="mkt-prob">--</div>
                         <div class="text-[0.6rem] text-slate-500">YES mid</div>
                     </div>
@@ -421,15 +425,21 @@
                 <!-- Stats row -->
                 <div class="grid grid-cols-3 gap-2 text-center">
                     <div>
-                        <div class="text-[0.58rem] text-slate-500 uppercase">Z-Score</div>
+                        <div class="text-[0.58rem] text-slate-500 uppercase flex items-center justify-center gap-1">
+                            <span class="info-icon" data-pop="pop-zscore">i</span>Z-Score
+                        </div>
                         <div class="mono text-sm font-bold text-slate-200" id="z-score">--</div>
                     </div>
                     <div>
-                        <div class="text-[0.58rem] text-slate-500 uppercase">Exp Move</div>
+                        <div class="text-[0.58rem] text-slate-500 uppercase flex items-center justify-center gap-1">
+                            <span class="info-icon" data-pop="pop-expmove">i</span>Exp Move
+                        </div>
                         <div class="mono text-sm font-bold text-slate-200" id="exp-move">--</div>
                     </div>
                     <div>
-                        <div class="text-[0.58rem] text-slate-500 uppercase">σ_B</div>
+                        <div class="text-[0.58rem] text-slate-500 uppercase flex items-center justify-center gap-1">
+                            <span class="info-icon" data-pop="pop-sigmab">i</span>σ_B
+                        </div>
                         <div class="mono text-sm font-bold text-slate-200" id="sigma-b">--</div>
                     </div>
                 </div>
@@ -657,6 +667,65 @@
                 <b>Source shown</b>: <span id="strike-src-pop">--</span>
             </div>
             <div class="mpop-tip">💡 Strike is locked once resolved and never changes within a window. The source label below the price shows where it came from. Binance 15m open is most reliable.</div>
+        </div>
+
+        <div id="pop-zscore" class="mpop">
+            <div class="mpop-title">Z-Score</div>
+            <div class="mpop-what">Standard deviations the current BTC price is away from its recent mean, measured over the last 20 candles. Captures how stretched or compressed price is relative to its recent range.</div>
+            <div class="mpop-thresh">
+                <b>0 to ±1</b> → price within normal range<br>
+                <b>±1 to ±2</b> → mild extension, mean-reversion possible<br>
+                <b>&gt; ±2</b> → strong extension; increases posterior conviction<br>
+                <b>&gt; ±3</b> → extreme; high-confidence directional bias
+            </div>
+            <div class="mpop-tip">💡 A negative Z-Score with a DOWN signal means BTC is extended below its mean — the Bayesian model assigns higher probability to continuing down or snapping back. The Z-Score feeds directly into the posterior calculation.</div>
+        </div>
+
+        <div id="pop-expmove" class="mpop">
+            <div class="mpop-title">Expected Move ($)</div>
+            <div class="mpop-what">The one-sigma expected BTC price move for the 15-minute window, derived from the ATR (Average True Range). Represents how much BTC would need to move to be considered a "normal" swing in this window.</div>
+            <div class="mpop-thresh">
+                <b>Formula</b>: ATR14 × 1.125 (scaled for 15m window)<br>
+                <b>Low ($50–80)</b> → tight, choppy market<br>
+                <b>Normal ($80–150)</b> → typical volatility<br>
+                <b>High (&gt;$200)</b> → trending or news-driven
+            </div>
+            <div class="mpop-tip">💡 The expected move sets the scale for what counts as a meaningful directional push. If BTC is already near the expected move boundary, the model de-risks — a reversal is statistically more likely.</div>
+        </div>
+
+        <div id="pop-sigmab" class="mpop">
+            <div class="mpop-title">σ_B (Bayesian Sigma)</div>
+            <div class="mpop-what">The uncertainty width used in the Bayesian likelihood calculation. Derived from ATR × bVol multiplier — it sets how "wide" the model's prior is when interpreting BTC price distance from strike.</div>
+            <div class="mpop-thresh">
+                <b>Low (0.10–0.20)</b> → narrow prior, high conviction signals<br>
+                <b>Normal (0.20–0.35)</b> → balanced uncertainty<br>
+                <b>High (&gt;0.40)</b> → wide prior, posteriors pulled toward 50%
+            </div>
+            <div class="mpop-tip">💡 σ_B is the engine's "humility knob." When bVol is high (oscillating signals), σ_B widens and the posterior shrinks toward 50% — preventing overconfident trades in noisy markets.</div>
+        </div>
+
+        <div id="pop-targetedge" class="mpop">
+            <div class="mpop-title">Target Edge</div>
+            <div class="mpop-what">The model's estimated profit edge on the best side (UP or DOWN). Computed as: <b>Posterior − Market Price</b>. Represents how mispriced the market is relative to the model's probability estimate.</div>
+            <div class="mpop-thresh">
+                <b>&lt; 3.5%</b> → below threshold, no trade<br>
+                <b>3.5%–6%</b> → minimum viable edge, small size<br>
+                <b>6%–12%</b> → good edge, normal sizing<br>
+                <b>&gt; 12%</b> → strong edge, monster signal possible
+            </div>
+            <div class="mpop-tip">💡 The required edge threshold (req) adjusts based on regime and balance. Edge must exceed this threshold for a trade to fire — it is the primary go/no-go gate after score.</div>
+        </div>
+
+        <div id="pop-mktprice" class="mpop">
+            <div class="mpop-title">Market Price (YES Mid)</div>
+            <div class="mpop-what">The current mid-price of the YES contract on Polymarket for this 15-minute BTC window. Computed as <b>(best bid + best ask) / 2</b> from the live Polymarket order book.</div>
+            <div class="mpop-thresh">
+                <b>0.50</b> → market sees 50/50 chance<br>
+                <b>&lt; 0.40</b> → market leans DOWN strongly<br>
+                <b>&gt; 0.60</b> → market leans UP strongly<br>
+                <b>Wide spread (&gt;8%)</b> → illiquid, engine skips cycle
+            </div>
+            <div class="mpop-tip">💡 The model's edge = posterior − market price. If the market already prices in the move, there's no edge to capture. Trades only fire when the model disagrees with the market by at least the required edge threshold.</div>
         </div>
 
         <!-- ━━━ PANEL 5: Active Execution ━━━ -->
