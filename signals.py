@@ -743,9 +743,11 @@ def compute_signals(
     signed = max(-8.0, min(8.0, signed))
 
     res.signed_score = signed
-    # Phase 7: EMA smoothing to reduce single-cycle noise
+    # Phase 7: EMA smoothing to reduce single-cycle noise.
+    # In the last 3 minutes, increase alpha so the score responds fast to market repricing.
+    # Technical indicators lag; the late-window market price IS the signal.
     if state.prev_cycle_score is not None:
-        alpha = 0.6  # responsiveness factor
+        alpha = 0.85 if minutes_remaining < 3.0 else 0.6
         res.signed_score = alpha * res.signed_score + (1 - alpha) * state.prev_cycle_score
     res.abs_score    = abs(res.signed_score)
 
@@ -886,6 +888,8 @@ def compute_signals(
             effective_required_edge = 0.005 if minutes_remaining < 3 else 0.012
         elif minutes_remaining < 2:
             effective_required_edge = 0.010
+        elif minutes_remaining < 3 and best_posterior >= 0.80:                  # late + strong conviction
+            effective_required_edge = 0.015
         elif market_price < 0.10 or market_price > 0.90:
             effective_required_edge = 0.012
         else:
@@ -905,8 +909,62 @@ def compute_signals(
         gates = [g for g in gates if "edge_insufficient" not in g]
         log.info(f"MONSTER_SURE_THING_OVERRIDE: posterior={best_posterior:.4f} → forcing trade")
 
-    # Score gate
-    if res.abs_score < res.min_score and not res.monster_signal:
+    # Late-window conviction override — wires the LATE_CONVICTION_* config constants.
+    # When BTC is clearly on one side of strike with high posterior near expiry,
+    # technical scores (EMA, MACD) are lagging 5m data and the market has repriced.
+    # Instead of fully suppressing the score gate, we:
+    #   1. Relax the score threshold from 2.5 → 0.5 (just need directional agreement)
+    #   2. Bolster the score with late-window micro signals (OBI, CVD, OBV divergence)
+    #   3. Relax the edge gate
+    is_late_conviction = (
+        minutes_remaining <= Config.LATE_CONVICTION_MIN_REM
+        and best_posterior >= Config.LATE_CONVICTION_POSTERIOR
+        and res.distance is not None
+        and abs(res.distance) >= Config.LATE_CONVICTION_DISTANCE
+    )
+
+    # Late-conviction micro bolster: sum of confirming flow/micro signals.
+    # These are real-time and still accurate in the last 3 minutes, unlike EMA/MACD.
+    late_micro_boost = 0.0
+    if is_late_conviction:
+        # OBI: real-time order book imbalance (updated every cycle)
+        if res.obi is not None and abs(res.obi) > 0.15:
+            obi_dir = 1.0 if res.obi > 0 else -1.0
+            score_dir = 1.0 if res.direction == "UP" else -1.0
+            if obi_dir == score_dir:
+                late_micro_boost += 0.5
+        # CVD: real-time cumulative volume delta
+        if abs(res.cvd_score) >= 0.5:
+            cvd_dir = 1.0 if res.cvd_score > 0 else -1.0
+            score_dir = 1.0 if res.direction == "UP" else -1.0
+            if cvd_dir == score_dir:
+                late_micro_boost += 0.5
+        # OBV divergence: if OBV agrees with the trade direction
+        if abs(res.obv_score) >= 0.5:
+            obv_dir = 1.0 if res.obv_score > 0 else -1.0
+            score_dir = 1.0 if res.direction == "UP" else -1.0
+            if obv_dir == score_dir:
+                late_micro_boost += 0.5
+
+        # Relax the edge gate to the late-conviction threshold
+        gates = [g for g in gates if "edge_insufficient" not in g]
+        if res.target_edge is not None and res.target_edge < Config.LATE_CONVICTION_EDGE:
+            gates.append(
+                f"edge_insufficient={res.target_edge:.4f}_req={Config.LATE_CONVICTION_EDGE:.3f}"
+            )
+        log.info(
+            f"LATE_CONVICTION: rem={minutes_remaining:.1f}m post={best_posterior:.3f} "
+            f"dist={res.distance:.1f} micro_boost={late_micro_boost:.1f} "
+            f"→ score_req relaxed to 0.5, edge relaxed to {Config.LATE_CONVICTION_EDGE:.3f}"
+        )
+
+    # Score gate — relaxed for late-conviction (min_score 2.5 → 0.5 + micro bolster)
+    if is_late_conviction:
+        late_effective_score = res.abs_score + late_micro_boost
+        late_min_score = 0.5  # just need basic directional signal + micro confirmation
+        if late_effective_score < late_min_score:
+            gates.append(f"score_low={late_effective_score:.2f}_req={late_min_score:.1f}_late")
+    elif res.abs_score < res.min_score and not res.monster_signal:
         gates.append(f"score_low={res.abs_score:.2f}_req={res.min_score:.1f}")
 
     # Early window guard

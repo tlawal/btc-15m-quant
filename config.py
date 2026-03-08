@@ -5,7 +5,7 @@ load_dotenv()
 
 class Config:
     # ── Timing ────────────────────────────────────────────────────────────────
-    LOOP_INTERVAL_SEC          = 15       # inner loop cadence
+    LOOP_INTERVAL_SEC          = 5        # inner loop cadence (was 15; 5s for faster exit monitoring + late-window sniping)
     WINDOW_SEC                 = 900      # 15-minute binary window
     EARLY_WINDOW_GUARD_MIN     = 6.0      # block non-monster trades in first 6 min
     BELIEF_VOL_LOOKBACK_SEC    = 180      # rolling σ_B window (3 min)
@@ -46,12 +46,15 @@ class Config:
     DEFAULT_ATR                = 150.0
 
     # ── Late-window conviction override ──────────────────────────────────────
-    # When near expiry with very high posterior and large distance-from-strike,
-    # the edge gate is relaxed because the market already prices in the outcome.
+    # When near expiry with strong posterior and BTC clearly away from strike,
+    # technical scores (EMA/MACD) are stale — the market has already repriced.
+    # Suppress the score gate and relax the edge gate so the bot can snipe.
+    # Tuned from log analysis: the window 1772984700 had posterior 0.82–0.91,
+    # distance +40, edge 4–16%, score −0.8 to −1.9 → all missed due to score_low.
     LATE_CONVICTION_MIN_REM    = 3.0      # must be within last 3 min of window
-    LATE_CONVICTION_POSTERIOR  = 0.93     # model must be ≥93% confident
-    LATE_CONVICTION_DISTANCE   = 50.0     # price must be ≥$50 from strike
-    LATE_CONVICTION_EDGE       = 0.025    # relaxed edge requirement (2.5% instead of 3.5%)
+    LATE_CONVICTION_POSTERIOR  = 0.80     # model must be ≥80% confident (was 0.93, too strict)
+    LATE_CONVICTION_DISTANCE   = 40.0     # price must be ≥$40 from strike
+    LATE_CONVICTION_EDGE       = 0.020    # relaxed edge requirement (2.0% instead of 3.5%)
 
     # ── ADX trend filter (FIX #5) ─────────────────────────────────────────────
     ADX_TREND_THRESHOLD        = 20.0     # below = choppy, block directional entry

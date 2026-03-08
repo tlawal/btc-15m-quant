@@ -339,6 +339,7 @@ class Engine:
             self.state.strike_window_start  = win_start
             self.state.cvd                  = 0.0   # reset CVD each window
             self.state.accumulated_ofi      = 0.0   # Phase 2: reset accumulated OFI
+            self.state.prev_cycle_score     = None  # reset EMA score — no contamination from prior window
             self.cvd_ws.reset(win_start * 1000)      # Reset real-time CVD WebSocket
 
         self.state.last_window_start_sec = win_start

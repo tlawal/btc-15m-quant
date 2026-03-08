@@ -231,14 +231,15 @@
 
     <!-- Center: BTC / Strike / Delta / Countdown -->
     <div class="flex items-center gap-4 md:gap-7">
-        <div class="banner-cell">
-            <div class="banner-label">BTC Price</div>
+        <div class="banner-cell" style="position:relative">
+            <div class="banner-label">BTC Price <span class="info-icon" data-pop="pop-btc-src" style="vertical-align:top;margin-left:2px">i</span></div>
             <div class="banner-val text-white" id="b-btc">--</div>
         </div>
         <div class="sep"></div>
-        <div class="banner-cell">
-            <div class="banner-label">Strike</div>
+        <div class="banner-cell" style="position:relative">
+            <div class="banner-label">Strike <span class="info-icon" data-pop="pop-strike-src" style="vertical-align:top;margin-left:2px">i</span></div>
             <div class="banner-val text-slate-300" id="b-strike">--</div>
+            <div class="text-[0.5rem] text-slate-600 mono" id="strike-src-label"></div>
         </div>
         <div class="sep"></div>
         <div class="banner-cell">
@@ -635,6 +636,29 @@
             <div class="mpop-tip">💡 When bVol is high, even a strong posterior (e.g. 80%) gets pulled toward 50% by the Bayesian update. This prevents overconfidence in choppy windows.</div>
         </div>
 
+        <!-- Banner tooltips -->
+        <div id="pop-btc-src" class="mpop">
+            <div class="mpop-title">BTC Price Source</div>
+            <div class="mpop-what">Current BTC spot price, computed as <b>Strike + Distance</b>. Distance is the difference between the latest Binance BTC/USDT price and the strike price for this 15-minute window.</div>
+            <div class="mpop-thresh">
+                <b>Primary</b>: Binance BTCUSDT spot (via 5m klines)<br>
+                <b>Fallback</b>: Coinbase BTC-USD candles<br>
+                <b>Updates</b>: Every cycle (~5 seconds)
+            </div>
+            <div class="mpop-tip">💡 The price shown is the latest 5-minute candle close from Binance. If Binance is down, Coinbase is used. The "distance" (Δ) is what matters — it determines if BTC closes above or below strike.</div>
+        </div>
+        <div id="pop-strike-src" class="mpop">
+            <div class="mpop-title">Strike Price Source</div>
+            <div class="mpop-what">The BTC price at the exact start of the current 15-minute window. This is the "line in the sand" — if BTC closes above this, YES wins; below, NO wins.</div>
+            <div class="mpop-thresh">
+                <b>Priority 1</b>: Binance 15m kline open price<br>
+                <b>Priority 2</b>: Coinbase 15m candle open<br>
+                <b>Priority 3</b>: Binance 5m kline nearest to window start<br>
+                <b>Source shown</b>: <span id="strike-src-pop">--</span>
+            </div>
+            <div class="mpop-tip">💡 Strike is locked once resolved and never changes within a window. The source label below the price shows where it came from. Binance 15m open is most reliable.</div>
+        </div>
+
         <!-- ━━━ PANEL 5: Active Execution ━━━ -->
         <div class="panel">
             <div class="panel-head">
@@ -869,6 +893,14 @@ function updateUI() {
         }
         if (sig.strike_price) {
             $('b-strike').innerText = '$'+sig.strike_price.toLocaleString(undefined,{maximumFractionDigits:0});
+        }
+        // Strike source label
+        if (d.strike_source) {
+            const src = d.strike_source.replace(/_/g,' ');
+            const el = $('strike-src-label');
+            if (el) el.innerText = src;
+            const popEl = $('strike-src-pop');
+            if (popEl) popEl.innerText = src;
         }
         if (sig.distance != null) {
             const dv = sig.distance;
