@@ -65,9 +65,10 @@ class CVDResult:
 
 class BinanceCVDWebsocket:
     """
-    Streams live Bybit BTCUSDT public trades and computes true taker-side CVD.
-    Bybit has near-Binance liquidity and works from US servers (Railway).
-    Interface is identical — drop-in replacement, no changes needed elsewhere.
+    Streams live Binance BTCUSDT aggTrade feed and computes true taker-side CVD.
+    Uses wss://stream.binance.com:9443/ws/btcusdt@aggTrade — no subscribe handshake,
+    highest liquidity source. Falls back to Bybit on connection failure.
+    Interface is identical — no changes needed elsewhere.
     """
 
     def __init__(self):
@@ -85,50 +86,81 @@ class BinanceCVDWebsocket:
         self._task = asyncio.create_task(self._run_forever())
 
     async def _run_forever(self):
-        """Reconnect loop — restarts on any disconnect or error."""
+        """Reconnect loop — tries Binance first, falls back to Bybit on repeated failure."""
         import websockets
         import json as _json
         self.running = True
-        uri = "wss://stream.bybit.com/v5/public/linear"
+
+        BINANCE_URI = "wss://stream.binance.com:9443/ws/btcusdt@aggTrade"
+        BYBIT_URI   = "wss://stream.bybit.com/v5/public/linear"
+        _binance_failures = 0
 
         while self.running:
+            use_bybit = _binance_failures >= 3
             try:
-                async with websockets.connect(uri, ping_interval=20, ping_timeout=10) as ws:
-                    log.info("Bybit CVD WebSocket connected (high volume)")
-                    await ws.send(_json.dumps({
-                        "op": "subscribe",
-                        "args": ["publicTrade.BTCUSDT"]
-                    }))
-                    while self.running:
-                        msg = await ws.recv()
-                        data = _json.loads(msg)
-                        if data.get("topic") == "publicTrade.BTCUSDT" and "data" in data:
-                            for trade in data["data"]:
-                                trade_ts = int(trade["T"])
+                if not use_bybit:
+                    async with websockets.connect(BINANCE_URI, ping_interval=20, ping_timeout=10) as ws:
+                        log.info("Binance aggTrade CVD WebSocket connected")
+                        _binance_failures = 0
+                        while self.running:
+                            msg = await ws.recv()
+                            data = _json.loads(msg)
+                            # aggTrade schema: e, T, p, q, m (isBuyerMaker)
+                            if data.get("e") == "aggTrade":
+                                trade_ts = int(data["T"])
                                 if getattr(self, 'window_start_ms', 0) > 0 and trade_ts < self.window_start_ms:
                                     continue
-                                    
-                                qty = float(trade["v"])
-                                side = trade["S"]  # "Buy" or "Sell"
-                                if side == "Buy":
+                                qty = float(data["q"])
+                                is_buyer_maker = data["m"]  # True = sell taker, False = buy taker
+                                if not is_buyer_maker:
                                     self.cvd += qty
                                     self.buy_vol += qty
                                 else:
                                     self.cvd -= qty
                                     self.sell_vol += qty
-                                self.last_price = float(trade["p"])
-
-                                # Update rolling history for slope
+                                self.last_price = float(data["p"])
                                 self.cvd_history.append(self.cvd)
                                 self.cvd_timestamps.append(trade_ts)
                                 if len(self.cvd_history) > 30:
                                     self.cvd_history.pop(0)
                                     self.cvd_timestamps.pop(0)
+                else:
+                    async with websockets.connect(BYBIT_URI, ping_interval=20, ping_timeout=10) as ws:
+                        log.info("Bybit CVD WebSocket connected (Binance fallback)")
+                        await ws.send(_json.dumps({"op": "subscribe", "args": ["publicTrade.BTCUSDT"]}))
+                        while self.running:
+                            msg = await ws.recv()
+                            data = _json.loads(msg)
+                            if data.get("topic") == "publicTrade.BTCUSDT" and "data" in data:
+                                for trade in data["data"]:
+                                    trade_ts = int(trade["T"])
+                                    if getattr(self, 'window_start_ms', 0) > 0 and trade_ts < self.window_start_ms:
+                                        continue
+                                    qty = float(trade["v"])
+                                    side = trade["S"]  # "Buy" or "Sell"
+                                    if side == "Buy":
+                                        self.cvd += qty
+                                        self.buy_vol += qty
+                                    else:
+                                        self.cvd -= qty
+                                        self.sell_vol += qty
+                                    self.last_price = float(trade["p"])
+                                    self.cvd_history.append(self.cvd)
+                                    self.cvd_timestamps.append(trade_ts)
+                                    if len(self.cvd_history) > 30:
+                                        self.cvd_history.pop(0)
+                                        self.cvd_timestamps.pop(0)
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                log.warning(f"Bybit CVD WebSocket error: {e} — reconnecting in 5s")
-                await asyncio.sleep(5)
+                if not use_bybit:
+                    _binance_failures += 1
+                    log.warning(f"Binance CVD WebSocket error (attempt {_binance_failures}/3): {e} — reconnecting in 3s")
+                    await asyncio.sleep(3)
+                else:
+                    log.warning(f"Bybit CVD WebSocket error: {e} — reconnecting in 5s")
+                    _binance_failures = 0  # retry Binance next time
+                    await asyncio.sleep(5)
 
     def get_cvd(self) -> float:
         """Return current cumulative volume delta."""
