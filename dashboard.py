@@ -183,6 +183,12 @@ async def get_review():
     except Exception as e:
         return {"date": None, "content": None, "error": str(e)}
 
+@app.post("/api/logs/clear")
+async def clear_logs():
+    log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
+    open(log_path, "w").close()
+    return {"status": "cleared", "path": log_path}
+
 @app.get("/api/logs")
 async def get_logs(limit: int = 240):
     log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
