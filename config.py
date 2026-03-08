@@ -38,6 +38,10 @@ class Config:
     REQUIRED_EDGE_LOW          = 0.050
     REQUIRED_EDGE_NORMAL       = 0.035
     REQUIRED_EDGE_HIGH         = 0.025
+    # Balance-adaptive edge: when wallet is small, use lower edge requirement
+    # This prevents the bot from being perpetually blocked at low capital.
+    LOW_BALANCE_THRESHOLD_USD  = 20.0   # apply lower edge when balance < this
+    REQUIRED_EDGE_LOW_BALANCE  = 0.020  # relaxed edge requirement at low balance
     # Fallback ATR used when local ATR computation is unavailable.
     DEFAULT_ATR                = 150.0
 
@@ -139,15 +143,30 @@ class Config:
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @classmethod
-    def get_regime_thresholds(cls, atr14: float) -> tuple[float, float]:
-        """Returns (required_edge, min_score) for the given ATR regime."""
+    def get_regime_thresholds(cls, atr14: float, balance: float = None) -> tuple[float, float]:
+        """Returns (required_edge, min_score) for the given ATR regime.
+
+        When balance < LOW_BALANCE_THRESHOLD_USD, applies a relaxed edge requirement
+        so the bot can still find opportunities at low capital.
+        """
         if atr14 is None:
-            return cls.REQUIRED_EDGE_NORMAL, cls.MIN_SCORE_NORMAL
-        if atr14 < cls.ATR_LOW_THRESHOLD:
-            return cls.REQUIRED_EDGE_LOW, cls.MIN_SCORE_LOW_VOL
-        if atr14 > cls.ATR_HIGH_THRESHOLD:
-            return cls.REQUIRED_EDGE_HIGH, cls.MIN_SCORE_HIGH_VOL
-        return cls.REQUIRED_EDGE_NORMAL, cls.MIN_SCORE_NORMAL
+            edge = cls.REQUIRED_EDGE_NORMAL
+            score = cls.MIN_SCORE_NORMAL
+        elif atr14 < cls.ATR_LOW_THRESHOLD:
+            edge = cls.REQUIRED_EDGE_LOW
+            score = cls.MIN_SCORE_LOW_VOL
+        elif atr14 > cls.ATR_HIGH_THRESHOLD:
+            edge = cls.REQUIRED_EDGE_HIGH
+            score = cls.MIN_SCORE_HIGH_VOL
+        else:
+            edge = cls.REQUIRED_EDGE_NORMAL
+            score = cls.MIN_SCORE_NORMAL
+
+        # Balance-adaptive override: relax edge requirement at low capital
+        if balance is not None and balance < cls.LOW_BALANCE_THRESHOLD_USD:
+            edge = min(edge, cls.REQUIRED_EDGE_LOW_BALANCE)
+
+        return edge, score
 
     @classmethod
     def get_risk_pct(cls, balance: float) -> float:

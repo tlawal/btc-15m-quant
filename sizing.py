@@ -41,6 +41,27 @@ def compute_position_size(
         log.info(f"sizing: negative edge ({edge:.4f}) — skipping position")
         return None
 
+    # === LOW-BALANCE CONVICTION FLOOR ===
+    # At small bankrolls, quarter-Kelly produces sub-minimum sizes even on good signals.
+    # When balance < LOW_BALANCE_THRESHOLD_USD and the signal has meaningful positive edge
+    # (>= REQUIRED_EDGE_LOW_BALANCE) and reasonable conviction (posterior >= 0.55),
+    # force the minimum Polymarket-viable trade size so the bot can actually execute.
+    # This is capped at 85% of balance to avoid risking the entire wallet on one trade.
+    if (
+        balance < Config.LOW_BALANCE_THRESHOLD_USD
+        and edge is not None
+        and edge >= Config.REQUIRED_EDGE_LOW_BALANCE
+        and posterior >= 0.55
+        and balance >= Config.MIN_TRADE_USD
+    ):
+        low_bal_floor = min(Config.MIN_TRADE_USD, round(balance * 0.85, 2))
+        if low_bal_floor >= Config.MIN_TRADE_USD:
+            log.info(
+                f"LOW_BAL_FLOOR: forced ${low_bal_floor:.2f} (bal=${balance:.2f} "
+                f"edge={edge:.4f} post={posterior:.3f})"
+            )
+            return low_bal_floor
+
     risk_pct = Config.get_risk_pct(balance)
     max_loss_usd = balance * risk_pct
 

@@ -631,6 +631,7 @@ class Engine:
             inference_engine  = self.inference,
             score_offset      = score_offset,
             edge_offset       = edge_offset,
+            balance           = balance,
         )
         self._last_sig = sig # Phase 6: Store for trade logging feedback
 

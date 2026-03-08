@@ -1,950 +1,1116 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Predi-Quant | Institutional Dashboard</title>
+    <title>BTC-15m Quant | Live Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            background: #07090E;
-            color: #94A3B8;
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
+        :root {
+            --bg: #07090E;
+            --panel: rgba(13,18,28,0.85);
+            --border: rgba(255,255,255,0.07);
+            --text: #94A3B8;
+            --text-bright: #E2E8F0;
+            --green: #22c55e;
+            --red: #ef4444;
+            --blue: #38bdf8;
+            --amber: #f59e0b;
+            --purple: #a78bfa;
         }
+        body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); margin:0; padding:0; }
+        .mono { font-family:'JetBrains Mono',monospace; }
 
-        .mono {
-            font-family: 'JetBrains Mono', monospace;
+        /* ── Top Banner ── */
+        #top-banner {
+            background: linear-gradient(90deg,rgba(13,18,28,0.98) 0%,rgba(20,28,45,0.98) 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 0 1.5rem;
+            height: 56px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(12px);
         }
+        .banner-cell { text-align:center; min-width:110px; }
+        .banner-label { font-size:0.55rem; letter-spacing:0.1em; text-transform:uppercase; color:#475569; }
+        .banner-val { font-family:'JetBrains Mono',monospace; font-size:1rem; font-weight:700; line-height:1.2; }
+        .sep { width:1px; background:var(--border); height:32px; }
 
-        .glass-panel {
-            background: rgba(16, 22, 34, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.06);
+        /* ── Countdown timer ── */
+        #countdown-val { font-size:1.05rem; }
+        #countdown-val.urgent { color: var(--red); animation: pulse 1s ease-in-out infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+
+        /* ── Glass panels ── */
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .panel-head {
+            background: rgba(20,28,45,0.9);
+            border-bottom: 1px solid var(--border);
+            padding: 9px 14px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-bright);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .panel-body { padding: 14px; }
+
+        /* ── Signal tiles ── */
+        .sig-tile {
             border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-            display: flex;
-            flex-direction: column;
+            padding: 10px 12px;
+            border: 1px solid transparent;
+            cursor: help;
+            position: relative;
+            transition: border-color 0.2s;
         }
+        .sig-tile:hover { border-color: rgba(255,255,255,0.15); }
+        .sig-tile .tile-name { font-size:0.6rem; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px; }
+        .sig-tile .tile-val  { font-family:'JetBrains Mono',monospace; font-size:1.2rem; font-weight:700; line-height:1; }
+        .sig-tile .tile-bar  { height:3px; border-radius:2px; margin-top:6px; width:100%; background:rgba(255,255,255,0.07); overflow:hidden; }
+        .sig-tile .tile-bar-fill { height:100%; border-radius:2px; transition: width 0.4s ease, background 0.3s; }
+        .tile-neutral { background:rgba(30,38,55,0.6); }
+        .tile-up      { background:rgba(34,197,94,0.08); border-color:rgba(34,197,94,0.2) !important; }
+        .tile-dn      { background:rgba(239,68,68,0.08); border-color:rgba(239,68,68,0.2) !important; }
 
-        .glass-header {
-            background: rgba(24, 32, 47, 0.9);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 8px 8px 0 0;
-            padding: 10px 16px;
-            color: #E2E8F0;
-            font-weight: 600;
-            font-size: 0.8rem;
-            letter-spacing: 0.05em;
-            text-transform: uppercase;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
+        /* ── Tooltip ── */
+        .tip {
+            display: none;
+            position: absolute;
+            z-index: 200;
+            bottom: calc(100% + 8px);
+            left: 50%;
+            transform: translateX(-50%);
+            width: 240px;
+            background: rgba(10,15,26,0.97);
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 0.68rem;
+            line-height: 1.5;
+            color: #cbd5e1;
+            pointer-events: none;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
         }
+        .sig-tile:hover .tip { display: block; }
+        .tip-title { font-weight:700; color:var(--text-bright); margin-bottom:4px; font-size:0.72rem; }
+        .tip-thresh { color:#64748b; font-size:0.62rem; margin-top:6px; }
 
-        .glass-body {
-            padding: 16px;
-            flex: 1;
-            overflow-y: auto;
-        }
+        /* ── Semi-circle gauge ── */
+        #gauge-wrap { position:relative; width:160px; height:84px; margin:0 auto 8px; }
+        #gauge-svg { width:160px; height:84px; }
+        .gauge-track { fill:none; stroke:rgba(255,255,255,0.06); stroke-width:12; stroke-linecap:round; }
+        .gauge-fill  { fill:none; stroke-width:12; stroke-linecap:round; transition:stroke-dashoffset 0.5s ease, stroke 0.3s; }
+        #gauge-center { position:absolute; bottom:2px; left:50%; transform:translateX(-50%); text-align:center; }
 
-        .val-up {
-            color: #34d399;
-        }
+        /* ── Metric rows ── */
+        .mrow { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid rgba(255,255,255,0.04); font-size:0.72rem; }
+        .mrow:last-child { border-bottom:none; }
+        .mrow-label { color:#64748b; display:flex; align-items:center; gap:4px; }
+        .mrow-val   { font-family:'JetBrains Mono',monospace; font-weight:600; }
+        .info-icon  { width:13px; height:13px; border-radius:50%; border:1px solid #475569; color:#475569; font-size:0.55rem; display:inline-flex; align-items:center; justify-content:center; cursor:help; flex-shrink:0; }
 
-        .val-down {
-            color: #f87171;
-        }
+        /* ── Accordion ── */
+        .accordion-trigger { cursor:pointer; user-select:none; }
+        .accordion-body { display:block; }
 
-        .val-neutral {
-            color: #94a3b8;
-        }
+        /* ── Position badge ── */
+        .pos-badge { font-size:0.65rem; font-weight:700; padding:2px 8px; border-radius:4px; text-transform:uppercase; }
 
-        .indicator-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 6px;
-        }
+        /* ── Status dots ── */
+        .dot { width:7px; height:7px; border-radius:50%; display:inline-block; }
+        .dot-g { background:var(--green); box-shadow:0 0 6px var(--green); }
+        .dot-r { background:var(--red); box-shadow:0 0 6px var(--red); }
+        .dot-y { background:var(--amber); }
+        .dot-gray { background:#334155; }
 
-        .dot-green {
-            background: #10b981;
-            box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
-        }
+        /* ── Colour helpers ── */
+        .up   { color:var(--green); }
+        .dn   { color:var(--red); }
+        .mute { color:#475569; }
 
-        .dot-red {
-            background: #ef4444;
-            box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
-        }
+        /* ── Score ring ── */
+        .score-ring { position:relative; display:inline-flex; align-items:center; justify-content:center; }
 
-        .dot-yellow {
-            background: #f59e0b;
-            box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
-        }
+        /* ── Gate pill ── */
+        .gate-pill { font-size:0.6rem; padding:2px 7px; border-radius:20px; background:rgba(251,146,60,0.12); border:1px solid rgba(251,146,60,0.3); color:#fb923c; font-family:'JetBrains Mono',monospace; white-space:nowrap; }
+        .gate-clear { background:rgba(34,197,94,0.1); border-color:rgba(34,197,94,0.3); color:var(--green); }
 
-        .dot-gray {
-            background: #475569;
-        }
-
-        .table-row {
-            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-        }
-
-        .table-row:last-child {
-            border-bottom: none;
-        }
-
-        ::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 2px;
-        }
-
-        .data-label {
-            font-size: 0.7rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: #64748b;
-            margin-bottom: 2px;
-        }
-
-        .data-value {
-            font-size: 1.05rem;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 500;
-            color: #e2e8f0;
-        }
-
-        .data-value-sm {
-            font-size: 0.85rem;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 500;
-            color: #e2e8f0;
-        }
-
-        .data-value-lg {
-            font-size: 1.4rem;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 600;
-            color: #f8fafc;
-        }
-
-        .metric-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 7px 0;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-        }
-
-        .metric-row:last-child {
-            border-bottom: none;
-        }
-
-        .sys-badge {
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            letter-spacing: 0.05em;
-        }
-
-        .sys-healthy {
-            background: rgba(16, 185, 129, 0.1);
-            color: #34d399;
-            border: 1px solid rgba(16, 185, 129, 0.2);
-        }
-
-        .sys-halted {
-            background: rgba(239, 68, 68, 0.1);
-            color: #f87171;
-            border: 1px solid rgba(239, 68, 68, 0.2);
-        }
-
-        .raw-badge {
-            font-size: 0.6rem;
-            background: rgba(255, 255, 255, 0.04);
-            padding: 1px 5px;
-            border-radius: 3px;
-            color: #64748b;
-            margin-left: 6px;
-        }
-
-        /* Panel Grid System */
-        .panel-grid {
+        /* ── Grid ── */
+        .main-grid {
             display: grid;
             grid-template-columns: repeat(3, 1fr);
-            gap: 20px;
+            gap: 14px;
         }
+        @media (max-width:1200px) { .main-grid { grid-template-columns:repeat(2,1fr); } }
+        @media (max-width:768px)  { .main-grid { grid-template-columns:1fr; } }
 
-        @media (max-width: 1200px) {
-            .panel-grid {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
+        .span2 { grid-column: span 2; }
+        @media (max-width:1200px) { .span2 { grid-column: span 1; } }
 
-        @media (max-width: 768px) {
-            .panel-grid {
-                grid-template-columns: 1fr;
-            }
-        }
+        /* ── Chart panels below grid ── */
+        .chart-strip { border-radius:10px; border:1px solid var(--border); background:var(--panel); padding:14px; }
+
+        /* ── Kill switch ── */
+        #kill-btn { position:fixed; bottom:20px; right:20px; z-index:500; background:rgba(185,28,28,0.85); border:1px solid #ef4444; color:#fff; font-weight:700; font-size:0.75rem; padding:8px 16px; border-radius:6px; cursor:pointer; backdrop-filter:blur(8px); transition:background 0.2s; }
+        #kill-btn:hover { background:rgba(239,68,68,0.9); }
+
+        /* ── Trade table ── */
+        .trade-row { border-bottom:1px solid rgba(255,255,255,0.04); }
+        .trade-row:hover { background:rgba(255,255,255,0.03); }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width:4px; height:4px; }
+        ::-webkit-scrollbar-track { background:transparent; }
+        ::-webkit-scrollbar-thumb { background:#1e293b; border-radius:4px; }
     </style>
 </head>
+<body>
 
-<body class="p-4 md:p-6 lg:p-8">
-    <div class="max-w-[1800px] mx-auto space-y-5">
+<!-- ═══════════════ TOP BANNER ═══════════════ -->
+<div id="top-banner">
+    <!-- Left: Logo -->
+    <div class="flex items-center gap-3">
+        <span class="dot dot-g" id="main-dot"></span>
+        <div>
+            <div class="text-[0.82rem] font-bold text-white tracking-tight">BTC-15m <span class="text-sky-400">QUANT</span></div>
+            <div class="text-[0.52rem] text-slate-500 uppercase tracking-widest mono" id="build-ver">v2.3</div>
+        </div>
+    </div>
 
-        <!-- Header -->
-        <div class="flex flex-col md:flex-row justify-between items-start md:items-center pb-4 border-b border-white/5">
-            <div>
-                <h1 class="text-xl md:text-2xl font-bold tracking-tight text-white flex items-center gap-3">
-                    <span class="indicator-dot dot-green" id="main-dot"></span>
-                    PREDI-QUANT <span class="text-blue-500 ml-1">INSTITUTIONAL</span>
-                </h1>
-                <p class="text-xs text-slate-500 uppercase tracking-widest mt-1">Phase 5 Monitoring Stack · <span
-                        id="build-ver">v2.1</span></p>
+    <!-- Center: BTC / Strike / Delta / Countdown -->
+    <div class="flex items-center gap-4 md:gap-7">
+        <div class="banner-cell">
+            <div class="banner-label">BTC Price</div>
+            <div class="banner-val text-white" id="b-btc">--</div>
+        </div>
+        <div class="sep"></div>
+        <div class="banner-cell">
+            <div class="banner-label">Strike</div>
+            <div class="banner-val text-slate-300" id="b-strike">--</div>
+        </div>
+        <div class="sep"></div>
+        <div class="banner-cell">
+            <div class="banner-label">Δ Price</div>
+            <div class="banner-val" id="b-delta">--</div>
+        </div>
+        <div class="sep"></div>
+        <div class="banner-cell">
+            <div class="banner-label">Window Closes</div>
+            <div class="banner-val" id="countdown-val">--:--</div>
+        </div>
+        <div class="sep hidden md:block"></div>
+        <div class="banner-cell hidden md:block">
+            <div class="banner-label">Direction</div>
+            <div class="banner-val" id="b-dir">--</div>
+        </div>
+    </div>
+
+    <!-- Right: Status + PnL -->
+    <div class="flex items-center gap-4">
+        <div class="text-right hidden md:block">
+            <div class="banner-label">Cum PnL</div>
+            <div class="banner-val" id="cum-pnl">--</div>
+        </div>
+        <div id="status-badge" class="text-[0.65rem] font-bold uppercase tracking-wide px-3 py-1 rounded border border-green-500/30 bg-green-500/10 text-green-400">HEALTHY</div>
+    </div>
+</div>
+
+<!-- ═══════════════ MAIN CONTENT ═══════════════ -->
+<div class="p-4 md:p-5 space-y-4 max-w-[1800px] mx-auto">
+
+    <!-- ── ROW 1: 3-column grid ── -->
+    <div class="main-grid">
+
+        <!-- ━━━ PANEL 1: Signal Heatmap ━━━ -->
+        <div class="panel">
+            <div class="panel-head">
+                <span>Signal Heatmap</span>
+                <span id="regime-badge" class="text-[0.6rem] px-2 py-0.5 rounded border border-indigo-500/30 bg-indigo-500/10 text-indigo-400 uppercase font-mono">NORMAL</span>
             </div>
-            <div class="mt-3 md:mt-0 flex gap-3 items-center">
-                <div class="text-right mr-4 leading-tight">
-                    <div class="text-[0.6rem] text-slate-500 uppercase tracking-widest">Cumulative PnL</div>
-                    <div class="mono text-green-400 font-bold" id="cum-pnl">--</div>
+            <div class="panel-body space-y-3">
+                <!-- 2×3 tile grid -->
+                <div class="grid grid-cols-3 gap-2" id="sig-tiles">
+
+                    <!-- OFI -->
+                    <div class="sig-tile tile-neutral" id="tile-ofi" data-max="2">
+                        <div class="tile-name text-slate-500">OFI</div>
+                        <div class="tile-val text-white" id="tv-ofi">0.00</div>
+                        <div class="tile-bar"><div class="tile-bar-fill" id="tb-ofi"></div></div>
+                        <div class="tip">
+                            <div class="tip-title">Order Flow Imbalance</div>
+                            Measures net buying vs selling pressure across 10 price levels of the Binance order book.
+                            Positive = more aggressive buyers; Negative = more sellers.<br>
+                            <span class="tip-thresh">Threshold: ±1.0 moderate, ±2.0 strong<br>Weight: standalone additive</span>
+                        </div>
+                    </div>
+
+                    <!-- CVD -->
+                    <div class="sig-tile tile-neutral" id="tile-cvd" data-max="2">
+                        <div class="tile-name text-slate-500">CVD</div>
+                        <div class="tile-val text-white" id="tv-cvd">0.00</div>
+                        <div class="tile-bar"><div class="tile-bar-fill" id="tb-cvd"></div></div>
+                        <div class="tip">
+                            <div class="tip-title">Cumulative Volume Delta</div>
+                            Tracks the running difference between buy-initiated and sell-initiated volume on Binance perpetuals. Rising CVD = net buying pressure = bullish.<br>
+                            <span class="tip-thresh">Flow group max (with OFI, accel, accum-OFI)<br>Score ±1.0–2.0×volume multiplier</span>
+                        </div>
+                    </div>
+
+                    <!-- Flow Accel -->
+                    <div class="sig-tile tile-neutral" id="tile-accel" data-max="2">
+                        <div class="tile-name text-slate-500">Flow Accel</div>
+                        <div class="tile-val text-white" id="tv-accel">0.00</div>
+                        <div class="tile-bar"><div class="tile-bar-fill" id="tb-accel"></div></div>
+                        <div class="tip">
+                            <div class="tip-title">Flow Acceleration</div>
+                            Detects whether order flow is speeding up or slowing down vs the previous cycle. Accelerating positive OFI is a strong continuation signal.<br>
+                            <span class="tip-thresh">+1.0 if OFI increasing, -1.0 decreasing<br>Part of Flow group (max-magnitude wins)</span>
+                        </div>
+                    </div>
+
+                    <!-- Liq Imbalance -->
+                    <div class="sig-tile tile-neutral" id="tile-imb" data-max="1">
+                        <div class="tile-name text-slate-500">Liq Imb</div>
+                        <div class="tile-val text-white" id="tv-imb">0.50</div>
+                        <div class="tile-bar"><div class="tile-bar-fill" id="tb-imb"></div></div>
+                        <div class="tip">
+                            <div class="tip-title">Liquidity Imbalance</div>
+                            Deep order book (20-level) bid vs ask size ratio. Above 0.60 = bids dominate (bullish). Below 0.40 = asks dominate (bearish). Centred at 0.50 = balanced.<br>
+                            <span class="tip-thresh">Threshold: 0.60/0.40 → ±1.0 score<br>Part of Microstructure group</span>
+                        </div>
+                    </div>
+
+                    <!-- Whale Flow -->
+                    <div class="sig-tile tile-neutral" id="tile-whale" data-max="3">
+                        <div class="tile-name text-slate-500">Whale</div>
+                        <div class="tile-val text-white" id="tv-whale">0.00</div>
+                        <div class="tile-bar"><div class="tile-bar-fill" id="tb-whale"></div></div>
+                        <div class="tip">
+                            <div class="tip-title">Whale Flow (Informed Money)</div>
+                            Tracks Polymarket fills ≥$50 as potential informed traders. Large directional whale flow near expiry is a strong alpha signal.<br>
+                            <span class="tip-thresh">≥$50→±1.0, ≥$150→±2.0, ≥$500→±3.0<br>1.5× boost if &lt;5 min remaining</span>
+                        </div>
+                    </div>
+
+                    <!-- Spread Skew -->
+                    <div class="sig-tile tile-neutral" id="tile-skew" data-max="2">
+                        <div class="tile-name text-slate-500">Spread Skew</div>
+                        <div class="tile-val text-white" id="tv-skew">0.00</div>
+                        <div class="tile-bar"><div class="tile-bar-fill" id="tb-skew"></div></div>
+                        <div class="tip">
+                            <div class="tip-title">Spread Skew (NO/YES ratio)</div>
+                            Compares how wide the NO side's spread is vs the YES side. Wide NO spread = MMs uncertain about NO = market leans UP. Wide YES spread = leans DOWN.<br>
+                            <span class="tip-thresh">Ratio ≥2.5→+2.0, ≥1.5→+1.0<br>Part of New Signals group (max wins)</span>
+                        </div>
+                    </div>
+
                 </div>
-                <div id="status-badge" class="sys-badge sys-healthy uppercase">SYSTEM HEALTHY</div>
+
+                <!-- Total Score bar -->
+                <div class="pt-2 border-t border-white/5">
+                    <div class="flex justify-between items-center mb-2">
+                        <span class="text-[0.65rem] text-slate-400 uppercase tracking-wide font-semibold">Total Signed Score</span>
+                        <div class="flex items-center gap-2">
+                            <span class="mono font-bold text-base" id="sig-score">0.00</span>
+                            <span class="text-[0.6rem] px-2 py-0.5 rounded bg-white/5 border border-white/10 text-slate-400 mono" id="score-req">/ 2.5</span>
+                        </div>
+                    </div>
+                    <!-- Centred progress bar -->
+                    <div class="relative w-full h-2.5 bg-white/5 rounded-full overflow-hidden">
+                        <div class="absolute inset-y-0 left-1/2 w-px bg-white/20 z-10"></div>
+                        <div id="score-bar-dn" class="absolute inset-y-0 right-1/2 rounded-l-full transition-all duration-300" style="width:0%;background:var(--red)"></div>
+                        <div id="score-bar-up" class="absolute inset-y-0 left-1/2 rounded-r-full transition-all duration-300" style="width:0%;background:var(--green)"></div>
+                    </div>
+                </div>
+
+                <!-- Gates -->
+                <div id="gate-area" class="flex flex-wrap gap-1.5 pt-1"></div>
             </div>
         </div>
 
-        <!-- 6-Panel Grid -->
-        <div class="panel-grid">
-
-            <!-- PANEL 1: Signal Heatmap -->
-            <div class="glass-panel">
-                <div class="glass-header">
-                    <span>1. Signal Heatmap</span>
-                    <span id="regime-badge"
-                        class="text-[0.6rem] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded uppercase">Regime:
-                        Normal</span>
+        <!-- ━━━ PANEL 2: Bayesian Belief ━━━ -->
+        <div class="panel">
+            <div class="panel-head">
+                <span>Bayesian Belief</span>
+                <a id="mkt-link" href="#" target="_blank" class="text-sky-400 hover:text-sky-300 text-[0.62rem] mono">Polymarket ↗</a>
+            </div>
+            <div class="panel-body space-y-3">
+                <!-- Semi-circle gauge -->
+                <div id="gauge-wrap">
+                    <svg id="gauge-svg" viewBox="0 0 160 88">
+                        <!-- Track: half-circle, r=60, cx=80, cy=80 -->
+                        <path class="gauge-track" d="M 14 80 A 66 66 0 0 1 146 80" />
+                        <path class="gauge-fill" id="gauge-arc" d="M 14 80 A 66 66 0 0 1 146 80"
+                              stroke="#22c55e"
+                              stroke-dasharray="207.3"
+                              stroke-dashoffset="207.3" />
+                    </svg>
+                    <div id="gauge-center">
+                        <div class="mono font-bold text-2xl text-white" id="gauge-pct">--</div>
+                        <div class="text-[0.55rem] text-slate-500 uppercase tracking-wide">Model P(UP)</div>
+                    </div>
                 </div>
-                <div class="glass-body space-y-4">
-                    <div class="grid grid-cols-2 gap-4">
-                        <!-- OFI -->
-                        <div class="block">
-                            <div class="flex justify-between w-full mb-1">
-                                <span class="data-label">OFI Score</span>
-                                <span class="mono text-xs val-neutral" id="sig-ofi">0.00</span>
-                            </div>
-                            <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex">
-                                <div class="bg-red-400 h-full w-1/2 origin-right transition-transform"
-                                    style="transform:scaleX(0)" id="bar-ofi-dn"></div>
-                                <div class="bg-green-400 h-full w-1/2 origin-left transition-transform"
-                                    style="transform:scaleX(0)" id="bar-ofi-up"></div>
-                            </div>
-                        </div>
-                        <!-- CVD -->
-                        <div class="block">
-                            <div class="flex justify-between w-full mb-1">
-                                <span class="data-label">CVD Score</span>
-                                <span class="mono text-xs val-neutral" id="sig-cvd">0.00</span>
-                            </div>
-                            <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex">
-                                <div class="bg-red-400 h-full w-1/2 origin-right transition-transform"
-                                    style="transform:scaleX(0)" id="bar-cvd-dn"></div>
-                                <div class="bg-green-400 h-full w-1/2 origin-left transition-transform"
-                                    style="transform:scaleX(0)" id="bar-cvd-up"></div>
-                            </div>
-                        </div>
-                        <!-- Imbalance -->
-                        <div class="block">
-                            <div class="flex justify-between w-full mb-1">
-                                <span class="data-label">Liquidity Imb</span>
-                                <span class="mono text-xs val-neutral" id="sig-imb">0.50</span>
-                            </div>
-                            <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex">
-                                <div class="bg-blue-400 h-full w-1/2 origin-right transition-transform"
-                                    style="transform:scaleX(0)" id="bar-imb-dn"></div>
-                                <div class="bg-blue-400 h-full w-1/2 origin-left transition-transform"
-                                    style="transform:scaleX(0)" id="bar-imb-up"></div>
-                            </div>
-                        </div>
-                        <!-- Flow Accel -->
-                        <div class="block">
-                            <div class="flex justify-between w-full mb-1">
-                                <span class="data-label">Flow Accel</span>
-                                <span class="mono text-xs val-neutral" id="sig-accel">0.00</span>
-                            </div>
-                            <div class="w-full bg-white/5 h-1.5 rounded-full overflow-hidden flex">
-                                <div class="bg-red-400 h-full w-1/2 origin-right transition-transform"
-                                    style="transform:scaleX(0)" id="bar-accel-dn"></div>
-                                <div class="bg-green-400 h-full w-1/2 origin-left transition-transform"
-                                    style="transform:scaleX(0)" id="bar-accel-up"></div>
-                            </div>
-                        </div>
+
+                <!-- Edge summary row -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="bg-black/20 rounded-lg p-3 text-center">
+                        <div class="text-[0.58rem] text-slate-500 uppercase tracking-wide mb-1">Target Edge</div>
+                        <div class="mono font-bold text-xl" id="calc-edge">--</div>
+                        <div class="text-[0.6rem] text-slate-500">req <span class="text-slate-300 mono" id="req-edge">3.5%</span></div>
                     </div>
-                    <div class="pt-3 border-t border-white/5">
-                        <div class="flex justify-between items-center mb-1">
-                            <span class="data-label text-white font-bold">Total Signed Score</span>
-                            <span class="font-bold mono text-sm" id="sig-score">0.00</span>
-                            <span class="raw-badge" id="score-req">Req: 2.5</span>
-                        </div>
-                        <div class="w-full bg-white/5 h-2 rounded-full overflow-hidden flex">
-                            <div class="bg-red-500 h-full w-1/2 origin-right transition-transform"
-                                style="transform:scaleX(0)" id="bar-sc-dn"></div>
-                            <div class="bg-green-500 h-full w-1/2 origin-left transition-transform"
-                                style="transform:scaleX(0)" id="bar-sc-up"></div>
-                        </div>
+                    <div class="bg-black/20 rounded-lg p-3 text-center">
+                        <div class="text-[0.58rem] text-slate-500 uppercase tracking-wide mb-1">Market Price</div>
+                        <div class="mono font-bold text-xl text-slate-200" id="mkt-prob">--</div>
+                        <div class="text-[0.6rem] text-slate-500">YES mid</div>
                     </div>
-                    <div class="flex justify-between items-center bg-black/30 p-2 rounded text-xs mono">
-                        <span class="text-slate-500">Signal Direction:</span>
-                        <span id="dir-val" class="font-bold text-slate-300">NEUTRAL</span>
+                </div>
+
+                <!-- Stats row -->
+                <div class="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                        <div class="text-[0.58rem] text-slate-500 uppercase">Z-Score</div>
+                        <div class="mono text-sm font-bold text-slate-200" id="z-score">--</div>
                     </div>
+                    <div>
+                        <div class="text-[0.58rem] text-slate-500 uppercase">Exp Move</div>
+                        <div class="mono text-sm font-bold text-slate-200" id="exp-move">--</div>
+                    </div>
+                    <div>
+                        <div class="text-[0.58rem] text-slate-500 uppercase">σ_B</div>
+                        <div class="mono text-sm font-bold text-slate-200" id="sigma-b">--</div>
+                    </div>
+                </div>
+
+                <!-- Target action -->
+                <div class="flex items-center justify-between pt-1 border-t border-white/5">
+                    <span class="text-[0.65rem] text-slate-500">Target Action</span>
+                    <span class="mono font-bold text-sm px-3 py-1 rounded border" id="target-side"
+                          style="background:rgba(30,38,55,0.8);border-color:rgba(71,85,105,0.5);color:#64748b">NONE</span>
                 </div>
             </div>
+        </div>
 
-            <!-- PANEL 2: Bayesian Belief -->
-            <div class="glass-panel">
-                <div class="glass-header">
-                    <span>2. Bayesian Belief</span>
-                    <a href="#" id="mkt-link" target="_blank"
-                        class="text-blue-400 hover:text-blue-300 text-[0.65rem] font-mono">View on Polymarket</a>
+        <!-- ━━━ PANEL 3: Capital & PnL ━━━ -->
+        <div class="panel">
+            <div class="panel-head">
+                <span>Capital &amp; PnL</span>
+                <span id="opt-tuned" class="text-[0.6rem] text-slate-500 mono">Optimizer: PENDING</span>
+            </div>
+            <div class="panel-body space-y-3">
+                <div class="flex justify-between items-start">
+                    <div>
+                        <div class="text-[0.6rem] text-slate-500 uppercase tracking-wide mb-1">Wallet Balance</div>
+                        <div class="mono text-2xl font-bold text-white" id="wallet-bal">--</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-[0.6rem] text-slate-500 uppercase tracking-wide mb-1">Unclaimed</div>
+                        <div class="mono text-2xl font-bold text-green-400" id="unclaimed-win">$0.00</div>
+                    </div>
                 </div>
-                <div class="glass-body space-y-4">
-                    <div class="flex gap-4">
-                        <div class="flex-1">
-                            <div class="data-label">Model Prob (UP)</div>
-                            <div class="text-3xl mono font-bold text-white mb-1" id="model-prob">--</div>
-                            <div class="text-xs text-slate-500">Px: <span class="text-white" id="mkt-prob">--</span>
-                            </div>
-                        </div>
-                        <div class="w-px bg-white/10"></div>
-                        <div class="flex-1">
-                            <div class="data-label">Expected Edge</div>
-                            <div class="text-3xl mono font-bold text-green-400 mb-1" id="calc-edge">--</div>
-                            <div class="text-xs text-slate-500">Req: <span class="text-white" id="req-edge">--</span>
-                            </div>
-                        </div>
+
+                <!-- 4 stat pills -->
+                <div class="grid grid-cols-4 gap-1.5 text-center">
+                    <div class="bg-black/20 rounded-lg py-2">
+                        <div class="text-[0.55rem] text-slate-500 uppercase">Win Rate</div>
+                        <div class="mono text-sm font-bold" id="new-pm-wr">--</div>
                     </div>
-                    <div class="grid grid-cols-2 gap-4 pt-3 border-t border-white/5">
-                        <div>
-                            <div class="data-label">Z-Score</div>
-                            <div class="data-value-sm" id="z-score">--</div>
-                        </div>
-                        <div>
-                            <div class="data-label">Expected Move</div>
-                            <div class="data-value-sm" id="exp-move">--</div>
-                        </div>
+                    <div class="bg-black/20 rounded-lg py-2">
+                        <div class="text-[0.55rem] text-slate-500 uppercase">Prof. Factor</div>
+                        <div class="mono text-sm font-bold" id="new-pm-pf">--</div>
                     </div>
-                    <div class="pt-3 border-t border-white/5 flex items-center justify-between">
-                        <div class="text-xs font-mono text-slate-400">Target Action:</div>
-                        <div class="px-3 py-1 bg-slate-800 border border-slate-700 text-slate-500 rounded font-bold mono text-sm"
-                            id="target-side">NONE</div>
+                    <div class="bg-black/20 rounded-lg py-2">
+                        <div class="text-[0.55rem] text-slate-500 uppercase">Sharpe</div>
+                        <div class="mono text-sm font-bold" id="new-pm-sharpe">--</div>
                     </div>
-                    <div class="text-[0.65rem] mono text-slate-500 pt-2 text-right">
-                        Gates: <span id="skip-gates" class="text-green-400">CLEAR</span>
+                    <div class="bg-black/20 rounded-lg py-2">
+                        <div class="text-[0.55rem] text-slate-500 uppercase">Trades</div>
+                        <div class="mono text-sm font-bold text-slate-300" id="new-pm-total">0</div>
                     </div>
+                </div>
+
+                <!-- Equity curve -->
+                <div class="relative" style="height:110px">
+                    <canvas id="equityChart"></canvas>
                 </div>
             </div>
+        </div>
 
-            <!-- PANEL 3: Capital & PnL -->
-            <div class="glass-panel">
-                <div class="glass-header">
-                    <span>3. Capital & PnL</span>
-                    <span id="opt-tuned" class="text-[0.6rem] text-slate-500">Tuned: PENDING</span>
+        <!-- ━━━ PANEL 4: Microstructure (collapsible) ━━━ -->
+        <div class="panel">
+            <div class="panel-head accordion-trigger" onclick="toggleAccordion('micro-body')">
+                <span>Microstructure</span>
+                <span class="text-slate-500 text-xs" id="micro-arrow">▾</span>
+            </div>
+            <div class="panel-body" id="micro-body">
+                <!-- Funding first (most important) -->
+                <div class="mrow">
+                    <span class="mrow-label">
+                        <span class="info-icon" title="Perpetual futures funding rate. Positive = longs pay shorts (bearish when high). Negative = shorts pay longs (bullish).">i</span>
+                        Funding Rate
+                    </span>
+                    <span class="mrow-val" id="funding-rate">0.0000</span>
                 </div>
-                <div class="glass-body flex flex-col space-y-3">
-                    <div class="flex justify-between">
-                        <div>
-                            <div class="data-label">Wallet Balance</div>
-                            <div class="data-value-lg text-white" id="wallet-bal">--</div>
-                        </div>
-                        <div class="text-right">
-                            <div class="data-label">Unclaimed Winnings</div>
-                            <div class="data-value-lg text-green-400" id="unclaimed-win">$0.00</div>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-4 gap-2 pt-2 border-t border-white/5 text-center">
-                        <div>
-                            <div class="data-label">Win Rate</div>
-                            <div class="data-value-sm" id="new-pm-wr">--</div>
-                        </div>
-                        <div>
-                            <div class="data-label">Profit Fac</div>
-                            <div class="data-value-sm" id="new-pm-pf">--</div>
-                        </div>
-                        <div>
-                            <div class="data-label">Sharpe</div>
-                            <div class="data-value-sm" id="new-pm-sharpe">--</div>
-                        </div>
-                        <div>
-                            <div class="data-label">Trades</div>
-                            <div class="data-value-sm text-slate-300" id="new-pm-total">0</div>
-                        </div>
-                    </div>
-                    <div class="flex-1 min-h-[120px] w-full mt-2 relative">
-                        <canvas id="equityChart"></canvas>
-                    </div>
+                <div class="mrow">
+                    <span class="mrow-label">
+                        <span class="info-icon" title="Cumulative Volume Delta: running buy volume minus sell volume on Binance BTC perps. Positive = net buying.">i</span>
+                        Raw CVD
+                    </span>
+                    <span class="mrow-val" id="raw-cvd">0</span>
+                </div>
+                <div class="mrow">
+                    <span class="mrow-label">
+                        <span class="info-icon" title="10-level order flow imbalance. Captures aggressive order placement across the full visible book depth.">i</span>
+                        Deep OFI
+                    </span>
+                    <span class="mrow-val" id="raw-ofi">0.00</span>
+                </div>
+                <div class="mrow">
+                    <span class="mrow-label">
+                        <span class="info-icon" title="VPIN proxy: Volume-synchronized Probability of Informed Trading. >0.70 means toxic flow — blocks weak signals.">i</span>
+                        VPIN Proxy
+                    </span>
+                    <span class="mrow-val" id="vpin-proxy">0.000</span>
+                </div>
+                <div class="mrow">
+                    <span class="mrow-label">
+                        <span class="info-icon" title="Order Book Imbalance: (bid_size - ask_size) / total. Positive = bids dominate = bullish pressure.">i</span>
+                        OBI
+                    </span>
+                    <span class="mrow-val" id="raw-obi">0.000</span>
+                </div>
+                <div class="mrow">
+                    <span class="mrow-label">
+                        <span class="info-icon" title="Spread compression on YES side. Compressed spread + strong imbalance = directional momentum forming.">i</span>
+                        Spread Pressure
+                    </span>
+                    <span class="mrow-val" id="spread-comp">Normal</span>
+                </div>
+                <div class="mrow">
+                    <span class="mrow-label">
+                        <span class="info-icon" title="Chainlink oracle price vs Binance spot. Divergence > 0.15% suggests oracle lag — may indicate a move before it's priced in.">i</span>
+                        Oracle Align
+                    </span>
+                    <span class="mrow-val" id="oracle-div">--</span>
+                </div>
+                <div class="mrow">
+                    <span class="mrow-label">
+                        <span class="info-icon" title="Belief Volatility multiplier. High sigma_B means the posterior is swinging fast — the model dampens conviction.">i</span>
+                        bVol Multiplier
+                    </span>
+                    <span class="mrow-val" id="bvol-mult">1.00</span>
                 </div>
             </div>
+        </div>
 
-            <!-- PANEL 4: Microstructure -->
-            <div class="glass-panel">
-                <div class="glass-header"><span>4. Microstructure</span></div>
-                <div class="glass-body space-y-2 text-xs mono">
-                    <div class="metric-row">
-                        <span class="text-slate-400">Raw CVD (Volume Delta)</span>
-                        <span class="text-white font-bold" id="raw-cvd">0.00</span>
+        <!-- ━━━ PANEL 5: Active Execution ━━━ -->
+        <div class="panel">
+            <div class="panel-head">
+                <span>Active Execution</span>
+                <span class="pos-badge" id="pos-stat-badge" style="background:rgba(71,85,105,0.3);border:1px solid #334155;color:#64748b">NO POSITION</span>
+            </div>
+            <div class="panel-body space-y-3">
+                <!-- Current position summary -->
+                <div class="grid grid-cols-4 gap-2 bg-black/20 rounded-lg p-3">
+                    <div>
+                        <div class="text-[0.57rem] text-slate-500 uppercase mb-0.5">Side</div>
+                        <div class="mono font-bold" id="pos-side">FLAT</div>
                     </div>
-                    <div class="metric-row">
-                        <span class="text-slate-400">Raw OFI (Order Flow)</span>
-                        <span class="text-white font-bold" id="raw-ofi">0.00</span>
+                    <div>
+                        <div class="text-[0.57rem] text-slate-500 uppercase mb-0.5">Entry</div>
+                        <div class="mono text-white" id="pos-entry">--</div>
                     </div>
-                    <div class="metric-row">
-                        <span class="text-slate-400">VPIN Proxy</span>
-                        <span class="text-white" id="vpin-proxy">0.00</span>
+                    <div>
+                        <div class="text-[0.57rem] text-slate-500 uppercase mb-0.5">Current</div>
+                        <div class="mono text-white" id="cur-px">--</div>
                     </div>
-                    <div class="metric-row">
-                        <span class="text-slate-400">Order Book Imbalance (OBI)</span>
-                        <span class="text-white" id="raw-obi">0.00</span>
+                    <div>
+                        <div class="text-[0.57rem] text-slate-500 uppercase mb-0.5">Unreal PnL</div>
+                        <div class="mono" id="unreal-pnl">--</div>
                     </div>
-                    <div class="metric-row">
-                        <span class="text-slate-400">Spread Compression</span>
-                        <span id="spread-comp" class="text-slate-500">Normal</span>
-                    </div>
-                    <div class="metric-row">
-                        <span class="text-slate-400">Oracle Divergence (Chainlink)</span>
-                        <span id="oracle-div" class="text-slate-500">None</span>
-                    </div>
-                    <div class="metric-row pt-2 border-t border-white/5 text-[0.65rem]">
-                        <span class="text-slate-500">Perpetual Funding Rate</span>
-                        <span id="funding-rate" class="text-slate-300">0.0000</span>
-                    </div>
+                </div>
+
+                <!-- Trade history -->
+                <div class="overflow-auto" style="max-height:160px">
+                    <table class="w-full text-[0.68rem] mono">
+                        <thead>
+                            <tr class="text-slate-500 uppercase border-b border-white/5 text-[0.58rem]">
+                                <th class="pb-1.5 text-left font-normal">Time</th>
+                                <th class="text-left font-normal">Side</th>
+                                <th class="text-left font-normal">Entry</th>
+                                <th class="text-left font-normal">Exit</th>
+                                <th class="text-right font-normal">PnL</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trade-history-body">
+                            <tr class="trade-row">
+                                <td colspan="5" class="text-center py-4 text-slate-600 font-sans">No trades yet.</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
+        </div>
 
-            <!-- PANEL 5: Active Execution -->
-            <div class="glass-panel">
-                <div class="glass-header">
-                    <span>5. Active Execution</span>
-                    <span id="pos-stat-badge"
-                        class="sys-badge sys-healthy bg-slate-800 border-slate-700 text-slate-400">NO POSITION</span>
+        <!-- ━━━ PANEL 6: System Health ━━━ -->
+        <div class="panel">
+            <div class="panel-head">
+                <span>System Health</span>
+                <span class="mono text-[0.6rem]" id="sys-lat-badge" style="color:#64748b">--ms</span>
+            </div>
+            <div class="panel-body space-y-3">
+                <!-- Connection status pills -->
+                <div class="grid grid-cols-3 gap-2 text-center text-[0.6rem]">
+                    <div class="bg-black/20 rounded py-2">
+                        <span class="dot dot-g" id="rpc-dot"></span>
+                        <div class="mt-1" id="rpc-st">POLYGON</div>
+                    </div>
+                    <div class="bg-black/20 rounded py-2">
+                        <span class="dot dot-g"></span>
+                        <div class="mt-1">API</div>
+                    </div>
+                    <div class="bg-black/20 rounded py-2">
+                        <span class="dot" id="halt-dot" style="background:#334155"></span>
+                        <div class="mt-1" id="halt-st">TRADING OK</div>
+                    </div>
                 </div>
-                <div class="glass-body flex flex-col p-0">
-                    <!-- Current Position Summary -->
-                    <div class="p-4 bg-blue-900/10 border-b border-white/5">
-                        <div class="grid grid-cols-4 gap-2 text-sm mono">
-                            <div>
-                                <div class="text-slate-500 text-[0.6rem] mb-0.5 uppercase">Side</div>
-                                <div class="font-bold text-slate-500" id="pos-side">FLAT</div>
-                            </div>
-                            <div>
-                                <div class="text-slate-500 text-[0.6rem] mb-0.5 uppercase">Entry</div>
-                                <div class="text-white" id="pos-entry">--</div>
-                            </div>
-                            <div>
-                                <div class="text-slate-500 text-[0.6rem] mb-0.5 uppercase">Current</div>
-                                <div class="text-white" id="cur-px">--</div>
-                            </div>
-                            <div>
-                                <div class="text-slate-500 text-[0.6rem] mb-0.5 uppercase">Unreal PnL</div>
-                                <div id="unreal-pnl" class="text-slate-400">--</div>
-                            </div>
-                        </div>
-                    </div>
 
-                    <!-- Trade History List -->
-                    <div class="flex-1 overflow-y-auto w-full p-2">
-                        <table class="w-full text-left text-[0.7rem] mono">
-                            <thead>
-                                <tr class="text-slate-500 uppercase border-b border-white/5">
-                                    <th class="py-1">Time</th>
-                                    <th>Side</th>
-                                    <th>Entry</th>
-                                    <th>Exit</th>
-                                    <th class="text-right">PnL%</th>
-                                </tr>
-                            </thead>
-                            <tbody id="trade-history-body" class="text-slate-300">
-                                <tr>
-                                    <td colspan="5" class="text-center py-4 text-slate-600">No recent trades.</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                <!-- Optimizer -->
+                <div class="flex justify-between items-center bg-black/20 rounded px-3 py-2 text-xs">
+                    <span class="text-slate-500">Optimizer</span>
+                    <span class="mono font-semibold" id="opt-status">AWAITING TRADES</span>
+                </div>
+
+                <!-- Latencies -->
+                <div class="space-y-1">
+                    <div class="mrow" style="padding:3px 0">
+                        <span class="text-[0.62rem] text-slate-500">Data Fetch</span>
+                        <span class="mono text-[0.68rem]" id="lat-data">--</span>
                     </div>
+                    <div class="mrow" style="padding:3px 0">
+                        <span class="text-[0.62rem] text-slate-500">Polymarket</span>
+                        <span class="mono text-[0.68rem]" id="lat-pm">--</span>
+                    </div>
+                    <div class="mrow" style="padding:3px 0">
+                        <span class="text-[0.62rem] text-slate-500">Total Cycle</span>
+                        <span class="mono text-[0.68rem]" id="lat-total">--</span>
+                    </div>
+                </div>
+
+                <!-- Event stream -->
+                <div class="overflow-y-auto text-[0.67rem] mono space-y-0" style="max-height:130px" id="event-stream">
+                    <div class="text-slate-600 text-center py-3">Initializing...</div>
                 </div>
             </div>
+        </div>
 
-            <!-- PANEL 6: System Health -->
-            <div class="glass-panel">
-                <div class="glass-header"><span>6. System Health & Logs</span></div>
-                <div class="glass-body flex flex-col p-2">
+    </div><!-- end main-grid -->
 
-                    <!-- Connection Latencies -->
-                    <div
-                        class="flex justify-between items-center text-[0.65rem] mono mb-3 px-2 border-b border-white/5 pb-2 text-slate-400">
-                        <div class="flex gap-1 items-center"><span class="indicator-dot dot-green w-1.5 h-1.5"
-                                id="rpc-dot"></span><span id="rpc-st">POLYGON</span></div>
-                        <div class="flex gap-1 items-center"><span
-                                class="indicator-dot dot-green w-1.5 h-1.5"></span><span>API</span></div>
-                        <div class="flex gap-1 items-center"><span
-                                class="indicator-dot dot-gray w-1.5 h-1.5"></span><span id="sys-lat">0ms</span></div>
-                    </div>
-
-                    <!-- Optimizer state -->
-                    <div class="flex justify-between items-center px-2 py-1 bg-black/20 rounded mb-2 text-xs mono">
-                        <span class="text-slate-500">Optimizer Mode:</span>
-                        <span id="opt-status" class="text-yellow-400">COLLECTING</span>
-                    </div>
-
-                    <!-- Event Stream -->
-                    <div class="flex-1 overflow-y-auto min-h-[150px]" id="event-stream">
-                        <div class="p-2 text-xs mono text-slate-600 text-center">Initializing logs...</div>
-                    </div>
-                </div>
-            </div>
-
-        </div> <!-- End Grid -->
+    <!-- ── CHART ROW ── -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <!-- Signal Time Series (wider) -->
+        <div class="chart-strip md:col-span-2">
+            <div class="text-[0.65rem] uppercase tracking-widest font-semibold text-slate-400 mb-3">Signal Time Series · last 60 min</div>
+            <div id="chart-signals" style="height:200px"></div>
+        </div>
+        <!-- Risk Radar -->
+        <div class="chart-strip">
+            <div class="text-[0.65rem] uppercase tracking-widest font-semibold text-slate-400 mb-1">Risk Radar</div>
+            <div id="chart-radar" style="height:220px"></div>
+        </div>
     </div>
 
-    <script>
-        const $ = id => document.getElementById(id);
-        const fmtMoney = v => v != null ? `$${parseFloat(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '--';
-        const fmtPct = v => v != null ? `${(v * 100).toFixed(2)}%` : '--';
-        let equityChart;
-
-        function setBar(val, max, upId, dnId) {
-            const pct = Math.min(Math.abs(val) / max, 1);
-            if ($(upId)) $(upId).style.transform = `scaleX(${val > 0 ? pct : 0})`;
-            if ($(dnId)) $(dnId).style.transform = `scaleX(${val < 0 ? pct : 0})`;
-        }
-
-        function colorVal(el, val) {
-            if (!el) return;
-            el.className = `mono text-xs ${val > 0 ? 'val-up font-bold' : val < 0 ? 'val-down font-bold' : 'val-neutral'}`;
-        }
-
-        function updateUI() {
-            fetch('/api/metrics').then(r => r.json()).then(d => {
-                if (d.status === 'loading') return;
-                const sig = d.signal || {};
-                const perf = d.performance || {};
-                const lats = d.latencies || {};
-                // System Health & Header
-                $('wallet-bal').innerText = d.wallet_usdc != null ? fmtMoney(d.wallet_usdc) : '...';
-                $('unclaimed-win').innerText = d.unclaimed_usdc != null ? '$' + d.unclaimed_usdc.toFixed(2) : '$0.00';
-                $('sys-lat').innerText = lats.total_cycle ? `${lats.total_cycle}ms` : '0ms';
-
-                if (d.wallet_usdc === null) {
-                    $('rpc-dot').className = 'indicator-dot dot-red w-1.5 h-1.5';
-                    $('rpc-st').innerText = 'POLYGON ERR'; $('rpc-st').className = 'text-red-400 font-bold';
-                } else {
-                    $('rpc-dot').className = 'indicator-dot dot-green w-1.5 h-1.5';
-                    $('rpc-st').innerText = 'POLYGON OK'; $('rpc-st').className = '';
-                }
-
-                if (d.trading_halted) {
-                    $('status-badge').className = 'sys-badge sys-halted uppercase';
-                    $('status-badge').innerText = 'TRADING HALTED';
-                    $('main-dot').className = 'indicator-dot dot-red';
-                } else {
-                    $('status-badge').className = 'sys-badge sys-healthy uppercase';
-                    $('status-badge').innerText = 'SYSTEM HEALTHY';
-                    $('main-dot').className = 'indicator-dot dot-green';
-                }
-
-                // Performance (SQLite)
-                if (d.performance_metrics || d.perf_db) {
-                    const pdb = d.performance_metrics || d.perf_db || {};
-                    const sh = pdb.sharpe_ratio || 0;
-                    $('new-pm-total').innerText = pdb.total_trades || 0;
-                    $('new-pm-wr').innerText = `${((pdb.win_rate || 0) * 100).toFixed(1)}%`;
-                    $('new-pm-pf').innerText = (pdb.profit_factor || 0).toFixed(2);
-                    $('new-pm-sharpe').innerText = sh.toFixed(2);
-
-                    const avg = pdb.avg_pnl_per_trade || 0;
-
-                    $('new-pm-wr').className = `data-value-sm ${(pdb.win_rate || 0) > 0.5 ? 'text-green-400' : 'text-slate-300'}`;
-                    $('new-pm-pf').className = `data-value-sm ${(pdb.profit_factor || 0) >= 1 ? 'text-green-400' : 'text-red-400'}`;
-                    $('new-pm-sharpe').className = `data-value-sm ${sh > 0 ? 'text-green-400' : 'text-slate-300'}`;
-                }
-
-                $('cum-pnl').innerText = perf.closed_trades > 0 ? ((perf.total_pnl >= 0 ? '+' : '') + fmtPct(perf.total_pnl)) : '--';
-                $('cum-pnl').className = `mono font-bold ${perf.total_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`;
-
-                if (d.last_tuned_time && d.last_tuned_time > 0) {
-                    const lt = new Date(d.last_tuned_time * 1000);
-                    $('opt-tuned').innerText = 'Tuned: ' + lt.toLocaleTimeString('en-US', { hour12: false });
-                }
-
-                // Signal Heatmap 
-                if (sig.regime) $('regime-badge').innerText = `REGIME: ${sig.regime.toUpperCase()}`;
-
-                let ofiS = sig.ofi_score || 0;
-                $('sig-ofi').innerText = ofiS.toFixed(2); colorVal($('sig-ofi'), ofiS);
-                setBar(ofiS, 3, 'bar-ofi-up', 'bar-ofi-dn');
-
-                let cvdS = sig.cvd_score || 0;
-                $('sig-cvd').innerText = cvdS.toFixed(2); colorVal($('sig-cvd'), cvdS);
-                setBar(cvdS, 3, 'bar-cvd-up', 'bar-cvd-dn');
-
-                // Imbalance (centered around 0 for visualization)
-                let imb = sig.raw_deep_imbalance != null ? sig.raw_deep_imbalance : 0.5;
-                $('sig-imb').innerText = imb.toFixed(2);
-                const imbOffset = (imb - 0.5) * 2; // -1 to 1
-                setBar(imbOffset, 1, 'bar-imb-up', 'bar-imb-dn');
-
-                let accS = sig.flow_accel_score || 0;
-                $('sig-accel').innerText = accS.toFixed(2); colorVal($('sig-accel'), accS);
-                setBar(accS, 2, 'bar-accel-up', 'bar-accel-dn');
-
-                let sc = sig.signed_score || 0;
-                $('sig-score').innerText = sc.toFixed(2); colorVal($('sig-score'), sc);
-                setBar(sc, 10, 'bar-sc-up', 'bar-sc-dn');
-                $('score-req').innerText = `Req: ${(sig.min_score || 2.5).toFixed(1)}`;
-
-                if (sig.direction) {
-                    $('dir-val').innerText = sig.direction;
-                    $('dir-val').className = `font-bold ${sig.direction === 'UP' ? 'text-green-400' : sig.direction === 'DOWN' ? 'text-red-400' : 'text-slate-300'}`;
-                }
-
-                // Bayesian Belief
-                if (sig.posterior_final_up != null) {
-                    $('model-prob').innerText = (sig.posterior_final_up * 100).toFixed(1) + '%';
-                    $('model-prob').className = `text-3xl mono font-bold ${sig.direction === 'UP' ? 'text-green-400' : (sig.direction === 'DOWN' ? 'text-red-400' : 'text-white')}`;
-                    let mp = 0;
-                    if (sig.yes_mid && sig.no_mid) mp = sig.yes_mid / (sig.yes_mid + sig.no_mid);
-                    $('mkt-prob').innerText = (mp * 100).toFixed(1) + '%';
-
-                    const edge = sig.target_edge || 0;
-                    $('calc-edge').innerText = (edge > 0 ? '+' : '') + fmtPct(edge);
-                    $('calc-edge').className = `text-3xl mono font-bold ${edge > (sig.required_edge || 0.035) ? 'text-green-400' : 'text-slate-400'}`;
-                    $('req-edge').innerText = fmtPct(sig.required_edge);
-
-                    $('z-score').innerText = (sig.z_score || 0).toFixed(2);
-                    $('exp-move').innerText = (sig.expected_move || 0).toFixed(2);
-
-                    let ts = sig.target_side || 'NONE';
-                    $('target-side').innerText = ts;
-                    $('target-side').className = `px-3 py-1 rounded border font-bold mono text-sm ${ts !== 'NONE' ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/50' : 'bg-slate-800 border-slate-700 text-slate-500'}`;
-                }
-
-                let gates = sig.skip_gates || [];
-                $('skip-gates').innerText = gates.length > 0 ? gates.join(', ') : 'CLEAR';
-                $('skip-gates').className = gates.length === 0 ? 'text-green-400' : 'text-orange-400';
-                if (d.last_market_slug) $('mkt-link').href = `https://polymarket.com/event/${d.last_market_slug}`;
-
-                // Microstructure
-                $('raw-cvd').innerText = (sig.raw_cvd || 0).toFixed(0);
-                $('raw-cvd').className = `font-bold ${sig.raw_cvd > 0 ? 'text-green-400' : (sig.raw_cvd < 0 ? 'text-red-400' : 'text-white')}`;
-
-                $('raw-ofi').innerText = (sig.raw_deep_ofi || 0).toFixed(2);
-                $('raw-ofi').className = `font-bold ${sig.raw_deep_ofi > 0 ? 'text-green-400' : (sig.raw_deep_ofi < 0 ? 'text-red-400' : 'text-white')}`;
-
-                $('vpin-proxy').innerText = (sig.raw_vpin || 0).toFixed(3);
-                $('raw-obi').innerText = (sig.raw_obi || 0).toFixed(3);
-
-                $('spread-comp').innerText = sig.spread_pressure_score ? 'Compressed' : 'Normal';
-                $('spread-comp').className = sig.spread_pressure_score ? 'text-orange-400' : 'text-slate-500';
-
-                $('oracle-div').innerText = sig.oracle_lag_score ? 'Diverged' : 'Aligned';
-                $('oracle-div').className = sig.oracle_lag_score ? 'text-red-400' : 'text-green-400';
-
-                $('funding-rate').innerText = (sig.funding_rate || 0).toFixed(5);
-
-                // Active Execution
-                $('pos-side').innerText = d.position;
-                $('pos-side').className = `font-bold text-lg ${d.position === 'YES' ? 'text-green-400' : d.position === 'NO' ? 'text-red-400' : 'text-slate-500'}`;
-
-                if (d.position !== 'FLAT') {
-                    $('pos-stat-badge').innerText = 'IN POSITION';
-                    $('pos-stat-badge').className = 'sys-badge bg-blue-500/20 text-blue-400 border border-blue-500/30';
-                } else {
-                    $('pos-stat-badge').innerText = 'NO POSITION';
-                    $('pos-stat-badge').className = 'sys-badge bg-slate-800 text-slate-500 border border-slate-700';
-                }
-
-                $('pos-entry').innerText = d.entry_price ? d.entry_price.toFixed(3) : '--';
-                let cpx = '--';
-                if (d.position === 'YES' && sig.yes_mid) cpx = sig.yes_mid.toFixed(3);
-                if (d.position === 'NO' && sig.no_mid) cpx = sig.no_mid.toFixed(3);
-                $('cur-px').innerText = cpx;
-
-                if (d.position !== 'FLAT' && cpx !== '--' && d.entry_price) {
-                    const pnl = (parseFloat(cpx) - d.entry_price) / d.entry_price;
-                    $('unreal-pnl').innerText = (pnl > 0 ? '+' : '') + (pnl * 100).toFixed(2) + '%';
-                    $('unreal-pnl').className = pnl > 0 ? 'text-green-400 font-bold' : 'text-red-400 font-bold';
-                } else {
-                    $('unreal-pnl').innerText = '--';
-                    $('unreal-pnl').className = 'text-slate-400';
-                }
-
-                // Recent Trades
-                if (d.recent_trades && $('trade-history-body')) {
-                    const tbody = $('trade-history-body');
-                    if (d.recent_trades.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-slate-600">No recent trades.</td></tr>';
-                    } else {
-                        tbody.innerHTML = d.recent_trades.slice().reverse().slice(0, 5).map(t => {
-                            const pnl = t.pnl || 0;
-                            const pnlColor = pnl > 0 ? 'text-green-400' : (pnl < 0 ? 'text-red-400' : 'text-slate-400');
-                            const timeStr = new Date(t.ts * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                            return `<tr class="border-b border-white/5 hover:bg-white/5">
-                                <td class="py-1.5 text-slate-400">${timeStr}</td>
-                                <td class="${t.side === 'YES' ? 'text-green-400' : 'text-red-400'}">${t.side}</td>
-                                <td>${t.entry ? t.entry.toFixed(3) : '--'}</td>
-                                <td>${t.exit ? t.exit.toFixed(3) : 'OPEN'}</td>
-                                <td class="text-right font-bold ${pnlColor}">${pnl > 0 ? '+' : ''}${(pnl * 100).toFixed(1)}%</td>
-                            </tr>`;
-                        }).join('');
-                    }
-                }
-
-                // System Health Logs & Optimizer Status
-                const optSt = perf.total_trades > 0 ? (perf.closed_trades >= 10 ? 'LEARNING' : 'COLLECTING') : 'AWAITING TRADES';
-                $('opt-status').innerText = optSt;
-                $('opt-status').className = perf.closed_trades >= 10 ? 'text-green-400' : 'text-yellow-400';
-
-                const evts = d.events || [];
-                let html = '';
-                if (sig.direction && sig.direction !== 'NEUTRAL') {
-                    const now = new Date().toLocaleTimeString('en-US', { hour12: false });
-                    html += `<div class="py-1 border-b border-white/5 flex gap-2">
-                        <span class="text-slate-500">${now}</span>
-                        <span class="text-blue-400">[SIG]</span>
-                        <span class="text-slate-300">Score=${sc.toFixed(1)} Dir=${sig.direction}</span>
-                    </div>`;
-                }
-                evts.slice().reverse().forEach(e => {
-                    html += `<div class="py-1 border-b border-white/5 flex gap-2">
-                        <span class="text-slate-500">${e.ts}</span>
-                        <span class="${e.msg.includes('ERROR') ? 'text-red-400' : 'text-green-400'}">[SYS]</span>
-                        <span class="text-slate-300 text-wrap leading-tight overflow-hidden break-all max-h-8">${e.msg}</span>
-                    </div>`;
-                });
-                if (!html) html = `<div class="py-3 text-center text-slate-600">No events in current memory</div>`;
-                $('event-stream').innerHTML = html;
-
-                // Equity chart update
-                if (d.recent_trades && equityChart) {
-                    const closed = d.recent_trades.filter(t => t.exit != null);
-                    const pnlData = closed.map(t => (t.pnl || 0) * 100);
-                    // Generate cumulative curve if array has items natively
-                    let crv = [];
-                    let sum = 0;
-                    for (let x of pnlData) { sum += x; crv.push(sum); }
-
-                    if (crv.length > 0) {
-                        equityChart.data.labels = crv.map((_, i) => i + 1);
-                        equityChart.data.datasets[0].data = crv;
-                        equityChart.update();
-                    }
-                }
-                // Update risk radar with live metrics
-                if (typeof updateRadarChart === 'function') updateRadarChart(d);
-            }).catch(e => console.error('Metrics fetch error:', e));
-        }
-
-        // Chart init for Cumulative PnL curve
-        const ctx = $('equityChart').getContext('2d');
-        equityChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: Array(10).fill(''),
-                datasets: [{
-                    label: 'Cum PnL %', data: Array(10).fill(0),
-                    borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)',
-                    borderWidth: 2, fill: true, tension: 0.3, pointRadius: 2, pointBackgroundColor: '#3b82f6'
-                }]
-            },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    y: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#64748b', font: { family: 'JetBrains Mono', size: 9 } } },
-                    x: { grid: { display: false }, ticks: { display: false } }
-                },
-                plugins: { legend: { display: false } },
-                animation: { duration: 0 }
-            }
-        });
-
-        fetch('/health').then(r => r.json()).then(d => { if (d.build) $('build-ver').innerText = d.build });
-        setInterval(updateUI, 2000); // Poll faster for responsiveness (2s)
-        updateUI();
-
-        function activateKillSwitch() {
-            const pwd = prompt("Enter KILL SWITCH password to halt trading:");
-            if (!pwd) return;
-            fetch('/api/kill', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pwd }) })
-                .then(r => r.json())
-                .then(d => {
-                    if (d.status === 'success') { alert('Kill Switch Activated!'); updateUI(); }
-                    else { alert('Error: ' + d.message); }
-                }).catch(e => alert('Failed: ' + e));
-        }
-    </script>
-
-    <!-- Panel 9: Nightly AI Review -->
-    <div class="mx-4 mb-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+    <!-- ── NIGHTLY AI REVIEW ── -->
+    <div class="chart-strip">
         <div class="flex items-center justify-between mb-3">
-            <div class="text-xs font-semibold text-slate-400 uppercase tracking-widest">Nightly AI Review</div>
-            <span id="review-date" class="text-[0.6rem] text-slate-500 font-mono">loading...</span>
+            <div class="text-[0.65rem] uppercase tracking-widest font-semibold text-slate-400">Nightly AI Review</div>
+            <span class="mono text-[0.6rem] text-slate-500" id="review-date">runs 00:05 UTC</span>
         </div>
-        <div id="review-content" class="text-[0.7rem] text-slate-300 font-mono leading-relaxed overflow-auto max-h-72 whitespace-pre-wrap">
-            Waiting for first nightly review (runs at 00:05 UTC)...
+        <div id="review-content" class="text-[0.7rem] text-slate-300 mono leading-relaxed overflow-auto whitespace-pre-wrap" style="max-height:220px">
+Waiting for first nightly review…
         </div>
     </div>
 
-    <!-- Panel 7: Signal Time Series -->
-    <div class="mx-4 mb-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4" style="padding-bottom:0">
-        <div class="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Signal Time Series (last 60 min)</div>
-        <div id="chart-signals" style="height:220px"></div>
-    </div>
+</div><!-- end main content -->
 
-    <!-- Panel 8: Risk Radar -->
-    <div class="mx-4 mb-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4" style="padding-bottom:0">
-        <div class="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Risk Radar</div>
-        <div id="chart-radar" style="height:260px"></div>
-    </div>
+<!-- Kill switch -->
+<button id="kill-btn" onclick="activateKillSwitch()">⛔ HALT ENGINE</button>
 
-    <script>
-    // ── Plotly charts ──────────────────────────────────────────────────────────
-    let _signalHistoryInited = false;
-    let _radarInited = false;
+<!-- ═══════════════ JAVASCRIPT ═══════════════ -->
+<script>
+const $ = id => document.getElementById(id);
+const fmtMoney = v => v != null ? `$${parseFloat(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}` : '--';
+const fmtPct   = v => v != null ? `${(v*100).toFixed(2)}%` : '--';
+const clamp01  = v => Math.max(0,Math.min(1,v));
 
-    function toTimeStr(ts) {
-        const d = new Date(ts * 1000);
-        return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+let equityChart, _sigInited=false, _radarInited=false;
+let _lastMarketExpiry = null; // unix seconds
+
+// ── Countdown ─────────────────────────────────────────────────────────────
+function tickCountdown() {
+    if (!_lastMarketExpiry) return;
+    const rem = _lastMarketExpiry - Math.floor(Date.now()/1000);
+    const el = $('countdown-val');
+    if (rem <= 0) { el.innerText = 'EXPIRED'; el.className='banner-val text-slate-500'; return; }
+    const m = Math.floor(rem/60), s = rem%60;
+    el.innerText = `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    el.className = `banner-val ${rem < 300 ? 'urgent' : (rem < 600 ? 'text-amber-400' : 'text-white')}`;
+}
+setInterval(tickCountdown, 1000);
+
+// ── Signal tile updater ─────────────────────────────────────────────────
+function updateTile(id, val, max) {
+    const tile = $(`tile-${id}`), tv = $(`tv-${id}`), bar = $(`tb-${id}`);
+    if (!tile) return;
+    const v = val || 0;
+    tv.innerText = Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(2);
+    const pct = clamp01(Math.abs(v)/max)*100;
+    const isUp = v > 0.05, isDn = v < -0.05;
+    tile.className = `sig-tile ${isUp ? 'tile-up' : isDn ? 'tile-dn' : 'tile-neutral'}`;
+    tv.className = `tile-val ${isUp ? 'up' : isDn ? 'dn' : 'text-white'}`;
+    if (bar) {
+        bar.style.width = pct+'%';
+        bar.style.background = isUp ? 'var(--green)' : isDn ? 'var(--red)' : '#334155';
     }
+}
 
-    async function updatePlotlyCharts() {
-        try {
-            const res = await fetch('/api/signal-history?limit=240');
-            const data = await res.json();
-            if (!Array.isArray(data) || data.length === 0) return;
+// ── Gauge updater ───────────────────────────────────────────────────────
+// Arc: half-circle, circumference ≈ π*66 ≈ 207.3
+const ARC_LEN = 207.3;
+function updateGauge(pUp) {
+    const p = clamp01(pUp || 0.5);
+    const fill = p * ARC_LEN;
+    const arc = $('gauge-arc');
+    arc.style.strokeDashoffset = (ARC_LEN - fill).toFixed(1);
+    const hue = p >= 0.5 ? 142 : 0; // green → red
+    const sat = Math.round(Math.abs(p-0.5)*200); // 0 at 50%, 100 at extremes
+    arc.style.stroke = `hsl(${hue},${Math.min(sat+40,100)}%,55%)`;
+    $('gauge-pct').innerText = (p*100).toFixed(1)+'%';
+    $('gauge-pct').className = `mono font-bold text-2xl ${p>=0.6?'text-green-400':p<=0.4?'text-red-400':'text-white'}`;
+}
 
-            const xs   = data.map(d => toTimeStr(d.ts));
-            const score = data.map(d => d.signed_score);
-            const post  = data.map(d => d.posterior_final_up);
-            const cvd   = data.map(d => d.cvd);
-            const ofi   = data.map(d => d.ofi);
+// ── Signed score bar ──────────────────────────────────────────────────
+function updateScoreBar(val, max) {
+    const pct = clamp01(Math.abs(val)/max)*50; // half the bar each side
+    $('score-bar-up').style.width = (val>0?pct:0)+'%';
+    $('score-bar-dn').style.width = (val<0?pct:0)+'%';
+    const el = $('sig-score');
+    el.innerText = (val>=0?'+':'')+val.toFixed(2);
+    el.className = `mono font-bold text-base ${val>0?'up':val<0?'dn':'text-slate-300'}`;
+}
 
-            const traceScore = { x: xs, y: score, name: 'Signed Score', type: 'scatter', mode: 'lines',
-                line: { color: '#38bdf8', width: 1.5 }, yaxis: 'y' };
-            const tracePost  = { x: xs, y: post, name: 'Posterior UP', type: 'scatter', mode: 'lines',
-                line: { color: '#a78bfa', width: 1.5 }, yaxis: 'y2' };
-            const traceCVD   = { x: xs, y: cvd, name: 'CVD', type: 'scatter', mode: 'lines',
-                line: { color: '#34d399', width: 1, dash: 'dot' }, yaxis: 'y' };
-            const traceOFI   = { x: xs, y: ofi, name: 'OFI', type: 'scatter', mode: 'lines',
-                line: { color: '#fb923c', width: 1, dash: 'dot' }, yaxis: 'y' };
+// ── Gates ────────────────────────────────────────────────────────────
+function updateGates(gates) {
+    const area = $('gate-area'); if(!area) return;
+    if (!gates || gates.length===0) {
+        area.innerHTML = '<span class="gate-pill gate-clear">✓ ALL GATES CLEAR</span>';
+    } else {
+        area.innerHTML = gates.map(g=>`<span class="gate-pill">${g}</span>`).join('');
+    }
+}
 
-            const layout = {
-                paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
-                margin: { t: 10, b: 40, l: 45, r: 45 },
-                xaxis: { tickfont: { color: '#64748b', size: 9, family: 'JetBrains Mono' }, gridcolor: 'rgba(255,255,255,0.04)', nticks: 8 },
-                yaxis: { title: 'Score', titlefont: { color: '#38bdf8', size: 9 }, tickfont: { color: '#64748b', size: 9 }, gridcolor: 'rgba(255,255,255,0.04)', zeroline: true, zerolinecolor: 'rgba(255,255,255,0.1)' },
-                yaxis2: { title: 'Posterior', titlefont: { color: '#a78bfa', size: 9 }, tickfont: { color: '#64748b', size: 9 }, overlaying: 'y', side: 'right', range: [0, 1] },
-                legend: { font: { color: '#94a3b8', size: 9 }, bgcolor: 'transparent', orientation: 'h', x: 0, y: -0.2 },
-                font: { family: 'JetBrains Mono' }
-            };
+// ── Main UI update ───────────────────────────────────────────────────
+function updateUI() {
+    fetch('/api/metrics').then(r=>r.json()).then(d => {
+        if (d.status==='loading') return;
+        const sig  = d.signal || {};
+        const perf = d.performance_metrics || d.perf_db || {};
+        const lats = d.latencies || {};
 
-            if (!_signalHistoryInited) {
-                Plotly.newPlot('chart-signals', [traceScore, tracePost, traceCVD, traceOFI], layout, { displayModeBar: false, responsive: true });
-                _signalHistoryInited = true;
-            } else {
-                Plotly.react('chart-signals', [traceScore, tracePost, traceCVD, traceOFI], layout);
+        // Build version
+        if (d.version) $('build-ver').innerText = d.version;
+
+        // Market expiry for countdown
+        if (d.last_market_expiry) _lastMarketExpiry = d.last_market_expiry;
+
+        // ── Banner ──
+        const btcPx = sig.strike_price && sig.distance != null
+            ? sig.strike_price + sig.distance : null;
+        if (btcPx) {
+            $('b-btc').innerText = '$'+btcPx.toLocaleString(undefined,{maximumFractionDigits:0});
+        }
+        if (sig.strike_price) {
+            $('b-strike').innerText = '$'+sig.strike_price.toLocaleString(undefined,{maximumFractionDigits:0});
+        }
+        if (sig.distance != null) {
+            const dv = sig.distance;
+            const el = $('b-delta');
+            el.innerText = (dv>=0?'+':'')+dv.toFixed(0);
+            el.className = `banner-val ${dv>=0?'text-green-400':'text-red-400'}`;
+        }
+        if (sig.direction) {
+            const el = $('b-dir');
+            el.innerText = sig.direction;
+            el.className = `banner-val ${sig.direction==='UP'?'text-green-400':sig.direction==='DOWN'?'text-red-400':'text-slate-400'}`;
+        }
+
+        // ── Status badge ──
+        const halted = d.trading_halted;
+        $('status-badge').innerText = halted ? 'HALTED' : 'HEALTHY';
+        $('status-badge').className = halted
+            ? 'text-[0.65rem] font-bold uppercase tracking-wide px-3 py-1 rounded border border-red-500/40 bg-red-500/10 text-red-400'
+            : 'text-[0.65rem] font-bold uppercase tracking-wide px-3 py-1 rounded border border-green-500/30 bg-green-500/10 text-green-400';
+        $('main-dot').className = halted ? 'dot dot-r' : 'dot dot-g';
+        $('halt-dot').className = `dot ${halted?'dot-r':'dot-g'}`;
+        $('halt-st').innerText  = halted ? 'HALTED' : 'TRADING OK';
+        $('halt-st').className  = halted ? 'mt-1 text-red-400 font-bold' : 'mt-1';
+
+        // ── PnL header ──
+        const pnlFrac = d.performance?.total_pnl;
+        if (pnlFrac != null && d.performance?.closed_trades > 0) {
+            $('cum-pnl').innerText = (pnlFrac>=0?'+':'')+fmtPct(pnlFrac);
+            $('cum-pnl').className = `banner-val ${pnlFrac>=0?'text-green-400':'text-red-400'}`;
+        }
+
+        // ── Regime badge ──
+        if (sig.regime) $('regime-badge').innerText = sig.regime.toUpperCase();
+
+        // ── Signal tiles ──
+        updateTile('ofi',   sig.ofi_score, 2);
+        updateTile('cvd',   sig.cvd_score, 2);
+        updateTile('accel', sig.flow_accel_score, 2);
+        // Imbalance: show raw 0–1 value, score centred at 0.5
+        const imbRaw = sig.raw_deep_imbalance ?? 0.5;
+        updateTile('imb',   (imbRaw-0.5)*2, 1); // -1 to +1
+        $('tv-imb').innerText = imbRaw.toFixed(2); // override display to show raw
+        updateTile('whale', sig.whale_flow_score??0, 3);
+        updateTile('skew',  sig.spread_skew_score??0, 2);
+
+        // ── Score bar ──
+        const sc = sig.signed_score || 0;
+        updateScoreBar(sc, 8);
+        $('score-req').innerText = `/ ${(sig.min_score||2.5).toFixed(1)}`;
+
+        // ── Gates ──
+        updateGates(sig.skip_gates);
+
+        // ── Direction ──
+        // (already in banner)
+
+        // ── Gauge ──
+        const pUp = sig.direction==='DOWN'
+            ? (sig.posterior_final_down||0.5)
+            : (sig.posterior_final_up||0.5);
+        updateGauge(sig.posterior_final_up||0.5);
+
+        // ── Edge ──
+        const edge = sig.target_edge ?? 0;
+        const req  = sig.required_edge ?? 0.035;
+        const edgeEl = $('calc-edge');
+        edgeEl.innerText = (edge>=0?'+':'')+fmtPct(edge);
+        edgeEl.className = `mono font-bold text-xl ${edge>=req?'text-green-400':edge>0?'text-amber-400':'text-red-400'}`;
+        $('req-edge').innerText = fmtPct(req);
+
+        // Market price
+        const yesMid = sig.yes_mid;
+        $('mkt-prob').innerText = yesMid != null ? fmtPct(yesMid) : '--';
+
+        // Z/Exp/sigma_B
+        $('z-score').innerText  = sig.z_score  != null ? sig.z_score.toFixed(2) : '--';
+        $('exp-move').innerText = sig.expected_move != null ? '$'+sig.expected_move.toFixed(0) : '--';
+        $('sigma-b').innerText  = sig.sigma_b  != null ? sig.sigma_b.toFixed(3) : '--';
+
+        // Target side
+        const ts = sig.target_side || 'NONE';
+        const tsEl = $('target-side');
+        tsEl.innerText = ts;
+        tsEl.className = `mono font-bold text-sm px-3 py-1 rounded border ${ts==='YES'
+            ? 'bg-green-500/15 border-green-500/40 text-green-400'
+            : ts==='NO'
+            ? 'bg-red-500/15 border-red-500/40 text-red-400'
+            : 'bg-black/30 border-white/10 text-slate-500'}`;
+
+        // Polymarket link
+        if (d.last_market_slug) $('mkt-link').href = `https://polymarket.com/event/${d.last_market_slug}`;
+
+        // ── Capital panel ──
+        $('wallet-bal').innerText   = d.wallet_usdc != null ? fmtMoney(d.wallet_usdc) : '--';
+        $('unclaimed-win').innerText = d.unclaimed_usdc != null ? '$'+parseFloat(d.unclaimed_usdc).toFixed(2) : '$0.00';
+
+        if (perf && Object.keys(perf).length) {
+            const wr = perf.win_rate||0, pf=perf.profit_factor||0, sh=perf.sharpe_ratio||0;
+            $('new-pm-wr').innerText   = `${(wr*100).toFixed(1)}%`;
+            $('new-pm-pf').innerText   = pf.toFixed(2);
+            $('new-pm-sharpe').innerText = sh.toFixed(2);
+            $('new-pm-total').innerText = perf.total_trades||0;
+            $('new-pm-wr').className   = `mono text-sm font-bold ${wr>0.5?'text-green-400':'text-slate-300'}`;
+            $('new-pm-pf').className   = `mono text-sm font-bold ${pf>=1.0?'text-green-400':'text-red-400'}`;
+            $('new-pm-sharpe').className = `mono text-sm font-bold ${sh>0?'text-green-400':'text-slate-300'}`;
+        }
+
+        if (d.last_tuned_time && d.last_tuned_time>0) {
+            $('opt-tuned').innerText = 'Tuned: '+new Date(d.last_tuned_time*1000).toLocaleTimeString('en-US',{hour12:false});
+        }
+
+        // Equity chart
+        if (d.recent_trades && equityChart) {
+            const closed = d.recent_trades.filter(t=>t.exit!=null);
+            let sum=0, crv=[];
+            for (const t of closed) { sum+=(t.pnl||0)*100; crv.push(sum); }
+            if (crv.length>0) {
+                equityChart.data.labels = crv.map((_,i)=>i+1);
+                equityChart.data.datasets[0].data = crv;
+                equityChart.data.datasets[0].borderColor = sum>=0?'#22c55e':'#ef4444';
+                equityChart.data.datasets[0].backgroundColor = sum>=0?'rgba(34,197,94,0.08)':'rgba(239,68,68,0.08)';
+                equityChart.update('none');
             }
-        } catch(e) { /* silent */ }
+        }
+
+        // ── Microstructure ──
+        const rawCvd = sig.raw_cvd||0;
+        $('raw-cvd').innerText  = rawCvd.toFixed(0);
+        $('raw-cvd').className  = `mrow-val ${rawCvd>0?'up':rawCvd<0?'dn':'text-white'}`;
+        const rawOfi = sig.raw_deep_ofi||0;
+        $('raw-ofi').innerText  = rawOfi.toFixed(2);
+        $('raw-ofi').className  = `mrow-val ${rawOfi>0?'up':rawOfi<0?'dn':'text-white'}`;
+        $('vpin-proxy').innerText = (sig.raw_vpin||0).toFixed(3);
+        $('vpin-proxy').className = `mrow-val ${(sig.raw_vpin||0)>0.7?'text-amber-400':'text-white'}`;
+        $('raw-obi').innerText  = (sig.raw_obi||0).toFixed(3);
+        $('funding-rate').innerText = (sig.funding_rate||0).toFixed(5);
+        $('funding-rate').className = `mrow-val ${(sig.funding_rate||0)>0.0003?'dn':(sig.funding_rate||0)<-0.0003?'up':'text-white'}`;
+        $('spread-comp').innerText  = sig.spread_pressure_score ? 'Compressed' : 'Normal';
+        $('spread-comp').className  = `mrow-val ${sig.spread_pressure_score?'text-amber-400':'text-slate-400'}`;
+        $('oracle-div').innerText   = sig.oracle_lag_score ? 'Diverged' : 'Aligned';
+        $('oracle-div').className   = `mrow-val ${sig.oracle_lag_score?'text-red-400':'text-green-400'}`;
+        $('bvol-mult').innerText    = (sig.bvol_multiplier||1).toFixed(3);
+        $('bvol-mult').className    = `mrow-val ${(sig.bvol_multiplier||1)>1.3?'text-amber-400':'text-white'}`;
+
+        // ── Position panel ──
+        const posSide = d.position||'FLAT';
+        $('pos-side').innerText   = posSide;
+        $('pos-side').className   = `mono font-bold text-base ${posSide==='YES'?'text-green-400':posSide==='NO'?'text-red-400':'text-slate-500'}`;
+        const badgeEl = $('pos-stat-badge');
+        if (posSide!=='FLAT') {
+            badgeEl.innerText   = 'IN POSITION';
+            badgeEl.style.background='rgba(59,130,246,0.15)';
+            badgeEl.style.borderColor='rgba(59,130,246,0.4)';
+            badgeEl.style.color='#60a5fa';
+        } else {
+            badgeEl.innerText   = 'NO POSITION';
+            badgeEl.style.background='rgba(71,85,105,0.2)';
+            badgeEl.style.borderColor='#334155';
+            badgeEl.style.color='#64748b';
+        }
+        $('pos-entry').innerText = d.entry_price ? d.entry_price.toFixed(3) : '--';
+        let cpx='--';
+        if (posSide==='YES' && sig.yes_mid) cpx = sig.yes_mid.toFixed(3);
+        if (posSide==='NO'  && sig.no_mid)  cpx = sig.no_mid.toFixed(3);
+        $('cur-px').innerText = cpx;
+        if (posSide!=='FLAT' && cpx!=='--' && d.entry_price) {
+            const pnl=(parseFloat(cpx)-d.entry_price)/d.entry_price;
+            $('unreal-pnl').innerText = (pnl>0?'+':'')+(pnl*100).toFixed(2)+'%';
+            $('unreal-pnl').className = pnl>0?'mono up font-bold':'mono dn font-bold';
+        } else { $('unreal-pnl').innerText='--'; $('unreal-pnl').className='mono mute'; }
+
+        // Trade history
+        if (d.recent_trades) {
+            const tbody=$('trade-history-body');
+            const rows=d.recent_trades.slice().reverse().slice(0,6);
+            tbody.innerHTML=rows.length===0
+                ? '<tr><td colspan="5" class="text-center py-4 text-slate-600 font-sans">No trades yet.</td></tr>'
+                : rows.map(t=>{
+                    const pnl=t.pnl||0;
+                    const pnlC=pnl>0?'text-green-400':pnl<0?'text-red-400':'text-slate-400';
+                    const ts=new Date(t.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+                    const out=t.outcome||'OPEN';
+                    return `<tr class="trade-row">
+                        <td class="py-1.5 text-slate-400">${ts}</td>
+                        <td class="${t.side==='YES'?'text-green-400':'text-red-400'}">${t.side||'--'}</td>
+                        <td class="text-white">${t.entry?t.entry.toFixed(3):'--'}</td>
+                        <td>${t.exit?t.exit.toFixed(3):'<span class="text-slate-600">OPEN</span>'}</td>
+                        <td class="text-right font-bold ${pnlC}">${pnl!==0?(pnl>0?'+':'')+(pnl*100).toFixed(1)+'%':out}</td>
+                    </tr>`;
+                }).join('');
+        }
+
+        // ── System health ──
+        const tc = lats.total_cycle;
+        $('lat-total').innerText = tc ? tc+'ms' : '--';
+        $('lat-total').className = `mono text-[0.68rem] ${tc>5000?'text-red-400':tc>2000?'text-amber-400':'text-green-400'}`;
+        $('lat-data').innerText  = lats.data_fetch_all ? lats.data_fetch_all+'ms' : '--';
+        $('lat-pm').innerText    = lats.fetch_polymarket ? lats.fetch_polymarket+'ms' : '--';
+        $('sys-lat-badge').innerText = tc ? tc+'ms' : '--ms';
+
+        if (d.wallet_usdc===null) {
+            $('rpc-dot').className='dot dot-r';
+            $('rpc-st').innerText='POLYGON ERR'; $('rpc-st').className='mt-1 text-red-400 font-bold';
+        } else {
+            $('rpc-dot').className='dot dot-g';
+            $('rpc-st').innerText='POLYGON'; $('rpc-st').className='mt-1';
+        }
+
+        // Optimizer status
+        const closed=(d.performance||{}).closed_trades||0;
+        $('opt-status').innerText = closed>=10?'LEARNING':closed>0?'COLLECTING':'AWAITING';
+        $('opt-status').className = `mono font-semibold ${closed>=10?'text-green-400':closed>0?'text-amber-400':'text-slate-500'}`;
+
+        // Events
+        const evts = d.events||[];
+        let eHtml='';
+        if (sig.direction&&sig.direction!=='NEUTRAL') {
+            const now=new Date().toLocaleTimeString('en-US',{hour12:false});
+            eHtml+=`<div class="py-0.5 border-b border-white/5 flex gap-2 text-[0.65rem]">
+                <span class="text-slate-500">${now}</span>
+                <span class="text-sky-400">[SIG]</span>
+                <span class="text-slate-300">Score=${sc.toFixed(2)} ${sig.direction} Edge=${fmtPct(edge)}</span>
+            </div>`;
+        }
+        evts.slice().reverse().forEach(e=>{
+            eHtml+=`<div class="py-0.5 border-b border-white/5 flex gap-2 text-[0.65rem]">
+                <span class="text-slate-500">${e.ts}</span>
+                <span class="${e.msg?.includes('ERROR')||e.msg?.includes('FAIL')?'text-red-400':'text-green-400'}">[SYS]</span>
+                <span class="text-slate-300 break-all">${e.msg}</span>
+            </div>`;
+        });
+        $('event-stream').innerHTML = eHtml||'<div class="text-slate-600 text-center py-3">No events</div>';
+
+        // Radar
+        if (typeof updateRadarChart==='function') updateRadarChart(d, sig);
+
+    }).catch(e=>console.warn('Metrics fetch:',e));
+}
+
+// ── Equity chart init ──────────────────────────────────────────────────
+const eCtx = $('equityChart').getContext('2d');
+equityChart = new Chart(eCtx, {
+    type:'line',
+    data:{
+        labels:[],
+        datasets:[{label:'Cum PnL%',data:[],borderColor:'#22c55e',backgroundColor:'rgba(34,197,94,0.08)',
+                   borderWidth:1.5,fill:true,tension:0.3,pointRadius:0}]
+    },
+    options:{
+        responsive:true,maintainAspectRatio:false,animation:{duration:0},
+        scales:{
+            y:{grid:{color:'rgba(255,255,255,0.04)'},ticks:{color:'#64748b',font:{family:'JetBrains Mono',size:8}}},
+            x:{grid:{display:false},ticks:{display:false}}
+        },
+        plugins:{legend:{display:false}}
     }
+});
 
-    function updateRadarChart(metrics) {
-        try {
-            const perf = metrics.performance_metrics || {};
-            const lossStreak = metrics.loss_streak || 0;
-            const streakHalt = metrics.streak_halt_at || 5;
-            const atr = metrics.atr14 || 100;
+// ── Accordion ──────────────────────────────────────────────────────────
+function toggleAccordion(id) {
+    const body=$( id), arrow=$('micro-arrow');
+    if (body.style.display==='none') { body.style.display='block'; arrow.innerText='▾'; }
+    else { body.style.display='none'; arrow.innerText='▸'; }
+}
 
-            const values = [
-                Math.min((atr / 300), 1),               // Regime intensity (ATR norm)
-                metrics.gate_clear_ratio != null ? metrics.gate_clear_ratio : 0.5,  // Gate clearance
-                1 - Math.min((metrics.score_stdev || 0) / 10, 1),  // Score consistency
-                Math.min(Math.abs(metrics.edge_usd || 0) / 5, 1),  // Edge magnitude
-                1 - Math.min(lossStreak / Math.max(streakHalt, 1), 1)  // Loss streak proximity (inverted)
-            ];
-            const labels = ['Regime\nIntensity', 'Gate\nClearance', 'Score\nConsistency', 'Edge\nMagnitude', 'Streak\nSafety'];
+// ── Kill switch ────────────────────────────────────────────────────────
+function activateKillSwitch() {
+    const pwd=prompt('Enter KILL SWITCH password to halt trading:');
+    if (!pwd) return;
+    fetch('/api/kill',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pwd})})
+        .then(r=>r.json())
+        .then(d=>{ if(d.status==='success'){alert('Kill switch activated.');updateUI();}else{alert('Error: '+d.message);} })
+        .catch(e=>alert('Failed: '+e));
+}
 
-            const radarData = [{
-                type: 'scatterpolar',
-                r: values,
-                theta: labels,
-                fill: 'toself',
-                line: { color: '#38bdf8' },
-                fillcolor: 'rgba(56,189,248,0.15)',
-                name: 'Risk Profile'
-            }];
-            const radarLayout = {
-                paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
-                polar: {
-                    bgcolor: 'transparent',
-                    radialaxis: { visible: true, range: [0,1], gridcolor: 'rgba(255,255,255,0.06)', tickfont: { color: '#475569', size: 8 } },
-                    angularaxis: { tickfont: { color: '#94a3b8', size: 9, family: 'JetBrains Mono' }, gridcolor: 'rgba(255,255,255,0.06)' }
-                },
-                margin: { t: 20, b: 20, l: 50, r: 50 },
-                showlegend: false
-            };
+// ── Plotly: Signal time series ─────────────────────────────────────────
+function toTs(ts) { const d=new Date(ts*1000); return d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); }
 
-            if (!_radarInited) {
-                Plotly.newPlot('chart-radar', radarData, radarLayout, { displayModeBar: false, responsive: true });
-                _radarInited = true;
-            } else {
-                Plotly.react('chart-radar', radarData, radarLayout);
-            }
-        } catch(e) { /* silent */ }
-    }
+async function updatePlotlyCharts() {
+    try {
+        const res=await fetch('/api/signal-history?limit=240');
+        const data=await res.json();
+        if (!Array.isArray(data)||data.length===0) return;
+        const xs=data.map(d=>toTs(d.ts));
+        const score=data.map(d=>d.signed_score);
+        const post =data.map(d=>d.posterior_final_up);
+        const cvd  =data.map(d=>d.cvd);
+        const ofi  =data.map(d=>d.ofi);
 
-    // Fetch signal history every 30s
-    updatePlotlyCharts();
-    setInterval(updatePlotlyCharts, 30000);
+        const layout={
+            paper_bgcolor:'transparent',plot_bgcolor:'transparent',
+            margin:{t:8,b:36,l:40,r:40},
+            xaxis:{tickfont:{color:'#475569',size:8,family:'JetBrains Mono'},gridcolor:'rgba(255,255,255,0.04)',nticks:8},
+            yaxis:{title:{text:'Score',font:{color:'#38bdf8',size:8}},tickfont:{color:'#475569',size:8},gridcolor:'rgba(255,255,255,0.04)',zeroline:true,zerolinecolor:'rgba(255,255,255,0.1)'},
+            yaxis2:{title:{text:'P(UP)',font:{color:'#a78bfa',size:8}},tickfont:{color:'#475569',size:8},overlaying:'y',side:'right',range:[0,1]},
+            legend:{font:{color:'#64748b',size:8},bgcolor:'transparent',orientation:'h',x:0,y:-0.25},
+            font:{family:'JetBrains Mono'}
+        };
+        const traces=[
+            {x:xs,y:score,name:'Signed Score',type:'scatter',mode:'lines',line:{color:'#38bdf8',width:1.5},yaxis:'y'},
+            {x:xs,y:post, name:'P(UP)',type:'scatter',mode:'lines',line:{color:'#a78bfa',width:1.5},yaxis:'y2'},
+            {x:xs,y:cvd,  name:'CVD',type:'scatter',mode:'lines',line:{color:'#34d399',width:1,dash:'dot'},yaxis:'y'},
+            {x:xs,y:ofi,  name:'OFI',type:'scatter',mode:'lines',line:{color:'#fb923c',width:1,dash:'dot'},yaxis:'y'}
+        ];
+        if(!_sigInited){Plotly.newPlot('chart-signals',traces,layout,{displayModeBar:false,responsive:true});_sigInited=true;}
+        else Plotly.react('chart-signals',traces,layout);
+    } catch(e){}
+}
 
-    // Fetch nightly review once on load, then every 5 minutes
-    async function updateReviewPanel() {
-        try {
-            const res = await fetch('/api/review');
-            const data = await res.json();
-            if (data.content) {
-                document.getElementById('review-date').innerText = data.date || '';
-                document.getElementById('review-content').innerText = data.content;
-            } else if (data.error && data.error !== 'No review available yet') {
-                document.getElementById('review-date').innerText = 'error';
-                document.getElementById('review-content').innerText = data.error;
-            }
-        } catch(e) { /* silent */ }
-    }
-    updateReviewPanel();
-    setInterval(updateReviewPanel, 300000);
-    </script>
+// ── Plotly: Risk radar ─────────────────────────────────────────────────
+function updateRadarChart(metrics, sig) {
+    try {
+        sig = sig || metrics.signal || {};
+        const perf=metrics.performance_metrics||{};
+        const lossStreak=sig.loss_streak||metrics.loss_streak||0;
+        const atr=sig.atr14||100;
 
-    <!-- Floating Kill Switch -->
-    <button onclick="activateKillSwitch()"
-        class="fixed bottom-6 right-6 bg-red-600/80 hover:bg-red-600 text-white font-bold py-2 px-4 rounded shadow-lg shadow-red-500/20 border border-red-500 z-50 flex items-center gap-2 backdrop-blur-sm transition-colors text-sm">
-        <svg class="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z">
-            </path>
-        </svg>
-        HALT ENGINE
-    </button>
+        const values=[
+            clamp01(atr/250),
+            metrics.gate_all?.length===0?1:clamp01(1-Math.min((metrics.gate_all?.length||2)/5,1)),
+            clamp01(1-Math.min(Math.abs(sig.signed_score||0)/8,1)*0.5+0.5), // consistency: low score = less risky
+            clamp01(Math.abs(sig.target_edge||0)/0.08),
+            clamp01(1-lossStreak/3)
+        ];
+        const labels=['Regime<br>Intensity','Gate<br>Clearance','Score<br>Stability','Edge<br>Magnitude','Streak<br>Safety'];
+        const radarData=[{
+            type:'scatterpolar',r:values,theta:labels,fill:'toself',
+            line:{color:'#38bdf8',width:1.5},fillcolor:'rgba(56,189,248,0.1)'
+        }];
+        const radarLayout={
+            paper_bgcolor:'transparent',plot_bgcolor:'transparent',
+            polar:{bgcolor:'transparent',
+                radialaxis:{visible:true,range:[0,1],gridcolor:'rgba(255,255,255,0.06)',tickfont:{color:'#334155',size:7}},
+                angularaxis:{tickfont:{color:'#64748b',size:8,family:'JetBrains Mono'},gridcolor:'rgba(255,255,255,0.06)'}
+            },
+            margin:{t:20,b:20,l:50,r:50},showlegend:false
+        };
+        if(!_radarInited){Plotly.newPlot('chart-radar',radarData,radarLayout,{displayModeBar:false,responsive:true});_radarInited=true;}
+        else Plotly.react('chart-radar',radarData,radarLayout);
+    } catch(e){}
+}
+
+// ── Nightly review ─────────────────────────────────────────────────────
+async function updateReviewPanel() {
+    try {
+        const res=await fetch('/api/review');
+        const data=await res.json();
+        if (data.content) {
+            $('review-date').innerText=data.date||'';
+            $('review-content').innerText=data.content;
+        }
+    } catch(e){}
+}
+
+// ── Health/build ──────────────────────────────────────────────────────
+fetch('/health').then(r=>r.json()).then(d=>{if(d.build)$('build-ver').innerText=d.build}).catch(()=>{});
+
+// ── Kick off ──────────────────────────────────────────────────────────
+updateUI();
+updatePlotlyCharts();
+updateReviewPanel();
+setInterval(updateUI, 2000);
+setInterval(updatePlotlyCharts, 30000);
+setInterval(updateReviewPanel, 300000);
+tickCountdown();
+</script>
 </body>
-
 </html>

@@ -221,6 +221,8 @@ def compute_signals(
     # Phase 4 Optimization
     score_offset:     float = 0.0,
     edge_offset:      float = 0.0,
+    # Balance-adaptive edge
+    balance:          float = None,
 ) -> SignalResult:
 
     res = SignalResult()
@@ -237,7 +239,7 @@ def compute_signals(
     else:
         res.regime = "normal"
 
-    res.required_edge, res.min_score = Config.get_regime_thresholds(atr14)
+    res.required_edge, res.min_score = Config.get_regime_thresholds(atr14, balance=balance)
     res.required_edge += edge_offset
     res.min_score += score_offset
 
