@@ -859,7 +859,7 @@ class Engine:
         log.info(dashboard)
 
         # Update cycle memory for deltas
-        self.state.prev_cycle_score = sig.signed_score
+        self.state.prev_cycle_score = max(-8.0, min(8.0, sig.signed_score))
         self.state.prev_cycle_price = btc_price
 
         # ── Update Prometheus Metrics ─────────────────────────────────────────

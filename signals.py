@@ -747,8 +747,12 @@ def compute_signals(
     # In the last 3 minutes, increase alpha so the score responds fast to market repricing.
     # Technical indicators lag; the late-window market price IS the signal.
     if state.prev_cycle_score is not None:
+        # Clamp prev_score defensively — corrupted state or old builds can have out-of-range values
+        prev_clamped = max(-8.0, min(8.0, state.prev_cycle_score))
         alpha = 0.85 if minutes_remaining < 3.0 else 0.6
-        res.signed_score = alpha * res.signed_score + (1 - alpha) * state.prev_cycle_score
+        res.signed_score = alpha * res.signed_score + (1 - alpha) * prev_clamped
+    # Final clamp: EMA output must also stay within ±8
+    res.signed_score = max(-8.0, min(8.0, res.signed_score))
     res.abs_score    = abs(res.signed_score)
 
     # ── Phase 5: ML Inference ────────────────────────────────────────────────
