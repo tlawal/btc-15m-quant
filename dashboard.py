@@ -129,6 +129,37 @@ async def debug_balance():
 
     return result
 
+@app.get("/api/signal-history")
+async def get_signal_history(limit: int = 240):
+    """Return last N structured log entries for Plotly charts."""
+    log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
+    if not os.path.exists(log_path):
+        return []
+    try:
+        with open(log_path, "r") as f:
+            lines = f.readlines()[-limit:]
+        out = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except Exception:
+                continue
+            sig = entry.get("signal") or {}
+            out.append({
+                "ts":               entry.get("ts", 0),
+                "signed_score":     sig.get("signed_score"),
+                "posterior_final_up": sig.get("posterior_final_up"),
+                "cvd":              sig.get("cvd_score"),
+                "ofi":              sig.get("ofi_score"),
+                "regime":           sig.get("regime"),
+            })
+        return out
+    except Exception:
+        return []
+
 @app.get("/api/logs")
 async def get_logs(limit: int = 240):
     log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
@@ -229,6 +260,10 @@ async def debug_templates():
 
 @app.get("/api/metrics")
 async def get_metrics():
+    try:
+        from main import BUILD_VERSION
+    except Exception:
+        BUILD_VERSION = "unknown"
     # Always try to load heartbeat file first — available even during startup
     hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
     hb = {}
@@ -264,7 +299,7 @@ async def get_metrics():
         "balance": hb.get("balance", 0.0),
         "status": "Running" if getattr(engine, "_running", False) else "Stopped",
         "uptime_sec": int(time.time() - start_time),
-        "version": getattr(engine, "BUILD_VERSION", "v1.0.0"),
+        "version": BUILD_VERSION,
         "wallet_usdc": balance,
         "open_positions": open_pos,
         "exposure_usd": exposure,

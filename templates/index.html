@@ -7,6 +7,7 @@
     <title>Predi-Quant | Institutional Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
         rel="stylesheet">
@@ -750,6 +751,8 @@
                         equityChart.update();
                     }
                 }
+                // Update risk radar with live metrics
+                if (typeof updateRadarChart === 'function') updateRadarChart(d);
             }).catch(e => console.error('Metrics fetch error:', e));
         }
 
@@ -790,6 +793,118 @@
                     else { alert('Error: ' + d.message); }
                 }).catch(e => alert('Failed: ' + e));
         }
+    </script>
+
+    <!-- Panel 7: Signal Time Series -->
+    <div class="mx-4 mb-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4" style="padding-bottom:0">
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Signal Time Series (last 60 min)</div>
+        <div id="chart-signals" style="height:220px"></div>
+    </div>
+
+    <!-- Panel 8: Risk Radar -->
+    <div class="mx-4 mb-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4" style="padding-bottom:0">
+        <div class="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">Risk Radar</div>
+        <div id="chart-radar" style="height:260px"></div>
+    </div>
+
+    <script>
+    // ── Plotly charts ──────────────────────────────────────────────────────────
+    let _signalHistoryInited = false;
+    let _radarInited = false;
+
+    function toTimeStr(ts) {
+        const d = new Date(ts * 1000);
+        return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    }
+
+    async function updatePlotlyCharts() {
+        try {
+            const res = await fetch('/api/signal-history?limit=240');
+            const data = await res.json();
+            if (!Array.isArray(data) || data.length === 0) return;
+
+            const xs   = data.map(d => toTimeStr(d.ts));
+            const score = data.map(d => d.signed_score);
+            const post  = data.map(d => d.posterior_final_up);
+            const cvd   = data.map(d => d.cvd);
+            const ofi   = data.map(d => d.ofi);
+
+            const traceScore = { x: xs, y: score, name: 'Signed Score', type: 'scatter', mode: 'lines',
+                line: { color: '#38bdf8', width: 1.5 }, yaxis: 'y' };
+            const tracePost  = { x: xs, y: post, name: 'Posterior UP', type: 'scatter', mode: 'lines',
+                line: { color: '#a78bfa', width: 1.5 }, yaxis: 'y2' };
+            const traceCVD   = { x: xs, y: cvd, name: 'CVD', type: 'scatter', mode: 'lines',
+                line: { color: '#34d399', width: 1, dash: 'dot' }, yaxis: 'y' };
+            const traceOFI   = { x: xs, y: ofi, name: 'OFI', type: 'scatter', mode: 'lines',
+                line: { color: '#fb923c', width: 1, dash: 'dot' }, yaxis: 'y' };
+
+            const layout = {
+                paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+                margin: { t: 10, b: 40, l: 45, r: 45 },
+                xaxis: { tickfont: { color: '#64748b', size: 9, family: 'JetBrains Mono' }, gridcolor: 'rgba(255,255,255,0.04)', nticks: 8 },
+                yaxis: { title: 'Score', titlefont: { color: '#38bdf8', size: 9 }, tickfont: { color: '#64748b', size: 9 }, gridcolor: 'rgba(255,255,255,0.04)', zeroline: true, zerolinecolor: 'rgba(255,255,255,0.1)' },
+                yaxis2: { title: 'Posterior', titlefont: { color: '#a78bfa', size: 9 }, tickfont: { color: '#64748b', size: 9 }, overlaying: 'y', side: 'right', range: [0, 1] },
+                legend: { font: { color: '#94a3b8', size: 9 }, bgcolor: 'transparent', orientation: 'h', x: 0, y: -0.2 },
+                font: { family: 'JetBrains Mono' }
+            };
+
+            if (!_signalHistoryInited) {
+                Plotly.newPlot('chart-signals', [traceScore, tracePost, traceCVD, traceOFI], layout, { displayModeBar: false, responsive: true });
+                _signalHistoryInited = true;
+            } else {
+                Plotly.react('chart-signals', [traceScore, tracePost, traceCVD, traceOFI], layout);
+            }
+        } catch(e) { /* silent */ }
+    }
+
+    function updateRadarChart(metrics) {
+        try {
+            const perf = metrics.performance_metrics || {};
+            const lossStreak = metrics.loss_streak || 0;
+            const streakHalt = metrics.streak_halt_at || 5;
+            const atr = metrics.atr14 || 100;
+
+            const values = [
+                Math.min((atr / 300), 1),               // Regime intensity (ATR norm)
+                metrics.gate_clear_ratio != null ? metrics.gate_clear_ratio : 0.5,  // Gate clearance
+                1 - Math.min((metrics.score_stdev || 0) / 10, 1),  // Score consistency
+                Math.min(Math.abs(metrics.edge_usd || 0) / 5, 1),  // Edge magnitude
+                1 - Math.min(lossStreak / Math.max(streakHalt, 1), 1)  // Loss streak proximity (inverted)
+            ];
+            const labels = ['Regime\nIntensity', 'Gate\nClearance', 'Score\nConsistency', 'Edge\nMagnitude', 'Streak\nSafety'];
+
+            const radarData = [{
+                type: 'scatterpolar',
+                r: values,
+                theta: labels,
+                fill: 'toself',
+                line: { color: '#38bdf8' },
+                fillcolor: 'rgba(56,189,248,0.15)',
+                name: 'Risk Profile'
+            }];
+            const radarLayout = {
+                paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+                polar: {
+                    bgcolor: 'transparent',
+                    radialaxis: { visible: true, range: [0,1], gridcolor: 'rgba(255,255,255,0.06)', tickfont: { color: '#475569', size: 8 } },
+                    angularaxis: { tickfont: { color: '#94a3b8', size: 9, family: 'JetBrains Mono' }, gridcolor: 'rgba(255,255,255,0.06)' }
+                },
+                margin: { t: 20, b: 20, l: 50, r: 50 },
+                showlegend: false
+            };
+
+            if (!_radarInited) {
+                Plotly.newPlot('chart-radar', radarData, radarLayout, { displayModeBar: false, responsive: true });
+                _radarInited = true;
+            } else {
+                Plotly.react('chart-radar', radarData, radarLayout);
+            }
+        } catch(e) { /* silent */ }
+    }
+
+    // Fetch signal history every 30s
+    updatePlotlyCharts();
+    setInterval(updatePlotlyCharts, 30000);
     </script>
 
     <!-- Floating Kill Switch -->

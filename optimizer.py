@@ -58,8 +58,8 @@ class SignalOptimizer:
                 for line in f:
                     data.append(json.loads(line))
             
-            if len(data) < 20: # Need a minimum sample size
-                log.info(f"Not enough trade data for retraining: {len(data)}/20")
+            if len(data) < 10: # Need a minimum sample size
+                log.info(f"Not enough trade data for retraining: {len(data)}/10")
                 return
 
             # Flatten features for DataFrame
@@ -139,10 +139,66 @@ class SignalOptimizer:
     def get_kelly_multiplier(self) -> float:
         return self._kelly_multiplier
 
-    def get_signal_accuracies(self):
-        # Legacy compat for dashboard
-        return {}
+    def get_signal_accuracies(self) -> dict:
+        """Read trade_features.jsonl and compute rolling 7-day accuracy per signal."""
+        cutoff = time.time() - 7 * 86400
+        signal_keys = ["ofi_score", "cvd_score", "flow_accel_score", "imbalance_score", "signed_score"]
+        buckets: dict[str, list[int]] = {k: [] for k in signal_keys}
+        try:
+            if not os.path.exists(self.features_path):
+                return {}
+            with open(self.features_path, "r") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                    except Exception:
+                        continue
+                    if entry.get("ts", 0) < cutoff:
+                        continue
+                    outcome = entry.get("outcome", 0)
+                    feats = entry.get("features", {})
+                    for k in signal_keys:
+                        if k in feats:
+                            # A signal "contributed correctly" if its sign matches the outcome
+                            val = feats[k]
+                            if val is None:
+                                continue
+                            correct = 1 if (val > 0 and outcome == 1) or (val < 0 and outcome == 0) else 0
+                            buckets[k].append(correct)
+        except Exception as e:
+            log.warning(f"get_signal_accuracies error: {e}")
+            return {}
+        return {k: round(sum(v) / len(v), 4) for k, v in buckets.items() if len(v) >= 5}
 
-    def get_disabled_signals(self):
-        # Legacy compat for dashboard
-        return []
+    def get_disabled_signals(self) -> list:
+        """Return signal names with <45% accuracy over 20+ samples in last 7 days."""
+        cutoff = time.time() - 7 * 86400
+        signal_keys = ["ofi_score", "cvd_score", "flow_accel_score", "imbalance_score"]
+        buckets: dict[str, list[int]] = {k: [] for k in signal_keys}
+        try:
+            if not os.path.exists(self.features_path):
+                return []
+            with open(self.features_path, "r") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                    except Exception:
+                        continue
+                    if entry.get("ts", 0) < cutoff:
+                        continue
+                    outcome = entry.get("outcome", 0)
+                    feats = entry.get("features", {})
+                    for k in signal_keys:
+                        if k in feats and feats[k] is not None:
+                            val = feats[k]
+                            correct = 1 if (val > 0 and outcome == 1) or (val < 0 and outcome == 0) else 0
+                            buckets[k].append(correct)
+        except Exception as e:
+            log.warning(f"get_disabled_signals error: {e}")
+            return []
+        disabled = []
+        for k, v in buckets.items():
+            if len(v) >= 20 and (sum(v) / len(v)) < 0.45:
+                disabled.append(k)
+                log.warning(f"AUTO-DISABLE signal {k}: accuracy {sum(v)/len(v):.2%} over {len(v)} samples")
+        return disabled

@@ -55,6 +55,7 @@ class Engine:
         self.state: Optional[EngineState] = None
         self._running  = True
         self._status_counter = 0   # send Telegram status every N cycles
+        self._consecutive_skips = 0  # no-trade alert counter
         self._last_exit_reason = "HOLD"
         self.inference = InferenceEngine()  # Phase 5: ML inference engine
         self._dashboard_task = None         # Phase 6: Dashboard task handle
@@ -220,6 +221,15 @@ class Engine:
             log.warning("Timeout while fetching initial balance; dashboard will show 0 until first successful cycle.")
         except Exception as e:
             log.warning(f"Failed to fetch initial balance: {e}")
+
+        # Startup reconciliation: check if a pending order survived a restart
+        if self.pm.can_trade and self.state.held_position.is_pending and self.state.held_position.order_id:
+            log.info(f"STARTUP RECONCILE: pending order {self.state.held_position.order_id} found — checking fill status")
+            try:
+                async with asyncio.timeout(10):
+                    await self._reconcile_pending_order()
+            except Exception as e:
+                log.warning(f"Startup reconciliation failed: {e}")
 
         # Start real-time CVD WebSocket
         await self.cvd_ws.start()
@@ -634,6 +644,19 @@ class Engine:
                 sig, ob, market_info, min_rem, btc_price, balance, win_start=win_start
             )
 
+        # ── No-trade alert ────────────────────────────────────────────────────
+        if self.state.held_position.side:
+            self._consecutive_skips = 0
+        elif not exit_executed:
+            self._consecutive_skips += 1
+            if self._consecutive_skips == 100:
+                log.error(f"NO-TRADE ALERT: {self._consecutive_skips} consecutive cycles without entry")
+                await send_telegram(
+                    self.feeds.session,
+                    f"⚠️ CRITICAL: Bot has skipped {self._consecutive_skips} cycles (~{self._consecutive_skips * 15 // 60}min) without placing a trade. Check gates/balance/signals.",
+                    tier=AlertTier.CRITICAL
+                )
+
         # ── Halt check ────────────────────────────────────────────────────────
         if self.state.loss_streak >= Config.STREAK_HALT_AT and not self.state.trading_halted:
             self.state.trading_halted = True
@@ -646,7 +669,7 @@ class Engine:
 
         # ── Periodic status message ────────────────────────────────────────────
         self._status_counter += 1
-        if self._status_counter % 1 == 0:   # every cycle (~15s)
+        if self._status_counter % 4 == 0:   # every ~1 min
             pos_str = (
                 f"{self.state.held_position.side} @ {self.state.held_position.avg_entry_price:.3f}"
                 if self.state.held_position.side else "FLAT"
@@ -972,7 +995,7 @@ class Engine:
                 log.info(f"STALE ORDER ({age_s}s): replacing {pos.order_id}")
                 # Fetch current orderbook for fresh price
                 try:
-                    ob = await self.pm.get_order_book(pos.condition_id or self.state.last_condition_id)
+                    ob = await self.pm.get_order_books(pos.token_id, pos.token_id)
                     if ob and pos.side == "YES":
                         new_px = self.pm.smart_entry_price(ob.yes_bid, ob.yes_ask) or pos.intended_entry_price
                     elif ob and pos.side == "NO":
@@ -1283,12 +1306,18 @@ class Engine:
         if sig.direction == "UP":
             token_id  = market_info.yes_token_id
             side_name = "YES"
-            entry_px  = self.pm.smart_entry_price(ob.yes_bid, ob.yes_ask, aggressive=sig.monster_signal) or 0.0
+            entry_px  = self.pm.smart_entry_price(ob.yes_bid, ob.yes_ask, aggressive=sig.monster_signal)
+            if entry_px is None and ob.yes_mid:
+                entry_px = min(ob.yes_mid + 0.01, 0.99)
+            entry_px  = entry_px or 0.0
             posterior = sig.posterior_final_up or 0.5
         else:
             token_id  = market_info.no_token_id
             side_name = "NO"
-            entry_px  = self.pm.smart_entry_price(ob.no_bid, ob.no_ask, aggressive=sig.monster_signal) or 0.0
+            entry_px  = self.pm.smart_entry_price(ob.no_bid, ob.no_ask, aggressive=sig.monster_signal)
+            if entry_px is None and ob.no_mid:
+                entry_px = min(ob.no_mid + 0.01, 0.99)
+            entry_px  = entry_px or 0.0
             posterior = sig.posterior_final_down or 0.5
 
         if entry_px <= 0 or entry_px >= 1.0:

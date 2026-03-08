@@ -57,13 +57,10 @@ def compute_position_size(
     position_usd *= (1.0 - Config.SLIPPAGE_BUFFER_PCT)
 
     # Phase 6: Depth-aware limit (max 50% of top-of-book depth)
-    if book and hasattr(book, 'bid_sz') and hasattr(book, 'ask_sz'):
-        # bid_sz/ask_sz are in BTC; convert to USD
-        # we care about the side we enter. for now just use a conservative min of both
-        depth_btc = min(book.best_bid_sz, book.best_ask_sz)
-        depth_usd = depth_btc * entry_price # approx
+    if book and hasattr(book, 'total_bid_size') and hasattr(book, 'total_ask_size'):
+        depth_usd = min(book.total_bid_size, book.total_ask_size)
         depth_limit = depth_usd * 0.50 # cap at 50% of available book depth
-        if position_usd > depth_limit:
+        if depth_limit > 0 and position_usd > depth_limit:
             log.info(f"DEPTH_LIMIT: Capping ${position_usd:.2f} -> ${depth_limit:.2f} (50% of book depth)")
             position_usd = depth_limit
 

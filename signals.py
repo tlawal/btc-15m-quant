@@ -295,7 +295,7 @@ def compute_signals(
         deltas = [s.delta_x for s in samples]
         mean   = sum(deltas) / len(deltas)
         var    = sum((d - mean) ** 2 for d in deltas) / (len(deltas) - 1)
-        res.sigma_b = math.sqrt(var)
+        res.sigma_b = min(math.sqrt(var), 1.0)  # Cap to prevent extreme multipliers
     else:
         res.sigma_b = Config.BELIEF_VOL_DEFAULT
 
@@ -634,7 +634,11 @@ def compute_signals(
     res.obi = obi
 
     res.signed_score = signed
-    res.abs_score    = abs(signed)
+    # Phase 7: EMA smoothing to reduce single-cycle noise
+    if state.prev_cycle_score is not None:
+        alpha = 0.6  # responsiveness factor
+        res.signed_score = alpha * res.signed_score + (1 - alpha) * state.prev_cycle_score
+    res.abs_score    = abs(res.signed_score)
 
     # ── Phase 5: ML Inference ────────────────────────────────────────────────
     if inference_engine:
