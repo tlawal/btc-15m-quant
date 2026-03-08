@@ -137,7 +137,7 @@ async def get_logs(limit: int = 240):
     try:
         with open(log_path, "r") as f:
             lines = f.readlines()[-limit:]
-        return [json.loads(line) for line in lines]
+        return [json.loads(line.strip()) for line in lines if line.strip()]
     except:
         return {"error": "Log file not found"}
 
@@ -276,6 +276,7 @@ async def get_metrics():
         "exposure_usd": exposure,
         "strike_source": getattr(state, "strike_source", "none"),
         "trading_halted": getattr(state, "trading_halted", False),
+        "last_market_slug": getattr(state, "last_market_slug", ""),
         "performance_metrics": getattr(state, "performance_metrics", {}),
         "last_tuned_time": getattr(state, "last_tuned_time", 0),
         "open_positions_api": getattr(state, "open_positions_api", []),

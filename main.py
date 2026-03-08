@@ -785,6 +785,7 @@ class Engine:
                 "gates": _sig.skip_gates if _sig else [],
                 "balance": balance or 0.0,
                 "unclaimed_usdc": self.state.unclaimed_usdc or 0.0,
+                "last_market_slug": getattr(self.state, "last_market_slug", ""),
             }
             hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
             async with aiofiles.open(hb_path, "w") as f:
