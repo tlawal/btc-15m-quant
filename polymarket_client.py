@@ -817,6 +817,24 @@ class PolymarketClient:
         except Exception as e:
             log.warning(f"cancel_order {order_id}: {e}")
 
+    async def replace_order(self, old_order_id: str, token_id: str, new_price: float, size: float, side: str = "BUY", order_type: str = "GTC") -> Optional[str]:
+        """Cancel an existing order and place a new one at the updated price.
+        Returns the new order_id, or None if the replacement failed."""
+        if not self.can_trade:
+            self._warn_no_creds_once("replace_order")
+            return None
+        try:
+            await self.cancel_order(old_order_id)
+            # Small delay to let the cancel propagate
+            await asyncio.sleep(0.5)
+            if side == "BUY":
+                return await self.limit_buy(token_id, new_price, size, order_type=order_type)
+            else:
+                return await self.market_sell(token_id, new_price, size)
+        except Exception as e:
+            log.warning(f"replace_order failed: {e}")
+            return None
+
     async def get_order_status(self, order_id: str) -> Optional[dict]:
         """Check if an order has been filled, partially filled, or is still open."""
         if not self.can_trade:

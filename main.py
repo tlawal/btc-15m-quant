@@ -965,6 +965,41 @@ class Engine:
                     pos.is_pending = False
                     pos.order_id = None
 
+        elif st in ("OPEN", "LIVE"):
+            # Stale order replacement: if >12s old, cancel and re-place at current price
+            age_s = int(time.time()) - (pos.placed_at_ts or 0)
+            if age_s > 12 and not pos.exit_reason:
+                log.info(f"STALE ORDER ({age_s}s): replacing {pos.order_id}")
+                # Fetch current orderbook for fresh price
+                try:
+                    ob = await self.pm.get_order_book(pos.condition_id or self.state.last_condition_id)
+                    if ob and pos.side == "YES":
+                        new_px = self.pm.smart_entry_price(ob.yes_bid, ob.yes_ask) or pos.intended_entry_price
+                    elif ob and pos.side == "NO":
+                        new_px = self.pm.smart_entry_price(ob.no_bid, ob.no_ask) or pos.intended_entry_price
+                    else:
+                        new_px = pos.intended_entry_price
+
+                    new_oid = await self.pm.replace_order(
+                        old_order_id=pos.order_id,
+                        token_id=pos.token_id,
+                        new_price=new_px,
+                        size=pos.size,
+                    )
+                    if new_oid:
+                        pos.order_id = new_oid
+                        pos.placed_at_ts = int(time.time())
+                        pos.intended_entry_price = new_px
+                        log.info(f"REPLACED -> {new_oid} @ {new_px}")
+                    else:
+                        # Cancel succeeded but re-place failed — clear position
+                        log.warning("Replace failed: clearing pending position")
+                        if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
+                            self.state.trade_history.pop()
+                        self.state.held_position = HeldPosition()
+                except Exception as e:
+                    log.warning(f"Stale order replace error: {e}")
+
     async def _write_heartbeat(self, ts: int, balance: float, runtime_ms: int, margin: dict | None = None, wallet_usdc: float | None = None, sig = None):
         """Phase 4: Structured heartbeat for external health monitoring."""
         hb = {
@@ -1457,6 +1492,10 @@ class Engine:
                                 features=feats,
                                 kelly_fraction=kelly
                             )
+                            # Feed optimizer for expired loss
+                            if self._last_sig:
+                                self.optimizer.log_trade(self._last_sig, "LOSS")
+                                self.optimizer.record_trade_pnl(-1.0)
                         except Exception as e:
                             log.error(f"Failed to record expired loss to DB: {e}")
         except Exception as e:
