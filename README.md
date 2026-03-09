@@ -77,7 +77,7 @@ utils.py         — Logging, Telegram alerts, formatting
 - Signal time-series chart (Plotly) — signed score, posterior, CVD, OFI
 - Risk radar chart — regime intensity, gate clearance, score consistency, edge magnitude, streak safety
 - Nightly AI review panel
-- `/api/metrics` — live engine state (never 503, falls back to heartbeat file)
+- `/api/metrics` — live engine state; falls back to heartbeat file; returns 503 with `engine_stale: true` if heartbeat > 30s old (engine crashed)
 - `/api/signal-history` — last 240 structured log entries for chart rendering
 - `/api/review` — latest nightly markdown review
 - `/api/logs` — last N structured log entries
@@ -127,16 +127,37 @@ Mount a volume at `/data` to persist:
 
 ### Monitoring Endpoints
 
-| Endpoint | Description |
-|----------|-------------|
-| `/` | Live dashboard |
-| `/api/metrics` | Full engine metrics JSON |
-| `/api/signal-history` | Last 240 signal log entries |
-| `/api/review` | Latest nightly AI review |
-| `/api/logs` | Structured log tail |
-| `/api/debug` | Environment + balance debug |
-| `/health` | Build version health check |
-| `/metrics` | Prometheus scrape endpoint (port 9090) |
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/` | GET | Live dashboard |
+| `/api/metrics` | GET | Full engine metrics JSON (503 + `engine_stale: true` if heartbeat > 30s old) |
+| `/api/signal-history` | GET | Last 240 signal log entries |
+| `/api/review` | GET | Latest nightly AI review |
+| `/api/logs` | GET | Structured log tail |
+| `/api/debug` | GET | Environment + balance debug |
+| `/health` | GET | Build version health check |
+| `/metrics` | GET | Prometheus scrape endpoint (port 9090) |
+
+### Maintenance Endpoints
+
+> These endpoints mutate persistent state. Use carefully on production.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/logs/clear` | POST | Truncates `structured_logs.json` (clears `/api/logs` history) |
+| `/api/db/reset` | POST | Deletes `state.db` — wipes all trade history, positions, and state. Bot recreates DB with fresh migrations on next start. Restart the Railway service after calling this. |
+| `/api/kill` | POST | Password-protected kill switch (set `KILL_SWITCH_PASSWORD` env var) |
+
+**Reset procedure (Railway):**
+```bash
+# Clear logs
+curl -X POST https://<your-app>.up.railway.app/api/logs/clear
+
+# Reset database (wipes all state — irreversible)
+curl -X POST https://<your-app>.up.railway.app/api/db/reset
+
+# Then restart the service in the Railway dashboard so the bot picks up the clean state.
+```
 
 ---
 
