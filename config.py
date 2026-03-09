@@ -5,7 +5,7 @@ load_dotenv()
 
 class Config:
     # ── Timing ────────────────────────────────────────────────────────────────
-    LOOP_INTERVAL_SEC          = 5        # inner loop cadence (was 15; 5s for faster exit monitoring + late-window sniping)
+    LOOP_INTERVAL_SEC          = 3        # inner loop cadence (3s: faster reversal detection; well within Binance rate limits)
     WINDOW_SEC                 = 900      # 15-minute binary window
     EARLY_WINDOW_GUARD_MIN     = 7.5      # block non-monster trades in first 7.5 min (entries only in last 7.5 min)
     BELIEF_VOL_LOOKBACK_SEC    = 180      # rolling σ_B window (3 min)
@@ -73,11 +73,14 @@ class Config:
     # ── Exit parameters ───────────────────────────────────────────────────────
     TAKE_PROFIT_PRICE          = 0.99
     SLIPPAGE_BUFFER_PCT        = 0.008    # Phase 6: 80bps execution buffer
-    MAX_DRAWDOWN_PCT           = 0.15    # raised from 0.08 — binaries oscillate ±10-15% normally; 8% exits winners on noise
+    MAX_DRAWDOWN_PCT           = 0.12    # soft posterior-gated drawdown (tightened from 0.15)
+    HARD_STOP_PCT              = 0.25    # HARD unconditional circuit breaker — no posterior gate.
+                                          # Trailing guard held a -65% loss when posterior lagged price.
+                                          # At -25% the position is unrecoverable on a 15m binary; cut always.
     FORCED_LATE_EXIT_MIN_REM   = 5.0
     FORCED_DISTANCE_EXIT_MIN_REM = 3.0
     FORCED_PROFIT_LOCK_MIN_REM = 2.0
-    FORCED_LATE_LOSS_PCT       = 0.15   # raised from 0.08 to match MAX_DRAWDOWN_PCT — avoids inconsistent stop levels
+    FORCED_LATE_LOSS_PCT       = 0.10   # tightened from 0.15 — cut losers faster in last 5 min
     FORCED_PROFIT_PCT          = 0.25
     FORCED_DISTANCE_MAX        = 30.0     # abs(btcPrice - strike) < this triggers late exit
 

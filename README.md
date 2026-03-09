@@ -8,7 +8,7 @@ Pure async Python — `asyncio` + `aiohttp` + `py-clob-client` + SQLite/PostgreS
 ## Architecture
 
 ```
-main.py              — Async engine loop (5s cadence), orchestration
+main.py              — Async engine loop (3s cadence), orchestration
 signals.py           — Bayesian posterior, belief-vol, CVD/OFI/MFI scoring
 exit_policy.py       — Exit evaluation: 9 conditions (drawdown, alpha decay, momentum, time-decay)
 sizing.py            — Quarter-Kelly sizing with streak de-risking + depth cap
@@ -45,15 +45,22 @@ utils.py             — Logging, Telegram alerts, formatting
 - **Early window guard** — blocks non-monster entries for the first 7.5 min of each 15-min window
 
 ### Exit Engine (`exit_policy.py`)
-Nine prioritized exit conditions, evaluated every 5 seconds:
+Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior override) and **soft exits** (suppressed by trailing posterior guard while model is still confident).
 
-1. **Trailing posterior guard** — hold while posterior is within tolerance of entry (±2–5pp depending on profitability); fires before all other conditions
-2. **FORCED_DRAWDOWN** — cuts position if `unrealized < -15%` AND model posterior has also given up (fell >5pp from entry); unconditional beyond -20%
-3. **FORCED_DISTANCE** — exits near expiry when BTC is within $30 of strike and position is losing
-4. **FORCED_PROFIT_LOCK** — locks in profit > 25% when < 2 min remain
-5. **FORCED_LATE_EXIT** — cuts losers > 15% down when < 5 min remain
+**Hard circuit breakers — always fire regardless of model state:**
+1. **HARD_STOP** — unconditional cut at `unrealized < -25%`. No posterior gate. Lesson learned from a -65% loss where the trailing guard held the position while the Bayesian model lagged BTC's real price action by 10+ minutes.
+2. **FORCED_LATE_EXIT** — cuts losers > 10% when < 5 min remain. Also hard — model is stale near expiry.
+
+**Posterior-gated exits (soft):**
+3. **FORCED_DRAWDOWN** — cuts if `unrealized < -12%` AND posterior fell > 5pp from entry; unconditional beyond -20%
+4. **FORCED_DISTANCE** — exits near expiry when BTC is within $30 of strike and losing
+5. **FORCED_PROFIT_LOCK** — locks in profit > 25% when < 2 min remain
 6. **TAKE_PROFIT** — exits at offer price ≥ $0.99
-7. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry after 60s minimum hold
+
+**Trailing posterior guard** — suppresses conditions 4-9 only (never blocks hard circuit breakers). Holds while `posterior > entry_posterior - tolerance` where tolerance = 2–5pp scaled by profitability; tightens to 3pp when losing > 10%.
+
+**Soft exits (60s minimum hold gate):**
+7. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry
 8. **MOMENTUM_REVERSAL** — CVD flipped against position while losing and < 8 min remain
 9. **PROBABILITY_DECAY** — posterior fell > 8pp in one cycle AND CVD reversed
 10. **TIME_DECAY** — losing position < 2 min to expiry (held if posterior > 60%)
@@ -206,7 +213,7 @@ python main.py --reset
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `LOOP_INTERVAL_SEC` | 5 | Main loop cadence |
+| `LOOP_INTERVAL_SEC` | 3 | Main loop cadence (3s for faster reversal detection) |
 | `EARLY_WINDOW_GUARD_MIN` | 7.5 | Block non-monster entries in first 7.5 min of window |
 | `MIN_TRADE_USD` | 5.75 | Minimum trade notional (Polymarket CLOB ~$5 min) |
 | `MAX_TRADE_USD` | 50.00 | Maximum trade notional |
@@ -214,8 +221,9 @@ python main.py --reset
 | `STREAK_HALT_AT` | 5 | Loss streak halt threshold |
 | `MIN_SCORE_NORMAL` | 2.5 | Required signed score (normal regime) |
 | `REQUIRED_EDGE_NORMAL` | 0.035 | Required edge (normal ATR regime) |
-| `MAX_DRAWDOWN_PCT` | 0.15 | Forced exit at -15% unrealized (posterior-gated) |
-| `FORCED_LATE_LOSS_PCT` | 0.15 | Late-exit loss threshold (< 5 min remaining) |
+| `HARD_STOP_PCT` | 0.25 | **Unconditional** circuit breaker at -25% — no posterior gate |
+| `MAX_DRAWDOWN_PCT` | 0.12 | Soft posterior-gated drawdown threshold |
+| `FORCED_LATE_LOSS_PCT` | 0.10 | Late-exit loss threshold (< 5 min remaining) |
 | `FORCED_PROFIT_PCT` | 0.25 | Profit-lock threshold near expiry |
 | `TAKE_PROFIT_PRICE` | 0.99 | Take profit offer price |
 | `STOP_LOSS_DELTA` | 7.0 | Score reversal required for ALPHA_DECAY exit |

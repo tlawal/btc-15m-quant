@@ -1552,11 +1552,12 @@ class Engine:
         # Clamp to Polymarket valid price range [0.01, 0.99]
         exit_bid = max(0.01, min(0.99, exit_bid))
         exit_px_gtc = max(0.01, min(0.99, exit_px_gtc))
-        if reason in ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT"):
+        _fok_reasons = ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT", "HARD_STOP")
+        if reason in _fok_reasons:
             order_id = await self.pm.limit_sell(pos.token_id, exit_bid, pos.size, order_type="FOK")
         else:
             order_id = await self.pm.limit_sell(pos.token_id, exit_px_gtc, pos.size, order_type="GTC")
-        exit_px = exit_bid if reason in ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT") else exit_px_gtc
+        exit_px = exit_bid if reason in _fok_reasons else exit_px_gtc
 
         if not order_id:
             log.error(f"Exit order failed ({reason})")
