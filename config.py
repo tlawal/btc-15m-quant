@@ -68,7 +68,7 @@ class Config:
     BLIND_ENTRY_SCORE          = 7.0      # legacy; use min_score_* in practice
     MONSTER_SCORE              = 8.0
     MONSTER_POSTERIOR          = 0.90
-    STOP_LOSS_DELTA            = 4.0
+    STOP_LOSS_DELTA            = 7.0
 
     # ── Exit parameters ───────────────────────────────────────────────────────
     TAKE_PROFIT_PRICE          = 0.97

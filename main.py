@@ -1305,6 +1305,7 @@ class Engine:
         prev_post = self.state.last_posterior_up if pos.side == "YES" else self.state.last_posterior_down
         curr_post = sig.posterior_final_up if pos.side == "YES" else sig.posterior_final_down
 
+        hold_secs = float(int(time.time()) - (pos.placed_at_ts or int(time.time())))
         reason = evaluate_exit(
             held_side         = pos.side,
             entry_price       = entry_px,
@@ -1316,6 +1317,7 @@ class Engine:
             cvd_delta         = cvd_delta,
             posterior         = curr_post,
             prev_posterior    = prev_post,
+            hold_seconds      = hold_secs,
         )
         if not reason:
             return False

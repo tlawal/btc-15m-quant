@@ -21,6 +21,7 @@ def evaluate_exit(
     cvd_delta:        float = 0.0,
     posterior:        Optional[float] = None,
     prev_posterior:   Optional[float] = None,
+    hold_seconds:     float = 999.0,
 ) -> Optional[str]:
     """
     Returns exit reason string or None.
@@ -57,11 +58,13 @@ def evaluate_exit(
         return "TAKE_PROFIT"
 
     # 6. Alpha decay (score reversed significantly vs entry)
-    score_delta = signed_score - entry_score
-    if held_side == "YES" and score_delta < -Config.STOP_LOSS_DELTA:
-        return "ALPHA_DECAY"
-    if held_side == "NO" and score_delta > Config.STOP_LOSS_DELTA:
-        return "ALPHA_DECAY"
+    # Require minimum 30s hold to avoid firing on EMA lag immediately post-fill
+    if hold_seconds >= 30.0:
+        score_delta = signed_score - entry_score
+        if held_side == "YES" and score_delta < -Config.STOP_LOSS_DELTA:
+            return "ALPHA_DECAY"
+        if held_side == "NO" and score_delta > Config.STOP_LOSS_DELTA:
+            return "ALPHA_DECAY"
 
     # 7. Momentum reversal — CVD flipped against position
     if held_side == "YES" and cvd_delta < -0.5 and unrealized_pct < 0 and minutes_remaining < 8.0:
