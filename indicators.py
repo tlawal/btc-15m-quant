@@ -146,12 +146,16 @@ def compute_local_indicators(
     res.vwma15 = ( (df1['close'] * df1['volume']).rolling(window=15).sum() / df1['volume'].rolling(window=15).sum() ).iloc[-1]
 
     # --- Slopes ---
-    # OBV Slope (last 5 mins)
-    if len(obv) >= 5:
+    # OBV Slope (last 10 mins — 5 was too noisy for a ±2.5 weighted signal)
+    if len(obv) >= 10:
+        res.obv_slope = obv.iloc[-1] - obv.iloc[-10]
+    elif len(obv) >= 5:
         res.obv_slope = obv.iloc[-1] - obv.iloc[-5]
 
     # Price Slope — use 1m data (same timeframe as OBV) for apples-to-apples divergence
-    if len(df1) >= 5:
+    if len(df1) >= 10:
+        res.price_slope = df1['close'].iloc[-1] - df1['close'].iloc[-10]
+    elif len(df1) >= 5:
         res.price_slope = df1['close'].iloc[-1] - df1['close'].iloc[-5]
 
     return res

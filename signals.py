@@ -818,9 +818,9 @@ def compute_signals(
 
         edge_prob = model_p - mkt_p
         misprice_score = 0.0
-        if abs(edge_prob) > 0.10:
+        if abs(edge_prob) > 0.08:
             misprice_score = 1.5 * (1.0 if edge_prob > 0 else -1.0)
-        elif abs(edge_prob) > 0.05:
+        elif abs(edge_prob) > 0.02:  # was 0.05 — calibrated for old flat 2% fee; real fee is ~0.09% at extremes
             misprice_score = 0.5 * (1.0 if edge_prob > 0 else -1.0)
 
         res.misprice_score = misprice_score
@@ -844,13 +844,20 @@ def compute_signals(
         res.posterior_adj_down = 1.0 - adj_up
 
     # ── Edge computation (fee-adjusted) ───────────────────────────────────────
-    fee_rate = 0.02
+    # Polymarket fee curve: fee_per_share = 0.0625 × p × (1-p)
+    # Max fee ~1.56% at p=0.50; near-zero at extremes (e.g. p=0.985 → ~0.09%).
+    # Crypto markets get a 20% maker rebate → effective taker fee = 0.0625 × p × (1-p).
+    # This replaces the old flat 2% which massively overstated fees on extreme-priced contracts.
+    def _pm_fee(p: float) -> float:
+        """Polymarket taker fee per share at price p."""
+        return 0.0625 * p * (1.0 - p)
+
     if res.posterior_final_up is not None and yes_ask is not None:
-        ev_win_up = 1.0 - fee_rate * (1.0 - yes_ask)
-        res.edge_up = (res.posterior_final_up * ev_win_up) - yes_ask
+        fee_up = _pm_fee(yes_ask)
+        res.edge_up = (res.posterior_final_up * (1.0 - fee_up)) - yes_ask
     if res.posterior_final_down is not None and no_ask is not None:
-        ev_win_down = 1.0 - fee_rate * (1.0 - no_ask)
-        res.edge_down = (res.posterior_final_down * ev_win_down) - no_ask
+        fee_down = _pm_fee(no_ask)
+        res.edge_down = (res.posterior_final_down * (1.0 - fee_down)) - no_ask
 
     if res.direction == "UP":
         res.target_side = "YES"
