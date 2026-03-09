@@ -189,6 +189,15 @@ async def clear_logs():
     open(log_path, "w").close()
     return {"status": "cleared", "path": log_path}
 
+@app.post("/api/db/reset")
+async def reset_db():
+    db_path = "/data/state.db" if os.path.isdir("/data") else "state.db"
+    removed = False
+    if os.path.exists(db_path):
+        os.remove(db_path)
+        removed = True
+    return {"status": "reset", "path": db_path, "removed": removed}
+
 @app.get("/api/logs")
 async def get_logs(limit: int = 240):
     log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
