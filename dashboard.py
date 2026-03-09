@@ -85,6 +85,7 @@ async def debug_balance():
         "private_key_set": bool(Config.POLYMARKET_PRIVATE_KEY),
         "can_trade": engine.pm.can_trade if engine and engine.pm else None,
         "trading_halted": engine.state.trading_halted if engine and engine.state else None,
+        "kill_switch_active": Config.KILL_SWITCH,
         "last_cycle_error": getattr(engine, "last_cycle_error", None),
         "db_url": Config.DATABASE_URL,
         "db_engine_url": str(engine.state_mgr.engine.url) if engine and engine.state_mgr else "N/A",
@@ -193,9 +194,10 @@ async def resume_trading(password: str = ""):
         return JSONResponse({"ok": False, "error": "engine not ready"}, status_code=503)
     engine.state.trading_halted = False
     engine.state.loss_streak = 0
+    Config.KILL_SWITCH = False  # also clear in-memory kill switch
     await engine.state_mgr.save(engine.state)
-    log.info("MANUAL RESUME: trading_halted cleared via /api/resume")
-    return {"ok": True, "message": "Trading resumed — halted=False, loss_streak=0"}
+    log.info("MANUAL RESUME: trading_halted + KILL_SWITCH cleared via /api/resume")
+    return {"ok": True, "message": "Trading resumed — halted=False, loss_streak=0, kill_switch=False"}
 
 @app.post("/api/logs/clear")
 async def clear_logs():
@@ -285,12 +287,15 @@ async def kill_switch(request: Request):
         data = await request.json()
         pwd = data.get("password")
         from config import Config
-        if pwd == Config.KILL_SWITCH_PASSWORD:
-            Config.KILL_SWITCH = True
-            log.warning("KILL SWITCH ACTIVATED VIA DASHBOARD")
-            return {"status": "success", "message": "Kill switch activated"}
-        else:
+        if pwd != Config.KILL_SWITCH_PASSWORD:
             return JSONResponse({"status": "error", "message": "Invalid password"}, status_code=403)
+        Config.KILL_SWITCH = True
+        # Also set trading_halted so the UI halt banner appears immediately
+        if engine and engine.state:
+            engine.state.trading_halted = True
+            await engine.state_mgr.save(engine.state)
+        log.warning("KILL SWITCH ACTIVATED VIA DASHBOARD")
+        return {"status": "success", "message": "Kill switch activated — trading halted"}
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
 

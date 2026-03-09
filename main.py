@@ -815,8 +815,8 @@ class Engine:
         if self.state.session_start_balance and self.state.session_start_balance > 0:
             session_drawdown = (self.state.session_start_balance - balance) / self.state.session_start_balance
         
-        # Resume if conditions cleared
-        if self.state.trading_halted and not (self.state.loss_streak >= Config.STREAK_HALT_AT or session_drawdown > 0.30):
+        # Resume if conditions cleared — but NOT if kill switch is active (manual override)
+        if self.state.trading_halted and not Config.KILL_SWITCH and not (self.state.loss_streak >= Config.STREAK_HALT_AT or session_drawdown > 0.30):
             self.state.trading_halted = False
             log.info("Trading resumed: halt conditions no longer met")
             await send_telegram(
