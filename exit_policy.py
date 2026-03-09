@@ -21,6 +21,7 @@ def evaluate_exit(
     cvd_delta:        float = 0.0,
     posterior:        Optional[float] = None,
     prev_posterior:   Optional[float] = None,
+    entry_posterior:  Optional[float] = None,
     hold_seconds:     float = 999.0,
 ) -> Optional[str]:
     """
@@ -31,6 +32,10 @@ def evaluate_exit(
         return None
 
     unrealized_pct = (current_price - entry_price) / entry_price
+
+    # Trailing logic: hold while posterior above entry minus 0.05
+    if posterior is not None and entry_posterior is not None and posterior > entry_posterior - 0.05:
+        return None
 
     # 1. Forced drawdown
     if unrealized_pct < -Config.MAX_DRAWDOWN_PCT:
@@ -72,15 +77,16 @@ def evaluate_exit(
     if held_side == "NO" and cvd_delta > 0.5 and unrealized_pct < 0 and minutes_remaining < 8.0:
         return "MOMENTUM_REVERSAL"
 
-    # 8. Probability decay — posterior declining while losing
+    # 8. Probability decay — posterior declining while losing AND cvd reverses
     if posterior is not None and prev_posterior is not None:
         post_decline = prev_posterior - posterior
-        if post_decline > 0.08 and unrealized_pct < -0.03:
+        cvd_reversal = (held_side == "YES" and cvd_delta < -0.5) or (held_side == "NO" and cvd_delta > 0.5)
+        if post_decline > 0.08 and cvd_reversal:
             return "PROBABILITY_DECAY"
 
     # 9. Time-decay exit — only exit LOSING positions near expiry.
     # Winning positions should hold to settlement for max payout ($1.00).
-    if minutes_remaining < 2.0 and unrealized_pct < -0.02:
+    if minutes_remaining < 3.0 and unrealized_pct < -0.02:
         return "TIME_DECAY"
 
     return None

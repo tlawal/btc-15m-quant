@@ -936,8 +936,15 @@ function updateGates(gates) {
 
 // ── Main UI update ───────────────────────────────────────────────────
 function updateUI() {
-    fetch('/api/metrics').then(r=>r.json()).then(d => {
+    Promise.all([
+        fetch('/api/metrics?ts=' + Date.now()),
+        fetch('/api/debug?ts=' + Date.now())
+    ]).then(([r1, r2]) => Promise.all([r1.json(), r2.json()])).then(([d, debug]) => {
         if (d.status==='loading') return;
+        // Override wallet balance with live data from debug
+        if (debug.live_wallet_usdc !== undefined) {
+            d.wallet_usdc = debug.live_wallet_usdc;
+        }
         const sig  = d.signal || {};
         const perf = d.performance_metrics || d.perf_db || {};
         const lats = d.latencies || {};
@@ -1379,7 +1386,7 @@ fetch('/health').then(r=>r.json()).then(d=>{if(d.build)$('build-ver').innerText=
 updateUI();
 updatePlotlyCharts();
 updateReviewPanel();
-setInterval(updateUI, 2000);
+setInterval(updateUI, 5000);
 setInterval(updatePlotlyCharts, 30000);
 setInterval(updateReviewPanel, 300000);
 tickCountdown();

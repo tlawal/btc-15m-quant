@@ -89,7 +89,7 @@ class Config:
     STREAK_HALVE               = True     # halve size after 2 consecutive losses
     MIN_TRADE_USD              = 5.75    # Polymarket CLOB minimum is ~$5
     MAX_TRADES_PER_WINDOW      = 5
-    STREAK_HALT_AT             = 3        # halt trading after N consecutive losses
+    STREAK_HALT_AT             = 5        # halt trading after N consecutive losses
 
     # ── BB Squeeze gate thresholds (regime-adaptive) ──────────────────────────
     BB_SQUEEZE_LOW             = 0.0015   # low-vol regime (ATR < 80)

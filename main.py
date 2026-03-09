@@ -353,6 +353,7 @@ class Engine:
             # Phase 4: Reset latencies on new window to clear stale metrics
             self.state.latencies             = {}
             self.state.trades_this_window   = 0
+            self.state.window_trade_count  = 0
             self.state.locked_strike_price  = None
             self.state.strike_source        = None
             self.state.strike_window_start  = win_start
@@ -741,9 +742,16 @@ class Engine:
 
         # ── Entry handling ─────────────────────────────────────────────────────
         if not exit_executed and not self.state.trading_halted:
-            await self._handle_entry(
-                sig, ob, market_info, min_rem, btc_price, balance, win_start=win_start
-            )
+            if self.state.window_trade_count >= 1:
+                # Skip entry to prevent simultaneous entries in window
+                pass
+            else:
+                prev_side = self.state.held_position.side
+                await self._handle_entry(
+                    sig, ob, market_info, min_rem, btc_price, balance, win_start=win_start
+                )
+                if self.state.held_position.side and not prev_side:  # entry made
+                    self.state.window_trade_count += 1
 
         # ── No-trade alert ────────────────────────────────────────────────────
         if self.state.held_position.side:
@@ -759,9 +767,20 @@ class Engine:
                 )
 
         # ── Halt check ────────────────────────────────────────────────────────
-        if self.state.loss_streak >= Config.STREAK_HALT_AT and not self.state.trading_halted:
+        session_drawdown = 0.0
+        if self.state.session_start_balance and self.state.session_start_balance > 0:
+            session_drawdown = (self.state.session_start_balance - balance) / self.state.session_start_balance
+        
+        if (self.state.loss_streak >= Config.STREAK_HALT_AT or session_drawdown > 0.30) and not self.state.trading_halted:
+            # Pre-halt alert
+            await send_telegram(
+                self.feeds.session,
+                f"⚠️ PRE-HALT WARNING: loss_streak={self.state.loss_streak}, session_drawdown={session_drawdown*100:.1f}% — halting after this cycle.",
+                tier=AlertTier.CRITICAL
+            )
+            
             self.state.trading_halted = True
-            log.error(f"TRADING HALTED: {self.state.loss_streak} consecutive losses")
+            log.error(f"TRADING HALTED: loss_streak={self.state.loss_streak}, session_drawdown={session_drawdown*100:.1f}%")
             await send_telegram(
                 self.feeds.session,
                 fmt_halt(self.state.loss_streak, balance),
@@ -1367,6 +1386,7 @@ class Engine:
             cvd_delta         = cvd_delta,
             posterior         = curr_post,
             prev_posterior    = prev_post,
+            entry_posterior   = pos.entry_posterior,
             hold_seconds      = hold_secs,
         )
         if not reason:
@@ -1596,6 +1616,7 @@ class Engine:
                 size               = shares,
                 size_usd           = position_usd,
                 entry_signed_score = sig.signed_score,
+                entry_posterior    = posterior,
                 condition_id       = market_info.condition_id,
                 order_id           = None,
                 is_pending         = False,
@@ -1646,6 +1667,7 @@ class Engine:
             size               = shares,
             size_usd           = position_usd,
             entry_signed_score = sig.signed_score,
+            entry_posterior    = posterior,
             condition_id       = market_info.condition_id,
             order_id           = order_id,
             is_pending         = True,

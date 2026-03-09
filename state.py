@@ -44,6 +44,7 @@ class HeldPosition:
     placed_at_ts: Optional[int]     = None   # when order was placed
     exit_reason: Optional[str]      = None   # for tracking why an exit was placed
     market_expiry: Optional[int]    = None   # expiry ts of the market this position is on
+    entry_posterior: Optional[float] = None  # posterior at entry for trailing
 
 
 @dataclass
@@ -74,6 +75,7 @@ class EngineState:
     last_condition_id: Optional[str]      = None
     last_market_expiry: Optional[int]     = None
     trades_this_window: int               = 0
+    window_trade_count: int               = 0
 
     # ── Strike locking (FIX #2) ───────────────────────────────────────────────
     locked_strike_price: Optional[float]  = None
@@ -281,6 +283,7 @@ class StateManager:
             "last_condition_id":      state.last_condition_id,
             "last_market_expiry":     state.last_market_expiry,
             "trades_this_window":     state.trades_this_window,
+            "window_trade_count":     state.window_trade_count,
             "locked_strike_price":    state.locked_strike_price,
             "strike_source":          state.strike_source,
             "strike_window_start":    state.strike_window_start,
