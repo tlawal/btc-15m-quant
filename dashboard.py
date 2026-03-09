@@ -476,7 +476,30 @@ async def run_dashboard(engine_instance, port=8000):
     global engine
     engine = engine_instance
     import uvicorn
-    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="info", log_config=None)
+    # log_config=None lets uvicorn reset the root logger, swallowing engine/signals logs.
+    # Instead pass a minimal config that keeps uvicorn's access log but leaves all other
+    # loggers (engine, signals, sizing, etc.) owned by our setup_logging() basicConfig.
+    _log_config = {
+        "version": 1,
+        "disable_existing_loggers": False,  # critical — preserves engine/signals loggers
+        "formatters": {
+            "default": {
+                "fmt": "%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+                "datefmt": "%Y-%m-%dT%H:%M:%S",
+            },
+        },
+        "handlers": {
+            "default": {
+                "class": "logging.StreamHandler",
+                "stream": "ext://sys.stdout",
+            },
+        },
+        "loggers": {
+            "uvicorn.error":  {"handlers": ["default"], "level": "INFO", "propagate": False},
+            "uvicorn.access": {"handlers": ["default"], "level": "WARNING", "propagate": False},
+        },
+    }
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_config=_log_config)
     server = uvicorn.Server(config)
     
     # We must run `serve` as a task, but await it so it occupies this background task
