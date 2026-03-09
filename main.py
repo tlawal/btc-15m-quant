@@ -68,6 +68,7 @@ class Engine:
         self.optimizer = SignalOptimizer(self.state)
         self.attributor = FeatureAttributor(self.state_mgr)
         self._last_sig = None # Phase 6: Store signal for trade logging
+        self._last_early_claim_window = 0  # throttle: one early-claim attempt per window
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -379,6 +380,25 @@ class Engine:
         self.state.last_window_start_sec = win_start
         # Dashboard visibility: show unclaimed positions every cycle
         self.state.unclaimed_usdc = await self.pm.log_unclaimed_positions()
+
+        # ── Early claim: if unclaimed gains exist, attempt once 2–4 min into window ──
+        # Avoids waiting a full 15 min. Throttled to one attempt per window.
+        mins_into_window = (now_ts - win_start) / 60.0
+        if (
+            self.state.unclaimed_usdc > 0
+            and 2.0 <= mins_into_window <= 4.0
+            and self._last_early_claim_window != win_start
+        ):
+            self._last_early_claim_window = win_start
+            log.info(f"EARLY_CLAIM: ${self.state.unclaimed_usdc:.2f} unclaimed, {mins_into_window:.1f}min into window — attempting claim")
+            try:
+                claimed = await self.pm.redeem_winning_positions()
+                if claimed > 0:
+                    log.info(f"✅ EARLY_CLAIM SUCCESS: ${claimed:.2f}")
+                    self._record_redemption(claimed)
+                    self.state.unclaimed_usdc = 0.0
+            except Exception as _eclaim_err:
+                log.warning(f"EARLY_CLAIM failed: {_eclaim_err}")
         
         # Dashboard visibility: recent trades from Data API
         self.api_trade_history = await self.pm.get_trade_history()
