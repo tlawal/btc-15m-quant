@@ -18,10 +18,94 @@ class SignalOptimizer:
         self._kelly_multiplier = 1.0
         self._pnl_history = []
         self._last_optimize_ts = 0
-        
+
         # Paths
         self.features_path = "/data/trade_features.jsonl" if os.path.exists("/data") else "trade_features.jsonl"
         self.model_path = "/data/optimizer_model.joblib" if os.path.exists("/data") else "optimizer_model.joblib"
+        self.exit_log_path = "/data/exit_outcomes.jsonl" if os.path.exists("/data") else "exit_outcomes.jsonl"
+
+    # ── Phase A: Exit outcome logging ─────────────────────────────────────────
+
+    def log_exit_attempt(
+        self,
+        *,
+        exit_reason: str,
+        held_side: str,
+        entry_price: float,
+        current_price: float,
+        entry_posterior: float,
+        current_posterior: float,
+        minutes_remaining: float,
+        hold_seconds: float,
+        signed_score: float,
+        entry_score: float,
+        market_slug: str = "",
+        window_ts: int = 0,
+    ) -> str:
+        """
+        Log an exit event to exit_outcomes.jsonl.
+        Returns the record ID so the caller can fill in settlement outcome later.
+        The 'settlement_itm' field is written as None and filled at window roll.
+        """
+        unrealized_pct = (current_price - entry_price) / entry_price if entry_price > 0 else 0.0
+        record_id = f"{int(time.time())}_{exit_reason}"
+        record = {
+            "id":                record_id,
+            "ts":                int(time.time()),
+            "window_ts":         window_ts,
+            "market_slug":       market_slug,
+            "exit_reason":       exit_reason,
+            "held_side":         held_side,
+            "entry_price":       round(entry_price, 4),
+            "exit_price":        round(current_price, 4),
+            "unrealized_pct":    round(unrealized_pct, 4),
+            "entry_posterior":   round(entry_posterior, 4) if entry_posterior is not None else None,
+            "exit_posterior":    round(current_posterior, 4) if current_posterior is not None else None,
+            "minutes_remaining": round(minutes_remaining, 2),
+            "hold_seconds":      round(hold_seconds, 1),
+            "signed_score":      round(signed_score, 3),
+            "entry_score":       round(entry_score, 3),
+            "settlement_itm":    None,  # filled in at window roll
+        }
+        try:
+            with open(self.exit_log_path, "a") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception as e:
+            log.warning(f"log_exit_attempt write error: {e}")
+        return record_id
+
+    def fill_exit_settlement(self, window_ts: int, settled_itm: bool):
+        """
+        After window resolution, go through exit_outcomes.jsonl and fill
+        settlement_itm=True/False for all records with matching window_ts
+        that still have settlement_itm=None.
+        Rewrites the file in place.
+        """
+        if not os.path.exists(self.exit_log_path):
+            return
+        try:
+            records = []
+            updated = 0
+            with open(self.exit_log_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except Exception:
+                        continue
+                    if r.get("window_ts") == window_ts and r.get("settlement_itm") is None:
+                        r["settlement_itm"] = settled_itm
+                        updated += 1
+                    records.append(r)
+            if updated:
+                with open(self.exit_log_path, "w") as f:
+                    for r in records:
+                        f.write(json.dumps(r) + "\n")
+                log.info(f"fill_exit_settlement: updated {updated} records for window_ts={window_ts} itm={settled_itm}")
+        except Exception as e:
+            log.warning(f"fill_exit_settlement error: {e}")
 
     def log_trade(self, sig, outcome: str):
         """

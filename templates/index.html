@@ -1023,10 +1023,10 @@ function updateUI() {
         $('halt-banner').style.display = halted ? '' : 'none';
 
         // ── PnL header ──
-        const pnlFrac = d.performance?.total_pnl;
-        if (pnlFrac != null && d.performance?.closed_trades > 0) {
-            $('cum-pnl').innerText = (pnlFrac>=0?'+':'')+fmtPct(pnlFrac);
-            $('cum-pnl').className = `banner-val ${pnlFrac>=0?'text-green-400':'text-red-400'}`;
+        const pnlUsd = d.performance?.total_pnl_usd;
+        if (pnlUsd != null && d.performance?.closed_trades > 0) {
+            $('cum-pnl').innerText = (pnlUsd>=0?'+':'-')+'$'+(Math.abs(pnlUsd)).toFixed(2);
+            $('cum-pnl').className = `banner-val ${pnlUsd>=0?'text-green-400':'text-red-400'}`;
         }
 
         // ── Regime badge ──

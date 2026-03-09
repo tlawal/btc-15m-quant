@@ -350,6 +350,19 @@ class Engine:
             if redeemed_usd > 0:
                 log.info(f"✅ AUTO-CLAIMED ${redeemed_usd:.2f} at window start!")
                 self._record_redemption(redeemed_usd)
+
+            # Phase A: fill settlement outcome for previous window's exit records
+            # prev_win_start is the window that just expired
+            prev_win_start = win_start - Config.WINDOW_SEC
+            # Determine if previous window's exits landed ITM:
+            # redeemed_usd > 0 means we had a winning position — exit was ITM for that side.
+            # For positions exited early, settlement_itm reflects whether holding would have won.
+            # Approximation: if we redeemed anything on this window roll, the side we held was correct.
+            prev_window_won = redeemed_usd > 0
+            try:
+                self.optimizer.fill_exit_settlement(prev_win_start, prev_window_won)
+            except Exception as _fes_err:
+                log.warning(f"fill_exit_settlement error: {_fes_err}")
             
             # Phase 4: Reset latencies on new window to clear stale metrics
             self.state.latencies             = {}
@@ -1288,9 +1301,15 @@ class Engine:
         wins = [t for t in closed if t.outcome == "WIN"]
         losses = [t for t in closed if t.outcome == "LOSS"]
         win_rate = len(wins) / len(closed) if closed else 0.0
-        pnl_list = [t.pnl for t in closed if t.pnl is not None]
+        pnl_list = [max(-1.0, min(5.0, t.pnl)) for t in closed if t.pnl is not None]
         avg_pnl = sum(pnl_list) / len(pnl_list) if pnl_list else 0.0
         total_pnl = sum(pnl_list)
+        # USD-based total: more intuitive than fractional sum
+        total_pnl_usd = sum(
+            t.pnl * (t.entry_price or 0.0) * (t.size or 0.0)
+            for t in closed
+            if t.pnl is not None and t.entry_price and t.size
+        )
         # Sharpe: mean(pnl) / std(pnl) * sqrt(N)  (annualization not meaningful for 15m)
         import statistics
         sharpe = 0.0
@@ -1312,6 +1331,7 @@ class Engine:
             "avg_trade": avg_pnl if closed else 0.0,
             "avg_pnl": avg_pnl,
             "total_pnl": total_pnl,
+            "total_pnl_usd": total_pnl_usd,
             "profit_factor": profit_factor,
             "sharpe": sharpe,
             "loss_streak": self.state.loss_streak,
@@ -1433,6 +1453,25 @@ class Engine:
         )
         if not reason:
             return False
+
+        # Phase A: log exit attempt for counterfactual analysis
+        try:
+            self.optimizer.log_exit_attempt(
+                exit_reason=reason,
+                held_side=pos.side,
+                entry_price=entry_px,
+                current_price=current_px or entry_px,
+                entry_posterior=pos.entry_posterior,
+                current_posterior=curr_post,
+                minutes_remaining=min_rem,
+                hold_seconds=hold_secs,
+                signed_score=sig.signed_score,
+                entry_score=pos.entry_signed_score or 0.0,
+                market_slug=getattr(self.state, "last_market_slug", "") or "",
+                window_ts=int(pos.placed_at_ts or 0),
+            )
+        except Exception as _ex_log_err:
+            log.warning(f"exit log error: {_ex_log_err}")
 
         # Paper-trade mode: apply exits locally without touching Polymarket.
         if Config.PAPER_TRADE_ENABLED:

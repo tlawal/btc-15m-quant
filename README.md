@@ -8,22 +8,22 @@ Pure async Python — `asyncio` + `aiohttp` + `py-clob-client` + SQLite/PostgreS
 ## Architecture
 
 ```
-main.py          — Async engine loop (15s cadence), orchestration
-signals.py       — Bayesian posterior, belief-vol, CVD/OFI/MFI scoring
-exit_policy.py   — Exit evaluation: drawdown, alpha decay, momentum reversal
-sizing.py        — Quarter-Kelly sizing with streak de-risking + depth cap
+main.py              — Async engine loop (5s cadence), orchestration
+signals.py           — Bayesian posterior, belief-vol, CVD/OFI/MFI scoring
+exit_policy.py       — Exit evaluation: 9 conditions (drawdown, alpha decay, momentum, time-decay)
+sizing.py            — Quarter-Kelly sizing with streak de-risking + depth cap
 polymarket_client.py — CLOB wrapper: limit/FOK orders, cancel/replace, fill tracking
-data_feeds.py    — BTC price, klines, CVD WebSocket, order book feeds
-indicators.py    — Local RSI, ATR, MACD, OBV, MFI computation
-optimizer.py     — Self-learning: signal accuracy tracking, auto-disable, Kelly recal
-inference.py     — LightGBM/RF ML probability overlay
-attribution.py   — Logistic regression feature attribution on closed trades
-reviewer.py      — Nightly Claude AI performance review
-dashboard.py     — FastAPI web dashboard + WebSocket push + REST endpoints
-metrics_exporter.py — Prometheus metrics exporter (port 9090)
-state.py         — Async SQLite/Postgres state manager
-config.py        — All tunable parameters
-utils.py         — Logging, Telegram alerts, formatting
+data_feeds.py        — BTC price, klines, CVD WebSocket, order book feeds
+indicators.py        — Local RSI, ATR, MACD, OBV, MFI computation
+optimizer.py         — Self-learning: signal accuracy, exit outcome logging, Kelly recal
+inference.py         — LightGBM/RF ML probability overlay
+attribution.py       — Logistic regression feature attribution on closed trades
+reviewer.py          — Nightly Claude AI performance review
+dashboard.py         — FastAPI web dashboard + WebSocket push + REST endpoints
+metrics_exporter.py  — Prometheus metrics exporter (port 9090)
+state.py             — Async SQLite/Postgres state manager
+config.py            — All tunable parameters
+utils.py             — Logging, Telegram alerts, formatting
 ```
 
 ---
@@ -32,15 +32,31 @@ utils.py         — Logging, Telegram alerts, formatting
 
 ### Signal Engine
 - **Bayesian posterior blending** — logit-space signal weight (0.7), time-decay curve
-- **Belief-vol sigma_B** — rolling 3-min belief volatility regresses posterior toward 0.5 in high-noise regimes (capped at 1.0)
+- **Belief-vol sigma_B** — rolling 3-min belief volatility regresses posterior toward 0.5 in high-noise regimes (capped at 1.15–1.30)
 - **EMA score smoothing** — `signed_score = 0.6 * raw + 0.4 * prev` to reduce single-cycle noise
 - **Group-max scoring** — 5 signal groups (Trend, Momentum, Flow, Microstructure, New Signals) each contribute only their strongest member; prevents correlated feature inflation; raw score capped at ±8.0
 - **Microstructure signals** — TOB imbalance, CVD velocity, deep OFI (10-level), VPIN proxy
 - **Tier 1 signals** — Whale flow (Polymarket fills ≥$50), spread skew (NO/YES spread ratio), multi-window momentum
 - **Tier 2 signals** — Liquidation cascade (Binance forced orders), funding rate delta
-- **Regime-adaptive thresholds** — min score and required edge scale with 15m ATR (low/normal/high)
-- **Monster signal** — requires BOTH `abs_score >= 8.0 AND posterior >= 0.90`; uses FOK at ask
+- **Regime-adaptive thresholds** — min score and required edge scale with 15m ATR (low/normal/high vol)
+- **Monster signal** — requires BOTH `abs_score >= 8.0 AND posterior >= 0.90`; bypasses early-window guard, uses FOK at ask
+- **Late conviction sniping** — within last 3 min, `posterior >= 0.80` and `distance >= $40` suppresses score gate for near-certain OTM binaries
 - **Negative-edge block** — never sizes a position when model edge < 0, even on monster signals
+- **Early window guard** — blocks non-monster entries for the first 7.5 min of each 15-min window
+
+### Exit Engine (`exit_policy.py`)
+Nine prioritized exit conditions, evaluated every 5 seconds:
+
+1. **Trailing posterior guard** — hold while posterior is within tolerance of entry (±2–5pp depending on profitability); fires before all other conditions
+2. **FORCED_DRAWDOWN** — cuts position if `unrealized < -15%` AND model posterior has also given up (fell >5pp from entry); unconditional beyond -20%
+3. **FORCED_DISTANCE** — exits near expiry when BTC is within $30 of strike and position is losing
+4. **FORCED_PROFIT_LOCK** — locks in profit > 25% when < 2 min remain
+5. **FORCED_LATE_EXIT** — cuts losers > 15% down when < 5 min remain
+6. **TAKE_PROFIT** — exits at offer price ≥ $0.99
+7. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry after 60s minimum hold
+8. **MOMENTUM_REVERSAL** — CVD flipped against position while losing and < 8 min remain
+9. **PROBABILITY_DECAY** — posterior fell > 8pp in one cycle AND CVD reversed
+10. **TIME_DECAY** — losing position < 2 min to expiry (held if posterior > 60%)
 
 ### Execution
 - **Smart entry pricing** — passive `bid+1tick` for GTC, aggressive `ask` for FOK monster signals
@@ -58,17 +74,20 @@ utils.py         — Logging, Telegram alerts, formatting
 - `MAX_TRADE_USD = 50.00` — absolute per-trade cap
 - `MAX_EXPOSURE_USD = 100.00` — blocks new entries if already at exposure limit
 - `MAX_TRADES_PER_HOUR = 8` — rolling 1-hour entry limit
-- `STREAK_HALT_AT = 3` — halts trading after 3 consecutive losses
+- `STREAK_HALT_AT = 5` — halts trading after 5 consecutive losses
 - `DAILY_LOSS_LIMIT_PCT = 10%` — stops if rolling 24h realized loss > 10% of session start balance
+- **Session drawdown halt** — halts if session drawdown exceeds 30%
+- **Manual resume** — `POST /api/resume` with password resets halt, loss streak reset
 - **BTC price sanity** — skips cycle if price outside [$10k, $500k] or indicator diverges > 5%
 - **No-trade alert** — CRITICAL Telegram after 100 consecutive skipped cycles
 
-### Self-Learning
+### Self-Learning (`optimizer.py`)
 - **Feature logging** — every trade's signal features written to `trade_features.jsonl`
 - **RandomForest retrainer** — retriggers after 10+ trades, adjusts score/edge offsets
 - **Signal accuracy tracking** — 7-day rolling directional accuracy per signal
 - **Auto-disable** — signals with < 45% accuracy over 20+ samples are zeroed out
 - **Kelly recalibration** — Kelly multiplier adjusts to Sharpe (0.4x / 0.7x / 1.0x)
+- **Exit outcome logging (Phase A)** — every `evaluate_exit()` call logs to `exit_outcomes.jsonl`: exit reason, unrealized%, posteriors, time remaining, hold duration; filled with settlement outcome at each window roll for counterfactual analysis
 - **Nightly AI review** — Claude `claude-sonnet-4-6` reviews 24h performance at 00:05 UTC, saves to `/data/nightly_review_{date}.md`, sends Telegram summary
 
 ### Dashboard
@@ -76,13 +95,11 @@ utils.py         — Logging, Telegram alerts, formatting
 - WebSocket push every cycle + 2s polling fallback
 - Signal time-series chart (Plotly) — signed score, posterior, CVD, OFI
 - Risk radar chart — regime intensity, gate clearance, score consistency, edge magnitude, streak safety
+- Halt banner with manual resume button (password-protected)
+- Active position panel: entry price, shares held, unrealized PnL, tx link to Polygonscan
+- Trade history table: side, entry/exit price, shares, PnL%, tx link, outcome
 - Nightly AI review panel
-- `/api/metrics` — live engine state; falls back to heartbeat file; returns 503 with `engine_stale: true` if heartbeat > 30s old (engine crashed)
-- `/api/signal-history` — last 240 structured log entries for chart rendering
-- `/api/review` — latest nightly markdown review
-- `/api/logs` — last N structured log entries
-- `/api/debug` — full environment + balance debug
-- `/api/kill` — password-protected kill switch
+- `/api/metrics` — live engine state; falls back to heartbeat file; returns 503 with `engine_stale: true` if heartbeat > 30s old
 
 ---
 
@@ -110,7 +127,7 @@ DATABASE_URL                 — Default: sqlite+aiosqlite:////data/state.db
 LOG_LEVEL                    — Default: INFO
 PAPER_TRADE_ENABLED          — Set "true" for paper trading (no real orders placed)
 KILL_SWITCH                  — Set "true" to halt all entries immediately
-KILL_SWITCH_PASSWORD         — Password for dashboard kill switch button
+KILL_SWITCH_PASSWORD         — Password for dashboard kill/resume buttons
 ```
 
 ### Persistent Volume
@@ -119,7 +136,8 @@ Mount a volume at `/data` to persist:
 - `state.db` — SQLite engine state
 - `heartbeat.json` — last cycle snapshot
 - `structured_logs.json` — structured JSON event log (rotates at 10MB)
-- `trade_features.jsonl` — ML training data
+- `trade_features.jsonl` — ML training data (entry signal features + outcome)
+- `exit_outcomes.jsonl` — exit learning data (Phase A: reason, prices, posteriors, settlement)
 - `nightly_review_{date}.md` — AI review files
 - `optimizer_model.joblib` — trained RandomForest model
 
@@ -135,6 +153,11 @@ Mount a volume at `/data` to persist:
 | `/api/review` | GET | Latest nightly AI review |
 | `/api/logs` | GET | Structured log tail |
 | `/api/debug` | GET | Environment + balance debug |
+| `/api/signal-accuracy` | GET | 7-day rolling accuracy per signal |
+| `/api/attribution` | GET | Feature attribution on closed trades |
+| `/api/regime-performance` | GET | PnL breakdown by ATR regime |
+| `/api/fill-analytics` | GET | Order fill rate and slippage stats |
+| `/api/exit-stats` | GET | Exit reason breakdown + regret rate (Phase A) |
 | `/health` | GET | Build version health check |
 | `/metrics` | GET | Prometheus scrape endpoint (port 9090) |
 
@@ -146,7 +169,8 @@ Mount a volume at `/data` to persist:
 |----------|--------|-------------|
 | `/api/logs/clear` | POST | Truncates `structured_logs.json` (clears `/api/logs` history) |
 | `/api/db/reset` | POST | Deletes `state.db` — wipes all trade history, positions, and state. Bot recreates DB with fresh migrations on next start. Restart the Railway service after calling this. |
-| `/api/kill` | POST | Password-protected kill switch (set `KILL_SWITCH_PASSWORD` env var) |
+| `/api/kill` | POST | Password-protected kill switch |
+| `/api/resume` | POST | Password-protected resume (clears halt + loss streak) |
 
 **Reset procedure (Railway):**
 ```bash
@@ -182,14 +206,21 @@ python main.py --reset
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
+| `LOOP_INTERVAL_SEC` | 5 | Main loop cadence |
+| `EARLY_WINDOW_GUARD_MIN` | 7.5 | Block non-monster entries in first 7.5 min of window |
 | `MIN_TRADE_USD` | 5.75 | Minimum trade notional (Polymarket CLOB ~$5 min) |
 | `MAX_TRADE_USD` | 50.00 | Maximum trade notional |
 | `MAX_EXPOSURE_USD` | 100.00 | Total exposure cap |
-| `STREAK_HALT_AT` | 3 | Loss streak halt threshold |
+| `STREAK_HALT_AT` | 5 | Loss streak halt threshold |
 | `MIN_SCORE_NORMAL` | 2.5 | Required signed score (normal regime) |
-| `REQUIRED_EDGE_NORMAL` | 0.035 | Required edge (normal regime) |
-| `SLIPPAGE_BUFFER_PCT` | 0.008 | Execution haircut on sizing |
-| `LOOP_INTERVAL_SEC` | 15 | Main loop cadence |
-| `BB_SQUEEZE_LOW` | 0.0015 | BB squeeze threshold (low-vol regime) |
-| `BB_SQUEEZE_NORMAL` | 0.0030 | BB squeeze threshold (normal regime) |
-| `BB_SQUEEZE_HIGH` | 0.0050 | BB squeeze threshold (high-vol regime) |
+| `REQUIRED_EDGE_NORMAL` | 0.035 | Required edge (normal ATR regime) |
+| `MAX_DRAWDOWN_PCT` | 0.15 | Forced exit at -15% unrealized (posterior-gated) |
+| `FORCED_LATE_LOSS_PCT` | 0.15 | Late-exit loss threshold (< 5 min remaining) |
+| `FORCED_PROFIT_PCT` | 0.25 | Profit-lock threshold near expiry |
+| `TAKE_PROFIT_PRICE` | 0.99 | Take profit offer price |
+| `STOP_LOSS_DELTA` | 7.0 | Score reversal required for ALPHA_DECAY exit |
+| `SLIPPAGE_BUFFER_PCT` | 0.008 | Execution haircut on sizing (80bps) |
+| `LATE_CONVICTION_POSTERIOR` | 0.80 | Min posterior for late-window sniping |
+| `LATE_CONVICTION_DISTANCE` | 40.0 | Min BTC distance from strike for late sniping |
+| `BB_SQUEEZE_NORMAL` | 0.0030 | BB squeeze gate threshold (normal regime) |
+| `DAILY_LOSS_LIMIT_PCT` | 0.10 | Daily loss limit as fraction of session start balance |

@@ -511,6 +511,52 @@ async def fill_analytics():
     return result
 
 
+@app.get("/api/exit-stats")
+async def exit_stats():
+    """Phase A: summarize exit_outcomes.jsonl by reason — early exit regret rate."""
+    import json, os
+    path = "/data/exit_outcomes.jsonl" if os.path.exists("/data") else "exit_outcomes.jsonl"
+    if not os.path.exists(path):
+        return {"message": "No exit records yet", "records": 0}
+    records = []
+    try:
+        with open(path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        records.append(json.loads(line))
+                    except Exception:
+                        pass
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+    by_reason: dict = {}
+    for r in records:
+        reason = r.get("exit_reason", "UNKNOWN")
+        if reason not in by_reason:
+            by_reason[reason] = {"count": 0, "settled": 0, "regret": 0, "unrealized_pct_sum": 0.0}
+        bucket = by_reason[reason]
+        bucket["count"] += 1
+        bucket["unrealized_pct_sum"] += r.get("unrealized_pct", 0.0)
+        if r.get("settlement_itm") is not None:
+            bucket["settled"] += 1
+            # "regret" = we exited but it settled ITM (we could have held for profit)
+            if r["settlement_itm"] and r.get("unrealized_pct", 0) < 0:
+                bucket["regret"] += 1
+
+    summary = {}
+    for reason, b in by_reason.items():
+        summary[reason] = {
+            "count": b["count"],
+            "avg_unrealized_pct": round(b["unrealized_pct_sum"] / b["count"] * 100, 2) if b["count"] else 0,
+            "settled_count": b["settled"],
+            "regret_count": b["regret"],
+            "regret_rate": round(b["regret"] / b["settled"], 3) if b["settled"] else None,
+        }
+    return {"records": len(records), "by_reason": summary}
+
+
 async def run_dashboard(engine_instance, port=8000):
     global engine
     engine = engine_instance
