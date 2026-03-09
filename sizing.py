@@ -30,8 +30,8 @@ def compute_position_size(
     is_monster = monster_signal and posterior >= 0.90
 
     if is_monster:
-        # Scale monster floor: min($6, 90% of balance) — works at any balance level
-        monster_floor = min(6.00, round(balance * 0.90, 2))
+        # Scale monster floor with balance: 40% of balance, clamped to [MIN_TRADE_USD, MAX_TRADE_USD]
+        monster_floor = round(max(Config.MIN_TRADE_USD, min(balance * 0.40, Config.MAX_TRADE_USD)), 2)
         if balance >= Config.MIN_TRADE_USD and monster_floor >= Config.MIN_TRADE_USD:
             log.info(f"MONSTER_FORCE_MIN: forced ${monster_floor:.2f} on 90%+ conviction (balance=${balance:.2f})")
             return monster_floor

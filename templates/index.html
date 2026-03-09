@@ -1132,8 +1132,14 @@ function updateUI() {
         }
         $('pos-entry').innerText = d.entry_price ? d.entry_price.toFixed(3) : '--';
         let cpx='--';
-        if (posSide==='YES' && sig.yes_mid) cpx = sig.yes_mid.toFixed(3);
-        if (posSide==='NO'  && sig.no_mid)  cpx = sig.no_mid.toFixed(3);
+        // Use position's own market price (fetched from pos token_id ob), not current window's ob
+        if (d.pos_current_price && posSide!=='FLAT') {
+            cpx = d.pos_current_price.toFixed(3);
+        } else if (posSide==='YES' && sig.yes_mid) {
+            cpx = sig.yes_mid.toFixed(3);
+        } else if (posSide==='NO' && sig.no_mid) {
+            cpx = sig.no_mid.toFixed(3);
+        }
         $('cur-px').innerText = cpx;
         if (posSide!=='FLAT' && cpx!=='--' && d.entry_price) {
             const pnl=(parseFloat(cpx)-d.entry_price)/d.entry_price;

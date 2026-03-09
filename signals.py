@@ -921,6 +921,19 @@ def compute_signals(
     if _mkt_uncertain and chosen_posterior < 0.90 and not res.monster_signal:
         gates.append(f"market_uncertain_5050=YES{yes_mid:.2f}_NO{no_mid:.2f}")
 
+    # One-sided market gate: only trade when the market has clearly picked a side.
+    # YES >= 0.75 (trade YES) or NO >= 0.75 (trade NO). Prevents entering ambiguous markets.
+    _one_sided = (
+        yes_mid is not None and no_mid is not None
+        and (
+            (res.direction == "UP" and yes_mid >= 0.75) or
+            (res.direction == "DOWN" and no_mid >= 0.75)
+        )
+    )
+    if not _one_sided and not res.monster_signal:
+        side_px = yes_mid if res.direction == "UP" else no_mid
+        gates.append(f"not_one_sided={res.direction}_px={side_px:.2f}_need>=0.75")
+
     # DYNAMIC EDGE + MONSTER OVERRIDE
     market_price = yes_mid if res.direction == "UP" else (no_mid if res.direction == "DOWN" else None)
     best_posterior = max(res.posterior_final_up or 0, res.posterior_final_down or 0)

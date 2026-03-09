@@ -89,6 +89,9 @@ class EngineState:
     trade_history: List[TradeRecord]      = field(default_factory=list)
     open_positions_api: List[Dict[str, Any]] = field(default_factory=list)
 
+    # ── Dashboard: position's own market price (not the current window's ob) ──
+    pos_current_price: Optional[float]    = None
+
     # ── Performance tracking ──────────────────────────────────────────────────
     total_trades: int                     = 0
     total_wins: int                       = 0

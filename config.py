@@ -82,13 +82,13 @@ class Config:
     FORCED_DISTANCE_MAX        = 30.0     # abs(btcPrice - strike) < this triggers late exit
 
     # ── Risk / sizing (FIX #8) ────────────────────────────────────────────────
-    RISK_TIER_50               = 0.25     # ≤ $50   (was 1.0 — the ruin bug)
-    RISK_TIER_100              = 0.25     # $50–100
-    RISK_TIER_200              = 0.20     # $100–200
-    RISK_TIER_OVER             = 0.15     # > $200
+    RISK_TIER_50               = 0.15     # ≤ $50   (was 0.25 — capped at ~50% exposure)
+    RISK_TIER_100              = 0.15     # $50–100
+    RISK_TIER_200              = 0.12     # $100–200
+    RISK_TIER_OVER             = 0.10     # > $200
     STREAK_HALVE               = True     # halve size after 2 consecutive losses
     MIN_TRADE_USD              = 5.75    # Polymarket CLOB minimum is ~$5
-    MAX_TRADES_PER_WINDOW      = 3
+    MAX_TRADES_PER_WINDOW      = 5
     STREAK_HALT_AT             = 3        # halt trading after N consecutive losses
 
     # ── BB Squeeze gate thresholds (regime-adaptive) ──────────────────────────

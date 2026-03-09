@@ -1302,31 +1302,34 @@ class Engine:
         if pos.is_pending:
             return False
 
-        # CRITICAL: If the position is on a DIFFERENT market than the current one
-        # (window rolled), fetch the order book for the position's actual token.
-        # Otherwise ob.yes_mid is from the NEW market, causing phantom drawdowns.
+        # ALWAYS fetch the order book for the position's own token_id.
+        # The passed-in `ob` may be from a different market after window roll.
+        pos_ob = await self.pm.get_order_books(pos.token_id, pos.token_id)
+        if pos_ob:
+            ob = pos_ob
+
+        # Detect if position is on an old (rolled) market
         pos_on_old_market = (
             pos.condition_id is not None
             and market_info is not None
             and pos.condition_id != market_info.condition_id
         )
         if pos_on_old_market:
-            log.info(f"EXIT: Position on old market {pos.condition_id[:16]}... — fetching its order book")
-            pos_ob = await self.pm.get_order_books(pos.token_id, pos.token_id)
-            if pos_ob:
-                ob = pos_ob
+            log.info(f"EXIT: Position on old market {pos.condition_id[:16]}...")
             # After window roll, use remaining time from the OLD market's expiry
             old_expiry = pos.market_expiry
             if old_expiry:
                 min_rem = max(0.0, (old_expiry - time.time()) / 60.0)
-            # If old market already expired (min_rem <= 0), the position will settle
-            # automatically. Don't place an exit order — just let it resolve.
+            # If old market already expired, position will auto-settle at $1.00.
             if min_rem <= 0:
                 log.info(f"EXIT: Old market expired — position will auto-settle at expiry")
                 return False
 
         current_px = ob.yes_mid if pos.side == "YES" else ob.no_mid
         entry_px   = pos.avg_entry_price or pos.entry_price or (current_px or 0)
+
+        # Store position's correct current price for dashboard display
+        self.state.pos_current_price = current_px
 
         # Get previous posterior for decay detection
         prev_post = self.state.last_posterior_up if pos.side == "YES" else self.state.last_posterior_down

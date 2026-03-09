@@ -354,6 +354,7 @@ async def get_metrics():
         "last_market_expiry": getattr(state, "last_market_expiry", None),
         "performance_metrics": getattr(state, "performance_metrics", None) or hb.get("performance") or {},
         "last_tuned_time": getattr(state, "last_tuned_time", 0),
+        "pos_current_price": getattr(state, "pos_current_price", None),
         "open_positions_api": getattr(state, "open_positions_api", []),
         "recent_trades": [
             {

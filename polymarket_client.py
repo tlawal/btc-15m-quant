@@ -776,14 +776,24 @@ class PolymarketClient:
 
                 order_id = await self.market_sell(token_id, size)
                 if order_id:
+                    # Fetch actual fill price from order status instead of using stale currentValue
+                    fill_px = curr_val / size  # fallback to API estimate
+                    await asyncio.sleep(1.0)  # let fill propagate
+                    fill_status = await self.get_order_status(order_id)
+                    if fill_status and fill_status.get("price", 0) > 0:
+                        fill_px = fill_status["price"]
+                        log.info(f"MID-WINDOW EXIT fill price: {fill_px:.4f} (API estimate was {curr_val/size:.4f})")
+
+                    entry_px_per_share = entry_val / size
+                    actual_pnl_usd = (fill_px - entry_px_per_share) * size
                     exits.append({
                         "market_slug": market_slug,
                         "reason": trigger_reason,
                         "order_id": order_id,
                         "size": size,
-                        "entry_price": entry_val / size,
-                        "exit_price": curr_val / size,
-                        "pnl_usd": curr_val - entry_val,
+                        "entry_price": entry_px_per_share,
+                        "exit_price": fill_px,
+                        "pnl_usd": actual_pnl_usd,
                         "condition_id": pos.get("conditionId")
                     })
         
