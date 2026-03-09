@@ -54,8 +54,10 @@ def compute_position_size(
         and posterior >= 0.55
         and balance >= Config.MIN_TRADE_USD
     ):
-        low_bal_floor = min(Config.MIN_TRADE_USD, round(balance * 0.85, 2))
-        if low_bal_floor >= Config.MIN_TRADE_USD:
+        # Use MIN_TRADE_USD directly — the 85% cap created a deadlock at balances
+        # between $5.75 and $6.76 where min(5.75, bal*0.85) < 5.75
+        low_bal_floor = Config.MIN_TRADE_USD
+        if balance >= Config.MIN_TRADE_USD:
             log.info(
                 f"LOW_BAL_FLOOR: forced ${low_bal_floor:.2f} (bal=${balance:.2f} "
                 f"edge={edge:.4f} post={posterior:.3f})"

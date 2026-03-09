@@ -886,12 +886,12 @@ class PolymarketClient:
         Falls back to ask if no bid available.
         """
         if aggressive:
-            return ask
+            # Cap at 0.98 — buying at 0.99+ has <1% edge, negative EV after fees
+            return round(min(ask, 0.98), 2) if ask is not None else None
         if bid is not None and ask is not None:
-            smart_px = round(bid + tick, 4)
-            # Don't exceed the ask — that would be worse than just using the ask
-            return min(smart_px, ask)
-        return ask
+            smart_px = round(bid + tick, 2)
+            return round(min(smart_px, ask, 0.98), 2)
+        return round(min(ask, 0.98), 2) if ask is not None else None
 
     # ── Order execution ───────────────────────────────────────────────────────
 
@@ -903,10 +903,19 @@ class PolymarketClient:
             self._warn_no_creds_once("limit_buy")
             return None
         try:
+            # CLOB requires: maker_amount max 2 decimals, taker_amount max 4 decimals
+            # For BUY: maker_amount = price * size (USDC cost), taker_amount = size (shares)
+            # With 2-decimal prices, integer sizes guarantee clean maker_amounts
+            clean_price = round(price, 2)
+            clean_size = int(size)  # floor to integer — guarantees price*size has ≤2 decimals
+            if clean_size < 1:
+                log.warning(f"limit_buy: size {size} floors to 0 shares at price {clean_price}")
+                return None
+            log.info(f"limit_buy: price={clean_price} size={clean_size} notional=${clean_price * clean_size:.2f} type={order_type}")
             args = OrderArgs(
                 token_id = token_id,
-                price    = round(price, 4),
-                size     = round(size, 2),
+                price    = clean_price,
+                size     = float(clean_size),
                 side     = "BUY",
                 nonce    = nonce,
             )
@@ -933,7 +942,7 @@ class PolymarketClient:
         try:
             args = MarketOrderArgs(
                 token_id = token_id,
-                amount   = amount_usd,
+                amount   = round(amount_usd, 2),
                 side     = "BUY",
                 nonce    = nonce,
             )
@@ -982,10 +991,16 @@ class PolymarketClient:
             self._warn_no_creds_once("limit_sell")
             return None
         try:
+            clean_price = round(price, 2)
+            clean_size = int(size) if size > 1 else round(size, 2)
+            if clean_size < 1 and int(size) == 0:
+                # Selling fractional position — keep as-is, CLOB may accept for sells
+                clean_size = round(size, 2)
+            log.info(f"limit_sell: price={clean_price} size={clean_size} type={order_type}")
             args = OrderArgs(
                 token_id = token_id,
-                price    = round(price, 4),
-                size     = round(size, 2),
+                price    = clean_price,
+                size     = float(clean_size),
                 side     = "SELL",
                 nonce    = nonce,
             )

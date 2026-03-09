@@ -14,6 +14,7 @@ import asyncio
 import aiofiles
 import json
 import logging
+import math
 import os
 import signal
 import sys
@@ -857,8 +858,8 @@ class Engine:
             px_up = ob.yes_ask or 0.99
             px_dn = ob.no_ask or 0.99
             
-            s_up = compute_position_size(posterior=p_up, entry_price=px_up, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, book=ob) or 0.0
-            s_down = compute_position_size(posterior=p_dn, entry_price=px_dn, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, book=ob) or 0.0
+            s_up = compute_position_size(posterior=p_up, entry_price=px_up, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, book=ob, edge=sig.edge_up) or 0.0
+            s_down = compute_position_size(posterior=p_dn, entry_price=px_dn, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, book=ob, edge=sig.edge_down) or 0.0
             sig.sizing = max(s_up, s_down)
         else:
             sig.sizing = self.state.held_position.size_usd or 0.0
@@ -1486,16 +1487,16 @@ class Engine:
             side_name = "YES"
             entry_px  = self.pm.smart_entry_price(ob.yes_bid, ob.yes_ask, aggressive=sig.monster_signal)
             if entry_px is None and ob.yes_mid:
-                entry_px = min(ob.yes_mid + 0.01, 0.99)
-            entry_px  = entry_px or 0.0
+                entry_px = round(min(ob.yes_mid + 0.01, 0.99), 2)
+            entry_px  = round(entry_px or 0.0, 2)
             posterior = sig.posterior_final_up or 0.5
         else:
             token_id  = market_info.no_token_id
             side_name = "NO"
             entry_px  = self.pm.smart_entry_price(ob.no_bid, ob.no_ask, aggressive=sig.monster_signal)
             if entry_px is None and ob.no_mid:
-                entry_px = min(ob.no_mid + 0.01, 0.99)
-            entry_px  = entry_px or 0.0
+                entry_px = round(min(ob.no_mid + 0.01, 0.99), 2)
+            entry_px  = round(entry_px or 0.0, 2)
             posterior = sig.posterior_final_down or 0.5
 
         if entry_px <= 0 or entry_px >= 1.0:
@@ -1523,9 +1524,15 @@ class Engine:
             log.info(f"Position size below minimum (bal={balance:.2f})")
             return
 
-        shares = round(position_usd / entry_px, 2)
+        # Integer shares for CLOB precision (maker_amount must have ≤2 decimals)
+        # Use ceil when sizing is at floor levels to avoid dropping below CLOB minimum
+        raw_shares = position_usd / entry_px
+        shares = math.ceil(raw_shares) if raw_shares < 10 else math.floor(raw_shares)
         if shares < 1:
             return
+        # Cap shares so we don't exceed balance
+        max_shares = math.floor(balance / entry_px) if entry_px > 0 else shares
+        shares = min(shares, max_shares)
 
         # Store kelly fraction used for logging
         self.state.last_kelly_fraction = position_usd / balance if balance > 0 else 0
