@@ -771,6 +771,16 @@ class Engine:
         if self.state.session_start_balance and self.state.session_start_balance > 0:
             session_drawdown = (self.state.session_start_balance - balance) / self.state.session_start_balance
         
+        # Resume if conditions cleared
+        if self.state.trading_halted and not (self.state.loss_streak >= Config.STREAK_HALT_AT or session_drawdown > 0.30):
+            self.state.trading_halted = False
+            log.info("Trading resumed: halt conditions no longer met")
+            await send_telegram(
+                self.feeds.session,
+                "✅ Trading resumed: loss_streak <5 and session_drawdown <=30%.",
+                tier=AlertTier.INFO
+            )
+
         if (self.state.loss_streak >= Config.STREAK_HALT_AT or session_drawdown > 0.30) and not self.state.trading_halted:
             # Pre-halt alert
             await send_telegram(
