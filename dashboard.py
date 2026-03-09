@@ -302,8 +302,15 @@ async def get_metrics():
                 hb = json.load(f)
         except: pass
 
-    # If engine isn't ready yet, return heartbeat file data (never a bare 503)
+    # If engine isn't ready yet, serve heartbeat data — but flag it as stale if
+    # the heartbeat file hasn't been updated in > 30s (engine has crashed).
     if not engine or not engine.state or not getattr(engine, "_running", False):
+        hb_age = time.time() - os.path.getmtime(hb_path) if os.path.exists(hb_path) else 9999
+        if hb_age > 30 and hb:
+            hb["status"] = "crashed"
+            hb["engine_stale"] = True
+            hb["hb_age_sec"] = int(hb_age)
+            return JSONResponse(content=hb, status_code=503)
         hb.setdefault("status", "initializing")
         hb.setdefault("wallet_usdc", hb.get("balance", 0.0))
         # Alias performance → performance_metrics so the JS finds it

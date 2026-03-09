@@ -311,17 +311,23 @@ class Engine:
         except Exception as e:
             log.error(f"Startup redeem failed: {e}")
             
+        _crash_streak = 0
         while self._running:
             t0 = time.monotonic()
             try:
                 await self._cycle()
+                _crash_streak = 0
             except Exception as e:
                 import traceback
                 self.last_cycle_error = traceback.format_exc()
                 log.exception(f"Cycle error: {e}")
+                _crash_streak += 1
+                if _crash_streak >= 5:
+                    log.critical(f"CRASH_LOOP: {_crash_streak} consecutive cycle failures — last: {e}")
             elapsed = time.monotonic() - t0
             sleep   = max(0.0, Config.LOOP_INTERVAL_SEC - elapsed)
             await asyncio.sleep(sleep)
+        log.info(f"Main loop exited (_running=False). Crash streak at exit: {_crash_streak}")
 
     async def _cycle(self):
         start_time_ms = int(time.time() * 1000)

@@ -896,8 +896,10 @@ def compute_signals(
     if res.direction == "NEUTRAL":
         gates.append("neutral_direction")
 
-    # VPIN toxicity gate
-    if vpin_proxy > Config.VPIN_BLOCK_THRESHOLD and res.abs_score < 4.0 and not res.monster_signal:
+    # VPIN toxicity gate — exempts high-conviction signals (posterior ≥ 0.85)
+    # since one-sided order books often accompany genuine directional moves.
+    if (vpin_proxy > Config.VPIN_BLOCK_THRESHOLD and res.abs_score < 6.0
+            and not res.monster_signal and chosen_posterior < 0.85):
         gates.append(f"vpin_toxic={vpin_proxy:.3f}")
 
     # DYNAMIC EDGE + MONSTER OVERRIDE
