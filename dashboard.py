@@ -183,6 +183,20 @@ async def get_review():
     except Exception as e:
         return {"date": None, "content": None, "error": str(e)}
 
+@app.post("/api/resume")
+async def resume_trading(password: str = ""):
+    """Manual override: clear trading_halted and reset loss_streak."""
+    from config import Config
+    if password != Config.KILL_SWITCH_PASSWORD:
+        return JSONResponse({"ok": False, "error": "bad password"}, status_code=403)
+    if not engine or not engine.state:
+        return JSONResponse({"ok": False, "error": "engine not ready"}, status_code=503)
+    engine.state.trading_halted = False
+    engine.state.loss_streak = 0
+    await engine.state_mgr.save(engine.state)
+    log.info("MANUAL RESUME: trading_halted cleared via /api/resume")
+    return {"ok": True, "message": "Trading resumed — halted=False, loss_streak=0"}
+
 @app.post("/api/logs/clear")
 async def clear_logs():
     log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"

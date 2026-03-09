@@ -94,6 +94,7 @@ class Engine:
                 tr.outcome = "WIN"
                 
                 self.state.loss_streak = 0
+                self.state.session_start_balance = None  # force re-record on next cycle so drawdown resets
                 if self.state.total_trades == 0:
                     self.state.total_trades += 1 # Ensure counting if lost
                 self.state.total_wins += 1
@@ -416,8 +417,10 @@ class Engine:
             return
 
         # ── Polymarket context (Phase 4: Latency track) ──────────────────────
+        # Always fetch balance/margin even when halted so session_drawdown is
+        # computed from real wallet data and the resume check can fire correctly.
         with Timer("fetch_polymarket", self.state.latencies):
-            if self.pm.can_trade and not self.state.trading_halted:
+            if self.pm.can_trade:
                 ob, margin, wallet_usdc, positions = await asyncio.gather(
                     self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id),
                     self.pm.get_margin(),
@@ -459,7 +462,7 @@ class Engine:
         # pos_task = asyncio.create_task(self.pm.get_positions())
         # ob, balance, positions = await asyncio.gather(ob_task, bal_task, pos_task)
 
-        if self.pm.can_trade and not self.state.trading_halted:
+        if self.pm.can_trade:
             # Priority: direct on-chain wallet > CLOB margin available > CLOB margin balance
             balance = wallet_usdc
             if balance is None or balance <= 1e-6:
@@ -716,6 +719,7 @@ class Engine:
                 if ex['pnl_usd'] > 0:
                     self.state.total_wins += 1
                     self.state.loss_streak = 0
+                    self.state.session_start_balance = balance  # reset drawdown baseline on win
                 else:
                     self.state.total_losses += 1
                     self.state.loss_streak += 1
@@ -1239,6 +1243,12 @@ class Engine:
             "last_condition_id": self.state.last_condition_id,
             "unclaimed_usdc": self.state.unclaimed_usdc,
             "api_trade_history": getattr(self, "api_trade_history", []),
+            "held_position": {
+                "side":        self.state.held_position.side,
+                "size":        self.state.held_position.size,
+                "entry_price": self.state.held_position.avg_entry_price or self.state.held_position.entry_price,
+                "tx_hash":     self.state.held_position.tx_hash,
+            },
         }
         if sig:
             hb["signal"] = sig.to_feature_dict()
@@ -1453,6 +1463,7 @@ class Engine:
             self.state.total_trades += 1
             if outcome == "WIN":
                 self.state.total_wins += 1
+                self.state.session_start_balance = balance  # reset drawdown baseline on win
             else:
                 self.state.total_losses += 1
 

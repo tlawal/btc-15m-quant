@@ -762,6 +762,18 @@
                 <!-- Transaction Link -->
                 <div id="pos-tx-link" class="mt-2"></div>
 
+                <!-- Halt Banner + Resume Button -->
+                <div id="halt-banner" style="display:none" class="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-red-400 font-bold uppercase tracking-wide">⛔ Trading Halted</span>
+                        <div class="flex items-center gap-1">
+                            <input id="resume-pw" type="password" placeholder="password" class="bg-black/40 border border-white/10 rounded px-2 py-0.5 text-white text-xs w-24 outline-none focus:border-red-500/60" />
+                            <button onclick="resumeTrading()" class="bg-red-500/20 hover:bg-red-500/40 border border-red-500/40 text-red-300 rounded px-2 py-0.5 text-xs font-bold transition-colors">Resume</button>
+                        </div>
+                    </div>
+                    <div id="resume-msg" class="mt-1 text-slate-400 text-[0.6rem]"></div>
+                </div>
+
                 <!-- Trade history -->
                 <div class="overflow-auto" style="max-height:160px">
                     <table class="w-full text-[0.68rem] mono">
@@ -1007,6 +1019,7 @@ function updateUI() {
         $('halt-dot').className = `dot ${halted?'dot-r':'dot-g'}`;
         $('halt-st').innerText  = halted ? 'HALTED' : 'TRADING OK';
         $('halt-st').className  = halted ? 'mt-1 text-red-400 font-bold' : 'mt-1';
+        $('halt-banner').style.display = halted ? '' : 'none';
 
         // ── PnL header ──
         const pnlFrac = d.performance?.total_pnl;
@@ -1154,8 +1167,17 @@ function updateUI() {
             $('unreal-pnl').className = pnl>0?'mono up font-bold':'mono dn font-bold';
         } else { $('unreal-pnl').innerText='--'; $('unreal-pnl').className='mono mute'; }
 
-        // Transaction link
-        $('pos-tx-link').innerHTML = d.tx_hash ? `<a href="https://polygonscan.com/tx/${d.tx_hash}" target="_blank"><img src="/static/pm-icon.png" width=16 alt="Tx Link"></a>` : '';
+        // Transaction link — prefer held_position.tx_hash, fall back to top-level d.tx_hash
+        const txHash = (d.held_position && d.held_position.tx_hash) || d.tx_hash;
+        const hpSize = d.held_position && d.held_position.size != null ? parseFloat(d.held_position.size) : null;
+        let txHtml = '';
+        if (hpSize !== null && hpSize > 0 && posSide !== 'FLAT') {
+            txHtml += `<span class="text-slate-400 text-[0.62rem] mono">${hpSize.toFixed(2)} shares</span>`;
+        }
+        if (txHash) {
+            txHtml += ` <a href="https://polygonscan.com/tx/${txHash}" target="_blank" class="text-blue-400 hover:text-blue-300 text-[0.62rem] mono underline">View on Polygon ↗</a>`;
+        }
+        $('pos-tx-link').innerHTML = txHtml;
 
         // Trade history
         if (d.recent_trades) {
@@ -1393,6 +1415,27 @@ setInterval(updateUI, 5000);
 setInterval(updatePlotlyCharts, 30000);
 setInterval(updateReviewPanel, 300000);
 tickCountdown();
+
+async function resumeTrading() {
+    const pw = $('resume-pw').value;
+    const msg = $('resume-msg');
+    msg.innerText = 'Sending...';
+    try {
+        const r = await fetch('/api/resume?password=' + encodeURIComponent(pw), {method:'POST'});
+        const data = await r.json();
+        if (data.ok) {
+            msg.innerText = '✅ ' + data.message;
+            msg.className = 'mt-1 text-green-400 text-[0.6rem]';
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            msg.innerText = '❌ ' + (data.error || 'Failed');
+            msg.className = 'mt-1 text-red-400 text-[0.6rem]';
+        }
+    } catch(e) {
+        msg.innerText = '❌ Network error';
+        msg.className = 'mt-1 text-red-400 text-[0.6rem]';
+    }
+}
 </script>
 </body>
 </html>

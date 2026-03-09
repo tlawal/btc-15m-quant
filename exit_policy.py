@@ -33,9 +33,18 @@ def evaluate_exit(
 
     unrealized_pct = (current_price - entry_price) / entry_price
 
-    # Trailing logic: hold while posterior above entry minus 0.03
-    if posterior is not None and entry_posterior is not None and posterior > entry_posterior - 0.03:
-        return None
+    # Trailing logic: hold while posterior above entry minus tolerance.
+    # Tolerance scales with profitability — hold winners tighter, give losers
+    # more room to avoid thrashing on normal posterior oscillation (±2pp).
+    if posterior is not None and entry_posterior is not None:
+        if unrealized_pct > 0.05:   # winning >5%: tightest hold, exit on -0.02 drop
+            tolerance = 0.02
+        elif unrealized_pct > 0:    # small win: standard -0.03 drop
+            tolerance = 0.03
+        else:                        # losing: looser -0.05 to avoid noise-driven exits
+            tolerance = 0.05
+        if posterior > entry_posterior - tolerance:
+            return None
 
     # 1. Forced drawdown
     if unrealized_pct < -Config.MAX_DRAWDOWN_PCT:
