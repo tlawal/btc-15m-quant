@@ -653,7 +653,7 @@
             <div class="mpop-thresh">
                 <b>Primary</b>: Binance BTCUSDT spot (via 5m klines)<br>
                 <b>Fallback</b>: Coinbase BTC-USD candles<br>
-                <b>Updates</b>: Every cycle (~5 seconds)
+                <b>Updates</b>: Every cycle (~3 seconds)
             </div>
             <div class="mpop-tip">💡 The price shown is the latest 5-minute candle close from Binance. If Binance is down, Coinbase is used. The "distance" (Δ) is what matters — it determines if BTC closes above or below strike.</div>
         </div>
@@ -1427,7 +1427,7 @@ fetch('/health').then(r=>r.json()).then(d=>{if(d.build)$('build-ver').innerText=
 updateUI();
 updatePlotlyCharts();
 updateReviewPanel();
-setInterval(updateUI, 5000);
+setInterval(updateUI, 3000);
 setInterval(updatePlotlyCharts, 30000);
 setInterval(updateReviewPanel, 300000);
 tickCountdown();
