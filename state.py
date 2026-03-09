@@ -346,18 +346,32 @@ class StateManager:
 
     async def record_closed_trade(self, ts: int, market_slug: str, size: float, entry_price: float, exit_price: float, pnl_usd: float, outcome_win: int, regime: str = None, features: dict = None, kelly_fraction: float = None):
         async with self.engine.begin() as conn:
-            await conn.execute(text(
-                "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win, regime, features, kelly_fraction) "
-                "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win, :regime, :feats, :kelly)"
-            ), {
-                "ts": ts, "slug": market_slug, "sz": size,
-                "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
-                "regime": regime, "feats": json.dumps(features) if features else None, "kelly": kelly_fraction
-            })
+            try:
+                await conn.execute(text(
+                    "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win, regime, features, kelly_fraction) "
+                    "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win, :regime, :feats, :kelly)"
+                ), {
+                    "ts": ts, "slug": market_slug, "sz": size,
+                    "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
+                    "regime": regime, "feats": json.dumps(features) if features else None, "kelly": kelly_fraction
+                })
+            except Exception:
+                # Fallback for pre-migration DB without regime/features/kelly columns
+                await conn.execute(text(
+                    "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win) "
+                    "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win)"
+                ), {
+                    "ts": ts, "slug": market_slug, "sz": size,
+                    "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
+                })
 
     async def calculate_performance_metrics(self) -> dict:
         async with self._session_factory() as session:
-            result = await session.execute(text("SELECT pnl_usd, outcome_win, regime FROM closed_trades"))
+            try:
+                result = await session.execute(text("SELECT pnl_usd, outcome_win, regime FROM closed_trades"))
+            except Exception:
+                # Fallback if 'regime' column doesn't exist yet (pre-migration DB)
+                result = await session.execute(text("SELECT pnl_usd, outcome_win, NULL as regime FROM closed_trades"))
             rows = result.fetchall()
             
         total_trades = len(rows)

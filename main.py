@@ -1565,19 +1565,14 @@ class Engine:
             log.info(f"PAPER ENTRY: {side_name} @ {entry_px:.3f} size={shares} score={sig.signed_score:.2f}")
             return
 
-        # Generate deterministic nonce for idempotency
-        import hashlib
-        nonce_str = f"{win_start}_{side_name}_{round(entry_px, 4)}_{shares}_{market_info.condition_id}"
-        nonce = int(hashlib.sha256(nonce_str.encode()).hexdigest(), 16) % (2**31 - 1)
-
         # Checkpoint state before placing order (crash recovery)
         await self.state_mgr.save(self.state)
 
-        # Place order
+        # Place order (nonce=0 lets the CLOB API auto-assign)
         if sig.monster_signal:
-            order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="FOK", nonce=nonce)
+            order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="FOK")
         else:
-            order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="GTC", nonce=nonce)
+            order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="GTC")
 
         if not order_id:
             log.error("Entry order failed")
