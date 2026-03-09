@@ -896,11 +896,30 @@ def compute_signals(
     if res.direction == "NEUTRAL":
         gates.append("neutral_direction")
 
+    # Score-direction disagreement gate: block if technicals strongly contradict posterior.
+    # direction is set by posterior; signed_score is from technicals.
+    # If direction=DOWN but score is strongly positive (UP), the signals disagree.
+    _score_disagrees = (
+        (res.direction == "DOWN" and res.signed_score > 2.0) or
+        (res.direction == "UP" and res.signed_score < -2.0)
+    )
+    if _score_disagrees and not res.monster_signal:
+        gates.append(f"score_direction_disagree={res.signed_score:+.1f}_vs_{res.direction}")
+
     # VPIN toxicity gate — exempts high-conviction signals (posterior ≥ 0.85)
     # since one-sided order books often accompany genuine directional moves.
     if (vpin_proxy > Config.VPIN_BLOCK_THRESHOLD and res.abs_score < 6.0
             and not res.monster_signal and chosen_posterior < 0.85):
         gates.append(f"vpin_toxic={vpin_proxy:.3f}")
+
+    # Near-50/50 market gate: when both sides are priced between 0.35-0.65,
+    # the market is genuinely uncertain. Only enter with very high conviction.
+    _mkt_uncertain = (
+        yes_mid is not None and no_mid is not None
+        and 0.35 <= yes_mid <= 0.65 and 0.35 <= no_mid <= 0.65
+    )
+    if _mkt_uncertain and chosen_posterior < 0.90 and not res.monster_signal:
+        gates.append(f"market_uncertain_5050=YES{yes_mid:.2f}_NO{no_mid:.2f}")
 
     # DYNAMIC EDGE + MONSTER OVERRIDE
     market_price = yes_mid if res.direction == "UP" else (no_mid if res.direction == "DOWN" else None)

@@ -51,7 +51,7 @@ def compute_position_size(
         balance < Config.LOW_BALANCE_THRESHOLD_USD
         and edge is not None
         and edge >= Config.REQUIRED_EDGE_LOW_BALANCE
-        and posterior >= 0.55
+        and posterior >= 0.75
         and balance >= Config.MIN_TRADE_USD
     ):
         # Use MIN_TRADE_USD directly — the 85% cap created a deadlock at balances
