@@ -734,6 +734,13 @@ class Engine:
                     tr.outcome    = "WIN" if ex['pnl_usd'] > 0 else "LOSS"
                     break
             
+            # Feed optimizer — monitor exits were previously invisible to the RF learner
+            if self._last_sig:
+                outcome_str = "WIN" if ex['pnl_usd'] > 0 else "LOSS"
+                self.optimizer.log_trade(self._last_sig, outcome_str)
+                pnl_pct = ex['pnl_usd'] / (ex['entry_price'] * ex['size']) if ex['entry_price'] * ex['size'] > 0 else 0.0
+                self.optimizer.record_trade_pnl(pnl_pct)
+
             # Recalculate metrics
             asyncio.create_task(self.state_mgr.calculate_performance_metrics())
 
@@ -1248,6 +1255,7 @@ class Engine:
                 "size":        self.state.held_position.size,
                 "entry_price": self.state.held_position.avg_entry_price or self.state.held_position.entry_price,
                 "tx_hash":     self.state.held_position.tx_hash,
+                "is_pending":  self.state.held_position.is_pending,
             },
         }
         if sig:
