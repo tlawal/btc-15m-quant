@@ -746,18 +746,20 @@ class PolymarketClient:
 
             trigger_reason = None
 
-            # 1. SignedScore reversal
-            if side == "YES" and sig.signed_score < -3:
+            # 1. SignedScore reversal — only exit on strong reversal AND losing position
+            # Score oscillates rapidly (±3–7 within seconds); don't panic-sell winners.
+            if side == "YES" and sig.signed_score < -5 and unrealized_pct < -0.03:
                 trigger_reason = "SCORE_REVERSAL"
-            elif side == "NO" and sig.signed_score > 3:
+            elif side == "NO" and sig.signed_score > 5 and unrealized_pct < -0.03:
                 trigger_reason = "SCORE_REVERSAL"
 
             # 2. Unrealized loss > 15%
             elif unrealized_pct < -0.15:
                 trigger_reason = "STOP_LOSS_15PCT"
 
-            # 3. Distance from strike > 0.6 * ATR
-            elif current_distance > 0.6 * atr14:
+            # 3. Distance from strike > 0.6 * ATR — only if LOSING
+            # If BTC moved far from strike in our favor, that's a winning position.
+            elif current_distance > 0.6 * atr14 and unrealized_pct < -0.05:
                 trigger_reason = "STRIKE_DISTANCE_EXCEEDED"
 
             # 4. CVD or OFI flip against position

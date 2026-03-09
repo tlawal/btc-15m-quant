@@ -78,8 +78,9 @@ def evaluate_exit(
         if post_decline > 0.08 and unrealized_pct < -0.03:
             return "PROBABILITY_DECAY"
 
-    # 9. Time-decay exit
-    if minutes_remaining < 2.0 and abs(unrealized_pct) < 0.05:
+    # 9. Time-decay exit — only exit LOSING positions near expiry.
+    # Winning positions should hold to settlement for max payout ($1.00).
+    if minutes_remaining < 2.0 and unrealized_pct < -0.02:
         return "TIME_DECAY"
 
     return None

@@ -705,8 +705,11 @@ class Engine:
                 kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
             )
             
-            # Update EngineState
-            if self.state.held_position.side and str(self.state.last_condition_id) == str(ex['condition_id']):
+            # Update EngineState — match on held_position's condition_id OR last_condition_id
+            pos_cid = self.state.held_position.condition_id
+            matches_held = pos_cid and str(pos_cid) == str(ex['condition_id'])
+            matches_last = str(self.state.last_condition_id) == str(ex['condition_id'])
+            if self.state.held_position.side and (matches_held or matches_last):
                 self.state.held_position = HeldPosition()
                 self.state.total_trades += 1
                 if ex['pnl_usd'] > 0:
@@ -716,14 +719,15 @@ class Engine:
                     self.state.total_losses += 1
                     self.state.loss_streak += 1
                 self.state.total_pnl_usd += ex['pnl_usd']
-                
-                # Update local trade_history
-                for tr in reversed(self.state.trade_history):
-                    if tr.outcome == "OPEN":
-                        tr.exit_price = ex['exit_price']
-                        tr.pnl        = ex['pnl_usd'] / (ex['entry_price'] * ex['size'])
-                        tr.outcome    = "WIN" if ex['pnl_usd'] > 0 else "LOSS"
-                        break
+
+            # ALWAYS update trade_history regardless of condition_id match
+            # (prevents trades stuck as "OPEN" forever after window roll)
+            for tr in reversed(self.state.trade_history):
+                if tr.outcome == "OPEN":
+                    tr.exit_price = ex['exit_price']
+                    tr.pnl        = ex['pnl_usd'] / (ex['entry_price'] * ex['size']) if ex['entry_price'] * ex['size'] > 0 else 0.0
+                    tr.outcome    = "WIN" if ex['pnl_usd'] > 0 else "LOSS"
+                    break
             
             # Recalculate metrics
             asyncio.create_task(self.state_mgr.calculate_performance_metrics())
@@ -1321,8 +1325,24 @@ class Engine:
             if old_expiry:
                 min_rem = max(0.0, (old_expiry - time.time()) / 60.0)
             # If old market already expired, position will auto-settle at $1.00.
+            # CRITICAL: Clear held_position so the bot can trade the new window.
+            # Without this, the stale position blocks all new entries forever.
             if min_rem <= 0:
-                log.info(f"EXIT: Old market expired — position will auto-settle at expiry")
+                log.info(f"EXIT: Old market expired — clearing held_position, will auto-settle at $1.00")
+                # Record as WIN at $1.00 if we were on the winning side
+                for tr in reversed(self.state.trade_history):
+                    if tr.side == pos.side and tr.outcome == "OPEN":
+                        tr.exit_price = 1.0
+                        ep = tr.entry_price or pos.entry_price or pos.avg_entry_price or 0.9
+                        tr.pnl = (1.0 - ep) / ep if ep > 0 else 0.0
+                        tr.outcome = "WIN"
+                        self.state.total_trades += 1
+                        self.state.total_wins += 1
+                        self.state.total_pnl_usd += (1.0 - ep) * (pos.size or 0)
+                        self.state.loss_streak = 0
+                        log.info(f"AUTO_SETTLE_WIN: {pos.side} entry={ep:.3f} -> $1.00 pnl={tr.pnl*100:.1f}%")
+                        break
+                self.state.held_position = HeldPosition()
                 return False
 
         current_px = ob.yes_mid if pos.side == "YES" else ob.no_mid
