@@ -746,6 +746,10 @@
                         <div class="mono text-white" id="pos-entry">--</div>
                     </div>
                     <div>
+                        <div class="text-[0.57rem] text-slate-500 uppercase mb-0.5">Shares</div>
+                        <div class="mono" id="pos-shares">--</div>
+                    </div>
+                    <div>
                         <div class="text-[0.57rem] text-slate-500 uppercase mb-0.5">Current</div>
                         <div class="mono text-white" id="cur-px">--</div>
                     </div>
@@ -754,6 +758,9 @@
                         <div class="mono" id="unreal-pnl">--</div>
                     </div>
                 </div>
+
+                <!-- Transaction Link -->
+                <div id="pos-tx-link" class="mt-2"></div>
 
                 <!-- Trade history -->
                 <div class="overflow-auto" style="max-height:160px">
@@ -1123,19 +1130,12 @@ function updateUI() {
 
         // ── Position panel ──
         const posSide = d.position||'FLAT';
-        $('pos-side').innerText   = posSide;
-        $('pos-side').className   = `mono font-bold text-base ${posSide==='YES'?'text-green-400':posSide==='NO'?'text-red-400':'text-slate-500'}`;
-        const badgeEl = $('pos-stat-badge');
-        if (posSide!=='FLAT') {
-            badgeEl.innerText   = 'IN POSITION';
-            badgeEl.style.background='rgba(59,130,246,0.15)';
-            badgeEl.style.borderColor='rgba(59,130,246,0.4)';
-            badgeEl.style.color='#60a5fa';
+        $('pos-side').innerText = posSide;
+        $('pos-side').className = `mono font-bold text-base ${posSide==='YES'?'text-green-400':posSide==='NO'?'text-red-400':'text-slate-500'}`;
+        if (posSide !== 'FLAT' && d.position_size) {
+            $('pos-shares').innerText = `${d.position_size} shares @ ${d.entry_price.toFixed(3)}`;
         } else {
-            badgeEl.innerText   = 'NO POSITION';
-            badgeEl.style.background='rgba(71,85,105,0.2)';
-            badgeEl.style.borderColor='#334155';
-            badgeEl.style.color='#64748b';
+            $('pos-shares').innerText = '--';
         }
         $('pos-entry').innerText = d.entry_price ? d.entry_price.toFixed(3) : '--';
         let cpx='--';
@@ -1153,6 +1153,9 @@ function updateUI() {
             $('unreal-pnl').innerText = (pnl>0?'+':'')+(pnl*100).toFixed(2)+'%';
             $('unreal-pnl').className = pnl>0?'mono up font-bold':'mono dn font-bold';
         } else { $('unreal-pnl').innerText='--'; $('unreal-pnl').className='mono mute'; }
+
+        // Transaction link
+        $('pos-tx-link').innerHTML = d.tx_hash ? `<a href="https://polygonscan.com/tx/${d.tx_hash}" target="_blank"><img src="/static/pm-icon.png" width=16 alt="Tx Link"></a>` : '';
 
         // Trade history
         if (d.recent_trades) {

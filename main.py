@@ -1050,6 +1050,11 @@ class Engine:
                     self.state.loss_streak = 0
                 
                 outcome = "WIN" if pnl_pct >= 0 else "LOSS"
+                # Reset session drawdown baseline on wins
+                if outcome == "WIN":
+                    margin = await self.pm.get_margin()
+                    balance = margin.get("balance_usdc", 0.0)
+                    self.state.session_start_balance = balance
                 for tr in reversed(self.state.trade_history):
                     if tr.side == pos.side and tr.outcome == "OPEN":
                         tr.exit_price = actual_px
@@ -1103,6 +1108,15 @@ class Engine:
                 
                 pos.is_pending = False
                 pos.avg_entry_price = actual_px
+                
+                # Set tx_hash for link
+                pos.tx_hash = status.get("tx_hash")
+                
+                # Update trade_history with tx_hash
+                for tr in reversed(self.state.trade_history):
+                    if tr.side == pos.side and tr.outcome == "OPEN":
+                        tr.tx_hash = status.get("tx_hash")
+                        break
                 
                 # Update TradeRecord in history
                 if abs(slippage) > 0.01:

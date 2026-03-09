@@ -338,6 +338,12 @@ async def get_metrics():
     open_pos = 1 if state.held_position.side else 0
     exposure = state.held_position.size_usd if state.held_position.side else 0.0
 
+    if state.held_position.side:
+        hb["position"] = engine.state.held_position.side
+        hb["entry_price"] = engine.state.held_position.avg_entry_price or engine.state.held_position.entry_price
+        hb["position_size"] = engine.state.held_position.size if engine.state.held_position.size else 0.0
+        hb["tx_hash"] = engine.state.trade_history[-1].tx_hash if engine.state.trade_history else None
+
     # Base payload on heartbeat, then overlay live state
     metrics = hb.copy()
     metrics.update({

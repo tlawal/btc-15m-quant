@@ -45,6 +45,7 @@ class HeldPosition:
     exit_reason: Optional[str]      = None   # for tracking why an exit was placed
     market_expiry: Optional[int]    = None   # expiry ts of the market this position is on
     entry_posterior: Optional[float] = None  # posterior at entry for trailing
+    tx_hash: Optional[str]          = None   # transaction hash for link
 
 
 @dataclass
@@ -64,6 +65,7 @@ class TradeRecord:
     score: float
     window: int
     slippage: Optional[float] = None
+    tx_hash: Optional[str] = None
     size: Optional[float] = None
 
 

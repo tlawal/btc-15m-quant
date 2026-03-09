@@ -33,8 +33,8 @@ def evaluate_exit(
 
     unrealized_pct = (current_price - entry_price) / entry_price
 
-    # Trailing logic: hold while posterior above entry minus 0.05
-    if posterior is not None and entry_posterior is not None and posterior > entry_posterior - 0.05:
+    # Trailing logic: hold while posterior above entry minus 0.03
+    if posterior is not None and entry_posterior is not None and posterior > entry_posterior - 0.03:
         return None
 
     # 1. Forced drawdown
