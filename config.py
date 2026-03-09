@@ -7,7 +7,7 @@ class Config:
     # ── Timing ────────────────────────────────────────────────────────────────
     LOOP_INTERVAL_SEC          = 5        # inner loop cadence (was 15; 5s for faster exit monitoring + late-window sniping)
     WINDOW_SEC                 = 900      # 15-minute binary window
-    EARLY_WINDOW_GUARD_MIN     = 6.0      # block non-monster trades in first 6 min
+    EARLY_WINDOW_GUARD_MIN     = 7.5      # block non-monster trades in first 7.5 min (entries only in last 7.5 min)
     BELIEF_VOL_LOOKBACK_SEC    = 180      # rolling σ_B window (3 min)
     BELIEF_VOL_DEFAULT         = 0.15
     BELIEF_VOL_MULT_MIN        = 0.70
@@ -71,9 +71,9 @@ class Config:
     STOP_LOSS_DELTA            = 7.0
 
     # ── Exit parameters ───────────────────────────────────────────────────────
-    TAKE_PROFIT_PRICE          = 0.97
+    TAKE_PROFIT_PRICE          = 0.99
     SLIPPAGE_BUFFER_PCT        = 0.008    # Phase 6: 80bps execution buffer
-    MAX_DRAWDOWN_PCT           = 0.08
+    MAX_DRAWDOWN_PCT           = 0.15    # raised from 0.08 — binaries oscillate ±10-15% normally; 8% exits winners on noise
     FORCED_LATE_EXIT_MIN_REM   = 5.0
     FORCED_DISTANCE_EXIT_MIN_REM = 3.0
     FORCED_PROFIT_LOCK_MIN_REM = 2.0

@@ -384,7 +384,9 @@ async def get_metrics():
                 "exit": t.exit_price,
                 "pnl": t.pnl,
                 "outcome": t.outcome,
-                "slippage": getattr(t, "slippage", None)
+                "slippage": getattr(t, "slippage", None),
+                "size": getattr(t, "size", None),
+                "tx_hash": getattr(t, "tx_hash", None),
             }
             for t in state.trade_history[-10:]
         ]

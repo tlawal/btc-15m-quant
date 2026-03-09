@@ -783,12 +783,13 @@
                                 <th class="text-left font-normal">Side</th>
                                 <th class="text-left font-normal">Entry</th>
                                 <th class="text-left font-normal">Exit</th>
+                                <th class="text-left font-normal">Shares</th>
                                 <th class="text-right font-normal">PnL</th>
                             </tr>
                         </thead>
                         <tbody id="trade-history-body">
                             <tr class="trade-row">
-                                <td colspan="5" class="text-center py-4 text-slate-600 font-sans">No trades yet.</td>
+                                <td colspan="6" class="text-center py-4 text-slate-600 font-sans">No trades yet.</td>
                             </tr>
                         </tbody>
                     </table>
@@ -1184,17 +1185,22 @@ function updateUI() {
             const tbody=$('trade-history-body');
             const rows=d.recent_trades.slice().reverse().slice(0,6);
             tbody.innerHTML=rows.length===0
-                ? '<tr><td colspan="5" class="text-center py-4 text-slate-600 font-sans">No trades yet.</td></tr>'
+                ? '<tr><td colspan="6" class="text-center py-4 text-slate-600 font-sans">No trades yet.</td></tr>'
                 : rows.map(t=>{
                     const pnl=t.pnl||0;
                     const pnlC=pnl>0?'text-green-400':pnl<0?'text-red-400':'text-slate-400';
                     const ts=new Date(t.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
                     const out=t.outcome||'OPEN';
+                    const sharesStr = t.size != null ? parseFloat(t.size).toFixed(2) : '--';
+                    const txIcon = t.tx_hash
+                        ? `<a href="https://polygonscan.com/tx/${t.tx_hash}" target="_blank" title="View on Polygon" class="ml-1 text-blue-400 hover:text-blue-300" style="font-size:0.65rem">⛓</a>`
+                        : '';
                     return `<tr class="trade-row">
                         <td class="py-1.5 text-slate-400">${ts}</td>
                         <td class="${t.side==='YES'?'text-green-400':'text-red-400'}">${t.side||'--'}</td>
                         <td class="text-white">${t.entry?t.entry.toFixed(3):'--'}</td>
                         <td>${t.exit?t.exit.toFixed(3):'<span class="text-slate-600">OPEN</span>'}</td>
+                        <td class="text-slate-300">${sharesStr}${txIcon}</td>
                         <td class="text-right font-bold ${pnlC}">${pnl!==0?(pnl>0?'+':'')+(pnl*100).toFixed(1)+'%':out}</td>
                     </tr>`;
                 }).join('');

@@ -33,22 +33,36 @@ def evaluate_exit(
 
     unrealized_pct = (current_price - entry_price) / entry_price
 
+    # Use a safe entry_posterior fallback: if not recorded, treat as 0.5 (neutral).
+    # This prevents the trailing guard from being silently skipped on reloaded positions.
+    _entry_post = entry_posterior if entry_posterior is not None else 0.5
+
     # Trailing logic: hold while posterior above entry minus tolerance.
     # Tolerance scales with profitability — hold winners tighter, give losers
     # more room to avoid thrashing on normal posterior oscillation (±2pp).
-    if posterior is not None and entry_posterior is not None:
+    if posterior is not None:
         if unrealized_pct > 0.05:   # winning >5%: tightest hold, exit on -0.02 drop
             tolerance = 0.02
         elif unrealized_pct > 0:    # small win: standard -0.03 drop
             tolerance = 0.03
         else:                        # losing: looser -0.05 to avoid noise-driven exits
             tolerance = 0.05
-        if posterior > entry_posterior - tolerance:
+        if posterior > _entry_post - tolerance:
             return None
 
-    # 1. Forced drawdown
+    # 1. Forced drawdown — only fire if posterior has also deteriorated.
+    # Prevents hard stops on temporary BTC noise when the model still believes in the trade.
+    # Exception: fire unconditionally if extremely deep in the red (>20%).
     if unrealized_pct < -Config.MAX_DRAWDOWN_PCT:
-        return "FORCED_DRAWDOWN"
+        if unrealized_pct < -0.20:
+            return "FORCED_DRAWDOWN"   # unconditional beyond 20%
+        # Gate with posterior: only cut if model has also given up (posterior fell >5pp from entry)
+        if posterior is None or posterior <= _entry_post - 0.05:
+            return "FORCED_DRAWDOWN"
+        log.info(
+            f"DRAWDOWN_HELD: unrealized={unrealized_pct*100:.1f}% but posterior={posterior:.3f}"
+            f" still near entry={_entry_post:.3f} — holding"
+        )
 
     # 2. Forced distance exit (near expiry, out-of-range, losing)
     if (minutes_remaining < Config.FORCED_DISTANCE_EXIT_MIN_REM
@@ -71,14 +85,17 @@ def evaluate_exit(
     if current_price >= Config.TAKE_PROFIT_PRICE:
         return "TAKE_PROFIT"
 
+    # Minimum hold gate: conditions 6-9 require at least 60s in position.
+    # Avoids whipsaw exits on EMA lag and first-candle noise immediately post-fill.
+    if hold_seconds < 60.0:
+        return None
+
     # 6. Alpha decay (score reversed significantly vs entry)
-    # Require minimum 30s hold to avoid firing on EMA lag immediately post-fill
-    if hold_seconds >= 30.0:
-        score_delta = signed_score - entry_score
-        if held_side == "YES" and score_delta < -Config.STOP_LOSS_DELTA:
-            return "ALPHA_DECAY"
-        if held_side == "NO" and score_delta > Config.STOP_LOSS_DELTA:
-            return "ALPHA_DECAY"
+    score_delta = signed_score - entry_score
+    if held_side == "YES" and score_delta < -Config.STOP_LOSS_DELTA:
+        return "ALPHA_DECAY"
+    if held_side == "NO" and score_delta > Config.STOP_LOSS_DELTA:
+        return "ALPHA_DECAY"
 
     # 7. Momentum reversal — CVD flipped against position
     if held_side == "YES" and cvd_delta < -0.5 and unrealized_pct < 0 and minutes_remaining < 8.0:
@@ -93,9 +110,17 @@ def evaluate_exit(
         if post_decline > 0.08 and cvd_reversal:
             return "PROBABILITY_DECAY"
 
-    # 9. Time-decay exit — only exit LOSING positions near expiry.
-    # Winning positions should hold to settlement for max payout ($1.00).
-    if minutes_remaining < 3.0 and unrealized_pct < -0.02:
+    # 9. Time-decay exit — only exit LOSING positions very near expiry.
+    # Tightened to <2min: at 2-3min remaining a losing binary can still recover;
+    # exiting at 0.78 forfeits the chance to settle at $1.00 if the posterior is high.
+    if minutes_remaining < 2.0 and unrealized_pct < -0.02:
+        # Final posterior check: if model is still >60% confident, hold to settlement
+        if posterior is not None and posterior > 0.60:
+            log.info(
+                f"TIME_DECAY_HELD: {minutes_remaining:.1f}min rem, "
+                f"unrealized={unrealized_pct*100:.1f}%, posterior={posterior:.3f} — holding for settlement"
+            )
+            return None
         return "TIME_DECAY"
 
     return None
