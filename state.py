@@ -43,6 +43,7 @@ class HeldPosition:
     is_pending: bool                = False  # True until fill confirmed
     placed_at_ts: Optional[int]     = None   # when order was placed
     exit_reason: Optional[str]      = None   # for tracking why an exit was placed
+    market_expiry: Optional[int]    = None   # expiry ts of the market this position is on
 
 
 @dataclass

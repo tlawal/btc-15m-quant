@@ -103,7 +103,10 @@ class Engine:
                 self.state.total_pnl_usd += profit_usd
                 
                 log.info(f"Recorded redemption win: +{tr.pnl*100:.2f}% (approx profit: ${profit_usd:.2f})")
-                
+
+                # Clear held position — the old market has settled
+                self.state.held_position = HeldPosition()
+
                 # Phase 6: Log trade for self-learning
                 if self._last_sig:
                     self.optimizer.log_trade(self._last_sig, "WIN")
@@ -1299,6 +1302,29 @@ class Engine:
         if pos.is_pending:
             return False
 
+        # CRITICAL: If the position is on a DIFFERENT market than the current one
+        # (window rolled), fetch the order book for the position's actual token.
+        # Otherwise ob.yes_mid is from the NEW market, causing phantom drawdowns.
+        pos_on_old_market = (
+            pos.condition_id is not None
+            and market_info is not None
+            and pos.condition_id != market_info.condition_id
+        )
+        if pos_on_old_market:
+            log.info(f"EXIT: Position on old market {pos.condition_id[:16]}... — fetching its order book")
+            pos_ob = await self.pm.get_order_books(pos.token_id, pos.token_id)
+            if pos_ob:
+                ob = pos_ob
+            # After window roll, use remaining time from the OLD market's expiry
+            old_expiry = pos.market_expiry
+            if old_expiry:
+                min_rem = max(0.0, (old_expiry - time.time()) / 60.0)
+            # If old market already expired (min_rem <= 0), the position will settle
+            # automatically. Don't place an exit order — just let it resolve.
+            if min_rem <= 0:
+                log.info(f"EXIT: Old market expired — position will auto-settle at expiry")
+                return False
+
         current_px = ob.yes_mid if pos.side == "YES" else ob.no_mid
         entry_px   = pos.avg_entry_price or pos.entry_price or (current_px or 0)
 
@@ -1552,6 +1578,7 @@ class Engine:
                 is_pending         = False,
                 placed_at_ts       = int(time.time()),
                 intended_entry_price = entry_px,
+                market_expiry      = market_info.expiry_ts,
             )
             self.state.entry_features = sig.to_feature_dict()
             self.state.entry_regime = sig.regime
@@ -1601,6 +1628,7 @@ class Engine:
             is_pending         = True,
             placed_at_ts       = int(time.time()),
             intended_entry_price = entry_px,
+            market_expiry      = market_info.expiry_ts,
         )
         # Store entry features for matching when closed
         self.state.entry_features = sig.to_feature_dict()
