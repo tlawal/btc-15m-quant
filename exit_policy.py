@@ -99,7 +99,8 @@ def evaluate_exit(
     # Only runs after hard breakers above — it CANNOT override HARD_STOP or FORCED_LATE_EXIT.
     # Tolerance scales with profitability — hold winners tighter, give modest losers room.
     # When losing >10%, tighten tolerance: the model is increasingly suspect vs market price.
-    if posterior is not None:
+    # Disable guard for very high confidence (sure things) to allow exits.
+    if posterior is not None and posterior <= 0.95:
         if unrealized_pct > 0.05:
             _tol = 0.02   # winning >5%: tight hold
         elif unrealized_pct > 0:
@@ -141,6 +142,11 @@ def evaluate_exit(
     # 4. Take profit
     if current_price >= Config.TAKE_PROFIT_PRICE:
         return "TAKE_PROFIT"
+
+    # 4a. Take small profit: lock in 2% gain quickly
+    if unrealized_pct > 0.02:
+        log.info(f"TAKE_SMALL_PROFIT: unrealized={unrealized_pct*100:.1f}% > 2%")
+        return "TAKE_SMALL_PROFIT"
 
     # 4b. Dynamic profit-taking based on signal strength, time, and microstructure
     # Posterior-gated (trailing guard above suppresses if model still believes)
