@@ -155,6 +155,9 @@ class Config:
     TAKE_PROFIT_OPEN_PCT = 0.25         # Profit-taking threshold for open positions (> 25% PNL)
     MAX_SESSION_DRAWDOWN_PCT = 30.0     # Halt trading at this session drawdown %
     SESSION_DRAWDOWN_RESUME_PCT = 20.0  # Resume trading below this % (hysteresis)
+    LATE_WINDOW_KELLY_MULTIPLIER = 1.5  # Increase sizing in late window with high posterior
+    PREFERRED_HOURS_UTC = [(11.0, 22.0)]  # 7 AM - 6 PM ET on weekdays
+    OUTSIDE_HOURS_POSTERIOR_MIN = 0.85  # Higher threshold outside preferred hours
     MAX_EXPOSURE_USD           = 100.0    # total notional across all positions
     KILL_SWITCH                = os.getenv("KILL_SWITCH", "false").lower() == "true"
     KILL_SWITCH_PASSWORD       = os.getenv("KILL_SWITCH_PASSWORD", "admin")

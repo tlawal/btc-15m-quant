@@ -1610,6 +1610,18 @@ class Engine:
             log.info(f"HARD_EARLY_WINDOW: no trades in first 4 min (min_rem={min_rem:.1f})")
             return
 
+        # Preferred trading hours: 7 AM - 6 PM ET (11:00-22:00 UTC) on weekdays
+        from datetime import datetime
+        now = datetime.utcnow()
+        weekday = now.weekday() < 5  # Mon-Fri
+        hour = now.hour + now.minute / 60.0
+        in_preferred = any(start <= hour <= end for start, end in Config.PREFERRED_HOURS_UTC) and weekday
+        # Calculate best posterior for outside hours check
+        _best_posterior = max(sig.posterior_final_up or 0.0, sig.posterior_final_down or 0.0)
+        if not in_preferred and _best_posterior < Config.OUTSIDE_HOURS_POSTERIOR_MIN:
+            log.info(f"OUTSIDE_HOURS_LOW_POSTERIOR: skipping entry (posterior={_best_posterior:.3f} < {Config.OUTSIDE_HOURS_POSTERIOR_MIN:.2f})")
+            return
+
         # Daily reset of session_start_balance
         now = int(time.time())
         today = now // 86400
