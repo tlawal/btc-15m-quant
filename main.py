@@ -2,13 +2,13 @@
 BTC 15m Quant Engine — main async loop.
 
 Architecture:
-  - 15-second inner loop (Config.LOOP_INTERVAL_SEC)
+  - 3-second inner loop (Config.LOOP_INTERVAL_SEC)
   - Each cycle: fetch data → compute signals → handle exits → handle entries
   - State persisted to SQLite after every cycle
   - Graceful shutdown on SIGINT/SIGTERM
 """
 
-BUILD_VERSION = "v2.3-AUDIT-FIXES"
+BUILD_VERSION = "optimized"
 
 import asyncio
 import aiofiles
