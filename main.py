@@ -1605,8 +1605,22 @@ class Engine:
         if self.state.held_position.side is not None:
             return   # already holding
 
-        # Log balance for drawdown monitoring
+        # Trailing drawdown: reset session_start_balance on wins
         session_start = getattr(self.state, "session_start_balance", 0.0) or 0.0
+        if balance > session_start:
+            self.state.session_start_balance = balance
+            log.info(f"Trailing drawdown reset: new session_start={balance:.2f}")
+
+        # Calculate and log session drawdown
+        session_drawdown_pct = ((session_start - balance) / session_start) * 100 if session_start > 0 else 0.0
+        log.info(f"Session drawdown: {session_drawdown_pct:.1f}% (start={session_start:.2f}, current={balance:.2f})")
+
+        # Session drawdown halt
+        if session_drawdown_pct > Config.MAX_SESSION_DRAWDOWN_PCT:
+            log.error(f"TRADING HALTED: loss_streak={self.state.loss_streak}, session_drawdown={session_drawdown_pct:.1f}%")
+            return
+
+        # Log balance for drawdown monitoring
         log.info(f"Balance check: current={balance:.2f}, session_start={session_start:.2f}")
 
         # ── Hard capital protections ──────────────────────────────────────────
