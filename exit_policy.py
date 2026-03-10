@@ -62,8 +62,13 @@ def evaluate_exit(
     # 0b. Late-window hard stop: near expiry, any loss beyond small threshold.
     # At <5 min remaining, the binary is repricing fast — the model is stale.
     # Tighter threshold for late losers: exit at -10% if < 5 min remain.
+    # Skip for late-entered positions to allow holding to expiry.
     if minutes_remaining < Config.FORCED_LATE_EXIT_MIN_REM and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
-        return "FORCED_LATE_EXIT"
+        if entry_min_rem is not None and entry_min_rem < 5:
+            log.info(f"FORCED_LATE_EXIT_SKIPPED: late entry (entry_min_rem={entry_min_rem:.1f}) — holding to expiry")
+            pass  # skip forced exit for late entries
+        else:
+            return "FORCED_LATE_EXIT"
 
     # 0c. Regime-aware toxic VPIN stop: shorten holding time in toxic flow regime.
     # In toxic VPIN, the expected adverse selection dominates — cut sooner.

@@ -1496,7 +1496,10 @@ class Engine:
             peak_posterior    = getattr(pos, "peak_posterior", None),
             book_flip_count   = int(getattr(pos, "book_flip_count", 0)),
             hold_seconds      = hold_secs,
+            entry_min_rem     = getattr(pos, "entry_min_rem", None),
         )
+        if reason == "FORCED_LATE_EXIT" and getattr(pos, "entry_min_rem", None) is not None:
+            reason = None
         if not reason:
             return False
 
@@ -1886,6 +1889,7 @@ class Engine:
                 placed_at_ts       = int(time.time()),
                 intended_entry_price = entry_px,
                 market_expiry      = market_info.expiry_ts,
+                entry_min_rem      = min_rem,
             )
             self.state.entry_features = sig.to_feature_dict()
             self.state.entry_regime = sig.regime

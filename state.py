@@ -38,6 +38,7 @@ class HeldPosition:
     condition_id: Optional[str]     = None
     intended_entry_price: Optional[float] = None
     intended_exit_price: Optional[float]  = None
+    entry_min_rem: Optional[float]  = None  # Minutes remaining at entry
     # Phase 3: order fill tracking
     order_id: Optional[str]         = None
     is_pending: bool                = False  # True until fill confirmed
