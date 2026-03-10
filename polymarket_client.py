@@ -99,12 +99,9 @@ class PolymarketClient:
             ),
         )
         self._session: Optional[aiohttp.ClientSession] = None
-        self.can_trade = bool(
-            Config.POLYMARKET_PRIVATE_KEY
-            and Config.POLYMARKET_API_KEY
-            and Config.POLYMARKET_API_SECRET
-            and Config.POLYMARKET_API_PASSPHRASE
-        )
+        self.can_trade = True
+        self._redeem_cooldown_sec = 60 * 30
+        self._last_redeem_attempt_ts_by_condition: dict[str, float] = {}
 
     def _warn_no_creds_once(self, caller: str):
         if self.can_trade or self._warned_missing_creds:
@@ -574,7 +571,6 @@ class PolymarketClient:
             return 0.0
 
         if not positions:
-            log.info("No redeemable positions found (Data API)")
             return 0.0
 
         w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(Config.POLYGON_RPC_URL))
@@ -599,13 +595,34 @@ class PolymarketClient:
         usdc_e = w3.to_checksum_address(Config.POLYGON_USDC_ADDRESS)
         parent_col = b'\x00' * 32
 
+        import time
+
         total_redeemed = 0.0
+        seen_conditions: set[str] = set()
+        min_redeem_usd = float(getattr(Config, "MIN_REDEEM_USD", 0.05) or 0.05)
+
         for p in positions:
             condition_id = p.get("conditionId")
-            size = float(p.get("size", p.get("currentValue", 0)))
-            if not condition_id or size <= 0.01: continue
+            if not condition_id or condition_id in seen_conditions:
+                continue
+            seen_conditions.add(condition_id)
 
-            log.info(f"Attempting redemption of ${size:.2f} for {p.get('marketSlug','?')} (condition {condition_id[:10]}...)")
+            # Data API uses:
+            # - size: shares
+            # - currentValue: USDC value (typically what you can redeem when resolved)
+            redeem_usd = float(p.get("currentValue", 0.0) or 0.0)
+            if redeem_usd < min_redeem_usd:
+                continue
+
+            now = time.time()
+            last_ts = float(self._last_redeem_attempt_ts_by_condition.get(condition_id, 0.0) or 0.0)
+            if (now - last_ts) < self._redeem_cooldown_sec:
+                continue
+            self._last_redeem_attempt_ts_by_condition[condition_id] = now
+
+            log.info(
+                f"Attempting redemption of ${redeem_usd:.2f} for {p.get('marketSlug','?')} (condition {condition_id[:10]}...)"
+            )
             try:
                 tx = await ctf.functions.redeemPositions(
                     usdc_e,
@@ -623,19 +640,20 @@ class PolymarketClient:
                 receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
                 
                 if receipt.status == 1:
-                    log.info(f"✅ CLAIMED ${size:.2f} SUCCESSFULLY!")
-                    total_redeemed += size
+                    log.info(f"✅ CLAIMED ${redeem_usd:.2f} SUCCESSFULLY!")
+                    total_redeemed += redeem_usd
                     
                     try:
                         from state import StateManager
                         import time
                         sm = StateManager()
                         entry_price = float(p.get("avgPrice", p.get("averagePrice", 0.5)))
-                        pnl = size - (size * entry_price)
+                        size_shares = float(p.get("size", 0.0) or 0.0)
+                        pnl = redeem_usd - (size_shares * entry_price)
                         await sm.record_closed_trade(
                             ts=int(time.time()),
                             market_slug=p.get("marketSlug", "unknown"),
-                            size=size,
+                            size=size_shares,
                             entry_price=entry_price,
                             exit_price=1.0,
                             pnl_usd=pnl,
