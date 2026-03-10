@@ -202,7 +202,21 @@ class Config:
     DATABASE_URL               = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./state.db")
     LOG_LEVEL                  = os.getenv("LOG_LEVEL", "INFO")
 
+    # Preferred trading times
+    PREFERRED_START_HOUR_ET    = 6   # 6 AM ET
+    PREFERRED_END_HOUR_ET      = 18  # 6 PM ET
+    PREFERRED_WEEKDAYS_ONLY    = True
+
     # ── Derived helpers ───────────────────────────────────────────────────────
+    @classmethod
+    def is_preferred_trading_time(cls) -> bool:
+        """Check if current time is within preferred trading hours (6am-6pm ET on weekdays)."""
+        now_utc = datetime.now(timezone.utc)
+        # Approximate ET as UTC-4 (Eastern Time, ignoring DST for simplicity)
+        et_hour = (now_utc.hour - 4) % 24
+        weekday = now_utc.weekday() < 5  # Monday-Friday
+        in_time = cls.PREFERRED_START_HOUR_ET <= et_hour < cls.PREFERRED_END_HOUR_ET
+        return in_time and (not cls.PREFERRED_WEEKDAYS_ONLY or weekday)
     @classmethod
     def get_regime_thresholds(cls, atr14: float, balance: float = None) -> tuple[float, float]:
         """Returns (required_edge, min_score) for the given ATR regime.

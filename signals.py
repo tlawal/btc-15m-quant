@@ -1050,6 +1050,10 @@ def compute_signals(
         gates.append("low_volume_on_sure_thing")
         log.info(f"LOW_VOLUME_BLOCK: volume={cvd_total_vol:.1f} on 95%+ conviction")
 
+    # Preferred trading time gate
+    if not Config.is_preferred_trading_time() and chosen_posterior < 0.85:
+        gates.append('outside_preferred_hours')
+
     res.skip_gates = gates
 
     # Structured gate evaluation log highlighting the primary blocking reason.

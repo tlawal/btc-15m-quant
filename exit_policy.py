@@ -80,6 +80,10 @@ def evaluate_exit(
         if unrealized_pct < 0.01:
             return "VPIN_TOXIC_TIME"
 
+    # 0d. Outside preferred hours: aggressive profit-taking at 5%
+    if not Config.is_preferred_trading_time() and unrealized_pct >= 0.05:
+        return "TAKE_SMALL_PROFIT_OUTSIDE"
+
     # 1. Forced drawdown — posterior-gated up to -20%, unconditional beyond.
     # The posterior gate prevents cutting on normal BTC noise when model still believes.
     # But if posterior has also dropped, it's a genuine adverse move — cut it.
