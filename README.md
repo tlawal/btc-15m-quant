@@ -48,28 +48,14 @@ utils.py             — Logging, Telegram alerts, formatting
 Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior override) and **soft exits** (suppressed by trailing posterior guard while model is still confident).
 
 **Hard circuit breakers — always fire regardless of model state:**
-1. **HARD_STOP** — unconditional cut at `unrealized < -25%`. No posterior gate. Lesson learned from a -65% loss where the trailing guard held the position while the Bayesian model lagged BTC's real price action by 10+ minutes.
-2. **FORCED_LATE_EXIT** — cuts losers > 10% when < 5 min remain. Also hard — model is stale near expiry.
-3. **VPIN_TOXIC_TIME** — in toxic flow regime (`vpin_proxy >= 0.85`), cap hold time to 240s unless clearly winning; avoids adverse selection + theta decay.
-
-**Posterior-gated exits (soft):**
-4. **FORCED_DRAWDOWN** — cuts if `unrealized < -12%` AND posterior fell > 5pp from entry; unconditional beyond -20%
-5. **BOOK_FLIP** — exits if order book imbalance flips against held side for 2+ consecutive cycles (adverse selection defense)
-6. **TRAIL_POSTERIOR** — ATR-scaled trailing stop in probability-space: exit if posterior falls from peak by an ATR-adjusted amount (arms only once in profit)
-7. **FORCED_DISTANCE** — exits near expiry when BTC is within $30 of strike and losing
-8. **FORCED_PROFIT_LOCK** — locks in profit > 25% when < 2 min remain
-9. **TAKE_PROFIT** — exits at offer price ≥ $0.99
-10. **TAKE_PROFIT_DYNAMIC** — Dynamic profit-taking at 25%/10%/5% based on signal strength, time, and microstructure. Posterior-gated (see Profit-Taking Recommendations below).
-
-**Trailing posterior guard** — suppresses conditions 4-10 only (never blocks hard circuit breakers). Holds while `posterior > entry_posterior - tolerance` where tolerance = 2–5pp scaled by profitability; tightens to 3pp when losing > 10%.
 
 **Soft exits (60s minimum hold gate):**
-11. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry
-12. **MOMENTUM_REVERSAL** — CVD flipped against position while losing and < 8 min remain
-13. **MICRO_REVERSAL** — reverse CVD velocity + deep OFI confirmation when not clearly winning (<1%)
-14. **PROBABILITY_DECAY** — posterior fell > 8pp in one cycle AND CVD reversed
-15. **TIME_DECAY** — losing position < 2 min to expiry (held if posterior > 60%)
-16. **TAKE_PROFIT_OPEN** — Profit-taking on open positions at 25% PNL if >2 min left (in `monitor_and_exit_open_positions`). Grounded in Brock et al. (1992) for timing exits.
+9. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry
+10. **MOMENTUM_REVERSAL** — CVD flipped against position while losing and < 8 min remain
+11. **MICRO_REVERSAL** — reverse CVD velocity + deep OFI confirmation when not clearly winning (<1%)
+12. **PROBABILITY_DECAY** — posterior fell > 8pp in one cycle AND CVD reversed
+13. **TIME_DECAY** — losing position < 2 min to expiry (held if posterior > 60%)
+14. **TAKE_PROFIT_OPEN** — Profit-taking on open positions at 25% PNL if >2 min left (in `monitor_and_exit_open_positions`). Grounded in Brock et al. (1992) for timing exits.
 
 ### Execution
 - **Smart entry pricing** — passive `bid+1tick` for GTC, aggressive `ask` for FOK monster signals
