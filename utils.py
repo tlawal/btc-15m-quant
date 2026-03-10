@@ -141,8 +141,20 @@ def fmt_exit(
     pnl_pct: float, reason: str, balance: float
 ) -> str:
     icon = "🔵" if pnl_pct >= 0 else "🔴"
+    
+    # Enhanced reason details for new logic
+    reason_details = {
+        "FORCED_LATE_EXIT": " (<1 min remaining, posterior hold if >0.70)",
+        "TAKE_SMALL_PROFIT": " (2% unrealized gain)",
+        "FORCED_DRAWDOWN": " (posterior drop, tightened tolerances)",
+        "TRAIL_POSTERIOR": " (confidence drop, tightened guard)",
+        "HARD_STOP": " (-25% loss limit)",
+        "VPIN_TOXIC_TIME": " (high VPIN toxicity)",
+    }
+    detail = reason_details.get(reason, "")
+    
     return (
-        f"{icon} <b>EXIT</b> | {side} | {reason}\n"
+        f"{icon} <b>EXIT</b> | {side} | {reason}{detail}\n"
         f"Entry: {entry_px:.3f} → Exit: {exit_px:.3f} | "
         f"PnL: {pnl_pct*100:.1f}%\n"
         f"Balance: ${balance:.2f}"
