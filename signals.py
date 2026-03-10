@@ -918,7 +918,7 @@ def compute_signals(
         yes_mid is not None and no_mid is not None
         and 0.35 <= yes_mid <= 0.65 and 0.35 <= no_mid <= 0.65
     )
-    if _mkt_uncertain and chosen_posterior < 0.90 and not res.monster_signal:
+    if _mkt_uncertain and chosen_posterior < 0.95 and not res.monster_signal:
         gates.append(f"market_uncertain_5050=YES{yes_mid:.2f}_NO{no_mid:.2f}")
 
     # One-sided market gate: only trade when the market has clearly picked a side.
@@ -930,7 +930,7 @@ def compute_signals(
             (res.direction == "DOWN" and no_mid >= 0.75)
         )
     )
-    if not _one_sided and not res.monster_signal:
+    if not _one_sided and chosen_posterior < 0.95 and not res.monster_signal:
         side_px = yes_mid if res.direction == "UP" else no_mid
         gates.append(f"not_one_sided={res.direction}_px={side_px:.2f}_need>=0.75")
 

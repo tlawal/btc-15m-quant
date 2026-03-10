@@ -132,7 +132,9 @@ class Config:
     MAX_TRADE_USD              = 50.0     # absolute max per single trade
     MAX_TRADES_PER_HOUR        = 8        # hourly trade limit
     DAILY_LOSS_LIMIT_USD       = 25.0     # stop if daily realized loss exceeds this
-    DAILY_LOSS_LIMIT_PCT       = 0.10     # stop if daily loss > 10% of starting balance
+    DAILY_LOSS_LIMIT_PCT       = 0.15     # stop if daily loss > 15% of starting balance
+    DAILY_LOSS_HARD_HALT       = False
+    DAILY_LOSS_SOFT_SCALE      = 0.25
     MAX_EXPOSURE_USD           = 100.0    # total notional across all positions
     KILL_SWITCH                = os.getenv("KILL_SWITCH", "false").lower() == "true"
     KILL_SWITCH_PASSWORD       = os.getenv("KILL_SWITCH_PASSWORD", "admin")

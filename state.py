@@ -87,6 +87,11 @@ class EngineState:
     # ── Loss / halt tracking ──────────────────────────────────────────────────
     loss_streak: int                      = 0
     trading_halted: bool                  = False
+    trading_halted_reason: Optional[str]  = None
+    daily_loss_soft_scale: float          = 1.0
+    daily_loss_limit_usd: Optional[float] = None
+    current_drawdown_usd: Optional[float] = None
+    last_entry_telemetry: Optional[Dict[str, Any]] = None
 
     # ── Position tracking ─────────────────────────────────────────────────────
     held_position: HeldPosition           = field(default_factory=HeldPosition)

@@ -776,15 +776,45 @@ class PolymarketClient:
                     log.error(f"Cannot exit {market_slug}: missing token_id / asset")
                     continue
 
-                order_id = await self.market_sell(token_id, size)
+                api_est_px = (curr_val / size) if size else 0.0
+                vpin = float(getattr(sig, "vpin_proxy", 0.0) or 0.0)
+                deep_imb = float(getattr(sig, "deep_imbalance", 0.0) or 0.0)
+                obi = float(getattr(sig, "obi", 0.0) or 0.0)
+                toxic = (vpin >= getattr(Config, "VPIN_BLOCK_THRESHOLD", 0.95)) or (abs(deep_imb) >= 0.80) or (abs(obi) >= 0.30)
+
+                order_id = None
+                if toxic and api_est_px > 0:
+                    limit_px = max(0.01, min(0.99, round(api_est_px - 0.01, 2)))
+                    order_id = await self.limit_sell(token_id, limit_px, size, order_type="FOK")
+                    if order_id:
+                        log.info(
+                            "MID-WINDOW EXIT liquidity-aware: toxic_flow vpin=%.3f obi=%.3f imb=%.3f -> FOK limit_sell @ %.2f",
+                            vpin,
+                            obi,
+                            deep_imb,
+                            limit_px,
+                        )
+
+                if not order_id:
+                    order_id = await self.market_sell(token_id, size)
                 if order_id:
                     # Fetch actual fill price from order status instead of using stale currentValue
-                    fill_px = curr_val / size  # fallback to API estimate
+                    fill_px = api_est_px  # fallback to API estimate
                     await asyncio.sleep(1.0)  # let fill propagate
                     fill_status = await self.get_order_status(order_id)
                     if fill_status and fill_status.get("price", 0) > 0:
                         fill_px = fill_status["price"]
                         log.info(f"MID-WINDOW EXIT fill price: {fill_px:.4f} (API estimate was {curr_val/size:.4f})")
+
+                    if api_est_px and fill_px:
+                        slippage_against = (fill_px - api_est_px) / api_est_px
+                        if slippage_against < -0.02:
+                            log.warning(
+                                "MID-WINDOW EXIT HIGH SLIPPAGE: %.2f%% (fill=%.4f vs est=%.4f)",
+                                slippage_against * 100.0,
+                                fill_px,
+                                api_est_px,
+                            )
 
                     entry_px_per_share = entry_val / size
                     actual_pnl_usd = (fill_px - entry_px_per_share) * size

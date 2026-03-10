@@ -1638,9 +1638,60 @@ class Engine:
         )
         session_start = getattr(self.state, "session_start_balance", 0.0) or 0.0
         max_daily_loss = session_start * Config.DAILY_LOSS_LIMIT_PCT if session_start > 0 else Config.DAILY_LOSS_LIMIT_USD
+        self.state.daily_loss_limit_usd = max_daily_loss
+        self.state.current_drawdown_usd = daily_loss
+        self.state.daily_loss_soft_scale = 1.0
+        self.state.trading_halted_reason = None
         if daily_loss >= max_daily_loss:
-            log.warning("Daily loss limit reached ($%.2f >= $%.2f, 20%% of session start) — no new entries", daily_loss, max_daily_loss)
-            return
+            pct = (daily_loss / session_start) if session_start > 0 else None
+            if getattr(Config, "DAILY_LOSS_HARD_HALT", False):
+                if pct is not None:
+                    log.warning(
+                        "Daily loss limit reached ($%.2f >= $%.2f, %.0f%% of session start) — no new entries",
+                        daily_loss,
+                        max_daily_loss,
+                        pct * 100.0,
+                    )
+                else:
+                    log.warning(
+                        "Daily loss limit reached ($%.2f >= $%.2f) — no new entries",
+                        daily_loss,
+                        max_daily_loss,
+                    )
+                return
+
+            base_scale = float(getattr(Config, "DAILY_LOSS_SOFT_SCALE", 0.25) or 0.25)
+            mult = (daily_loss / max_daily_loss) if max_daily_loss > 0 else 1.0
+            if mult >= 3.0:
+                self.state.daily_loss_soft_scale = min(base_scale, 0.10)
+            elif mult >= 2.0:
+                self.state.daily_loss_soft_scale = min(base_scale, 0.15)
+            else:
+                self.state.daily_loss_soft_scale = base_scale
+
+            self.state.trading_halted_reason = "daily_loss_limit"
+            if pct is not None:
+                log.warning(
+                    "Daily loss limit reached ($%.2f >= $%.2f, %.0f%% of session start) — continuing with size_scale=%.2f",
+                    daily_loss,
+                    max_daily_loss,
+                    pct * 100.0,
+                    self.state.daily_loss_soft_scale,
+                )
+            else:
+                log.warning(
+                    "Daily loss limit reached ($%.2f >= $%.2f) — continuing with size_scale=%.2f",
+                    daily_loss,
+                    max_daily_loss,
+                    self.state.daily_loss_soft_scale,
+                )
+
+            if not sig.monster_signal:
+                log.warning(
+                    "Daily loss limit active — monster-only mode (scale=%.2f): skipping non-monster entry",
+                    self.state.daily_loss_soft_scale,
+                )
+                return
 
         # ── Exposure cap ──────────────────────────────────────────────────────
         current_exposure = self.state.held_position.size_usd or 0.0
@@ -1676,6 +1727,33 @@ class Engine:
             log.info(f"Entry blocked by gate: {primary_gate} (all={sig.skip_gates})")
             return
 
+        try:
+            import json as _json
+            self.state.last_entry_telemetry = {
+                "ts": int(time.time()),
+                "market_slug": getattr(market_info, "slug", None),
+                "condition_id": getattr(market_info, "condition_id", None),
+                "window_start": self.state.last_window_start_sec,
+                "minutes_remaining": float(min_rem) if min_rem is not None else None,
+                "direction": sig.direction,
+                "posterior_up": sig.posterior_final_up,
+                "posterior_down": sig.posterior_final_down,
+                "posterior_chosen": _best_posterior,
+                "abs_score": getattr(sig, "abs_score", None),
+                "signed_score": sig.signed_score,
+                "edge": sig.target_edge,
+                "monster": bool(sig.monster_signal),
+                "override_active": bool(_override_active),
+                "gates": list(sig.skip_gates or []),
+                "daily_loss": daily_loss,
+                "daily_loss_limit": max_daily_loss,
+                "daily_loss_scale": getattr(self.state, "daily_loss_soft_scale", 1.0),
+                "daily_loss_reason": getattr(self.state, "trading_halted_reason", None),
+            }
+            log.info("ENTRY_TELEMETRY %s", _json.dumps(self.state.last_entry_telemetry, separators=(",", ":"), default=str))
+        except Exception:
+            pass
+
         if sig.direction == "NEUTRAL":
             return
 
@@ -1697,7 +1775,7 @@ class Engine:
             entry_px  = round(entry_px or 0.0, 2)
             posterior = sig.posterior_final_down or 0.5
 
-        if entry_px <= 0 or entry_px >= 1.0:
+        if entry_px <= 0.0 or entry_px >= 1.0:
             return
 
         # Size (FIX #8: Kelly with riskPct floor)
@@ -1718,6 +1796,8 @@ class Engine:
             book = ob,
             edge = sig.edge_up if sig.direction == "UP" else sig.edge_down,
         )
+        if getattr(self.state, "daily_loss_soft_scale", 1.0) < 1.0:
+            position_usd *= self.state.daily_loss_soft_scale
         if not position_usd:
             log.info(f"Position size below minimum (bal={balance:.2f})")
             return
