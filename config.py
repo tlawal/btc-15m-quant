@@ -153,6 +153,8 @@ class Config:
     TAKE_PROFIT_TOXIC_MULTIPLIER = 0.5  # Reduce threshold by 50% in toxic flow
     TAKE_PROFIT_LATE_MULTIPLIER = 0.5   # Tighten near expiry
     TAKE_PROFIT_OPEN_PCT = 0.25         # Profit-taking threshold for open positions (> 25% PNL)
+    MAX_SESSION_DRAWDOWN_PCT = 30.0     # Halt trading at this session drawdown %
+    SESSION_DRAWDOWN_RESUME_PCT = 20.0  # Resume trading below this % (hysteresis)
     MAX_EXPOSURE_USD           = 100.0    # total notional across all positions
     KILL_SWITCH                = os.getenv("KILL_SWITCH", "false").lower() == "true"
     KILL_SWITCH_PASSWORD       = os.getenv("KILL_SWITCH_PASSWORD", "admin")

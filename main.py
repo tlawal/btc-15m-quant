@@ -1605,19 +1605,38 @@ class Engine:
         if self.state.held_position.side is not None:
             return   # already holding
 
+        # Daily reset of session_start_balance
+        now = int(time.time())
+        today = now // 86400
+        last_reset_day = getattr(self.state, "last_session_reset_day", 0)
+        if today > last_reset_day:
+            self.state.session_start_balance = balance
+            self.state.last_session_reset_day = today
+            log.info(f"Daily session start reset: new session_start={balance:.2f}")
+
         # Trailing drawdown: reset session_start_balance on wins
         session_start = getattr(self.state, "session_start_balance", 0.0) or 0.0
         if balance > session_start:
             self.state.session_start_balance = balance
             log.info(f"Trailing drawdown reset: new session_start={balance:.2f}")
+            session_start = balance  # update local var
 
         # Calculate and log session drawdown
         session_drawdown_pct = ((session_start - balance) / session_start) * 100 if session_start > 0 else 0.0
         log.info(f"Session drawdown: {session_drawdown_pct:.1f}% (start={session_start:.2f}, current={balance:.2f})")
 
-        # Session drawdown halt
-        if session_drawdown_pct > Config.MAX_SESSION_DRAWDOWN_PCT:
-            log.error(f"TRADING HALTED: loss_streak={self.state.loss_streak}, session_drawdown={session_drawdown_pct:.1f}%")
+        # Session drawdown halt with hysteresis
+        session_halted = getattr(self.state, "session_drawdown_halted", False)
+        if not session_halted and session_drawdown_pct > Config.MAX_SESSION_DRAWDOWN_PCT:
+            self.state.session_drawdown_halted = True
+            log.error(f"TRADING HALTED: session_drawdown={session_drawdown_pct:.1f}% > {Config.MAX_SESSION_DRAWDOWN_PCT:.1f}%")
+            return
+        elif session_halted and session_drawdown_pct < Config.SESSION_DRAWDOWN_RESUME_PCT:
+            self.state.session_drawdown_halted = False
+            log.info(f"Session drawdown halt cleared: {session_drawdown_pct:.1f}% < {Config.SESSION_DRAWDOWN_RESUME_PCT:.1f}%, resuming trading")
+
+        if getattr(self.state, "session_drawdown_halted", False):
+            log.warning(f"Trading halted due to session drawdown ({session_drawdown_pct:.1f}%)")
             return
 
         # Log balance for drawdown monitoring
