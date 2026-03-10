@@ -59,15 +59,17 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 7. **FORCED_DISTANCE** — exits near expiry when BTC is within $30 of strike and losing
 8. **FORCED_PROFIT_LOCK** — locks in profit > 25% when < 2 min remain
 9. **TAKE_PROFIT** — exits at offer price ≥ $0.99
+10. **TAKE_PROFIT_DYNAMIC** — Dynamic profit-taking at 25%/10%/5% based on signal strength, time, and microstructure. Posterior-gated (see Profit-Taking Recommendations below).
 
-**Trailing posterior guard** — suppresses conditions 4-9 only (never blocks hard circuit breakers). Holds while `posterior > entry_posterior - tolerance` where tolerance = 2–5pp scaled by profitability; tightens to 3pp when losing > 10%.
+**Trailing posterior guard** — suppresses conditions 4-10 only (never blocks hard circuit breakers). Holds while `posterior > entry_posterior - tolerance` where tolerance = 2–5pp scaled by profitability; tightens to 3pp when losing > 10%.
 
 **Soft exits (60s minimum hold gate):**
-10. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry
-11. **MOMENTUM_REVERSAL** — CVD flipped against position while losing and < 8 min remain
-12. **MICRO_REVERSAL** — reverse CVD velocity + deep OFI confirmation when not clearly winning (<1%)
-13. **PROBABILITY_DECAY** — posterior fell > 8pp in one cycle AND CVD reversed
-14. **TIME_DECAY** — losing position < 2 min to expiry (held if posterior > 60%)
+11. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry
+12. **MOMENTUM_REVERSAL** — CVD flipped against position while losing and < 8 min remain
+13. **MICRO_REVERSAL** — reverse CVD velocity + deep OFI confirmation when not clearly winning (<1%)
+14. **PROBABILITY_DECAY** — posterior fell > 8pp in one cycle AND CVD reversed
+15. **TIME_DECAY** — losing position < 2 min to expiry (held if posterior > 60%)
+16. **TAKE_PROFIT_OPEN** — Profit-taking on open positions at 25% PNL if >2 min left (in `monitor_and_exit_open_positions`). Grounded in Brock et al. (1992) for timing exits.
 
 ### Execution
 - **Smart entry pricing** — passive `bid+1tick` for GTC, aggressive `ask` for FOK monster signals
