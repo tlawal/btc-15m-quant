@@ -77,7 +77,7 @@ class Config:
     # ── Exit parameters ───────────────────────────────────────────────────────
     TAKE_PROFIT_PRICE          = 0.99
     SLIPPAGE_BUFFER_PCT        = 0.008    # Phase 6: 80bps execution buffer
-    MAX_DRAWDOWN_PCT           = 0.12    # soft posterior-gated drawdown (tightened from 0.15)
+    MAX_DRAWDOWN_PCT           = 0.08    # Tightened from 0.12 — trigger FORCED_DRAWDOWN earlier
     HARD_STOP_PCT              = 0.25    # HARD unconditional circuit breaker — no posterior gate.
                                           # Trailing guard held a -65% loss when posterior lagged price.
                                           # At -25% the position is unrecoverable on a 15m binary; cut always.

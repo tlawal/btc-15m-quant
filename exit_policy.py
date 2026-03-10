@@ -105,9 +105,9 @@ def evaluate_exit(
         elif unrealized_pct > 0:
             _tol = 0.03   # small win
         elif unrealized_pct > -0.10:
-            _tol = 0.05   # modest loss: give room for oscillation
+            _tol = 0.03   # modest loss: give room for oscillation (tightened from 0.05)
         else:
-            _tol = 0.03   # losing >10%: tighten — model is lagging reality
+            _tol = 0.02   # losing >10%: tighten — model is lagging reality (tightened from 0.03)
         if posterior > _entry_post - _tol:
             return None   # model still believes — hold for soft exit conditions
 
