@@ -478,11 +478,11 @@
                         <div class="mono text-sm font-bold" id="new-pm-wr">--</div>
                     </div>
                     <div class="bg-black/20 rounded-lg py-2">
-                        <div class="text-[0.55rem] text-slate-500 uppercase">Prof. Factor</div>
+                        <div class="text-[0.55rem] text-slate-500 uppercase cursor-pointer" onclick="togglePopover('pop-profit-factor')">Prof. Factor <i class="fas fa-info-circle text-xs text-slate-400"></i></div>
                         <div class="mono text-sm font-bold" id="new-pm-pf">--</div>
                     </div>
                     <div class="bg-black/20 rounded-lg py-2">
-                        <div class="text-[0.55rem] text-slate-500 uppercase">Sharpe</div>
+                        <div class="text-[0.55rem] text-slate-500 uppercase cursor-pointer" onclick="togglePopover('pop-sharpe')">Sharpe <i class="fas fa-info-circle text-xs text-slate-400"></i></div>
                         <div class="mono text-sm font-bold" id="new-pm-sharpe">--</div>
                     </div>
                     <div class="bg-black/20 rounded-lg py-2">
@@ -644,6 +644,31 @@
                 <b>&gt; 1.30</b> → high noise; posterior pulled toward 50%
             </div>
             <div class="mpop-tip">💡 When bVol is high, even a strong posterior (e.g. 80%) gets pulled toward 50% by the Bayesian update. This prevents overconfidence in choppy windows.</div>
+        </div>
+
+        <!-- ━━━ Performance metrics popovers ━━━ -->
+        <div id="pop-sharpe" class="mpop">
+            <div class="mpop-title">Sharpe Ratio</div>
+            <div class="mpop-what">Risk-adjusted return: how much return you earned per unit of volatility.</div>
+            <div class="mpop-thresh">
+                <b>&lt; 0</b> → losing / negative expectancy<br>
+                <b>0–0.5</b> → weak / noisy edge<br>
+                <b>0.5–1.0</b> → decent but fragile<br>
+                <b>1.0–2.0</b> → strong<br>
+                <b>&gt; 2.0</b> → very strong (verify sample size)
+            </div>
+            <div class="mpop-tip">💡 Can be misleading with few trades or fat-tailed binary outcomes; not directly comparable to "annualized Sharpe" unless computed on a consistent time series.</div>
+        </div>
+        <div id="pop-profit-factor" class="mpop">
+            <div class="mpop-title">Profit Factor</div>
+            <div class="mpop-what">Gross profits / gross losses. Measures how many dollars you make per dollar lost.</div>
+            <div class="mpop-thresh">
+                <b>&lt; 1.0</b> → losing<br>
+                <b>1.0–1.2</b> → fragile (fees/slippage can flip it)<br>
+                <b>1.3–1.8</b> → good<br>
+                <b>&gt; 2.0</b> → strong (verify sample size)
+            </div>
+            <div class="mpop-tip">💡 PF can look great with few trades or one outlier win. Use alongside drawdown and Sharpe.</div>
         </div>
 
         <!-- Banner tooltips -->
