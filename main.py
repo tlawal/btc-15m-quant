@@ -1605,6 +1605,10 @@ class Engine:
         if self.state.held_position.side is not None:
             return   # already holding
 
+        # Log balance for drawdown monitoring
+        session_start = getattr(self.state, "session_start_balance", 0.0) or 0.0
+        log.info(f"Balance check: current={balance:.2f}, session_start={session_start:.2f}")
+
         # ── Hard capital protections ──────────────────────────────────────────
         if Config.KILL_SWITCH:
             log.warning("KILL_SWITCH is active — no new entries")
