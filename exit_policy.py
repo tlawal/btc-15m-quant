@@ -19,9 +19,16 @@ def evaluate_exit(
     entry_score:      float,
     distance:         Optional[float],
     cvd_delta:        float = 0.0,
+    cvd_velocity:     float = 0.0,
+    deep_ofi:         float = 0.0,
+    obi:              float = 0.0,
+    atr14:            Optional[float] = None,
+    vpin:             float = 0.0,
     posterior:        Optional[float] = None,
     prev_posterior:   Optional[float] = None,
     entry_posterior:  Optional[float] = None,
+    peak_posterior:   Optional[float] = None,
+    book_flip_count:  int = 0,
     hold_seconds:     float = 999.0,
 ) -> Optional[str]:
     """
@@ -36,6 +43,7 @@ def evaluate_exit(
     # Use a safe entry_posterior fallback: if not recorded, treat as 0.5 (neutral).
     # This prevents the trailing guard from being silently skipped on reloaded positions.
     _entry_post = entry_posterior if entry_posterior is not None else 0.5
+    _peak_post  = peak_posterior if peak_posterior is not None else (_entry_post if _entry_post is not None else 0.5)
 
     # ── HARD CIRCUIT BREAKERS (bypass ALL posterior gating) ───────────────────
     # These fire unconditionally regardless of what the Bayesian model says.
@@ -57,6 +65,12 @@ def evaluate_exit(
     if minutes_remaining < Config.FORCED_LATE_EXIT_MIN_REM and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
         return "FORCED_LATE_EXIT"
 
+    # 0c. Regime-aware toxic VPIN stop: shorten holding time in toxic flow regime.
+    # In toxic VPIN, the expected adverse selection dominates — cut sooner.
+    if vpin and vpin >= Config.VPIN_TOXIC_THRESHOLD and hold_seconds >= Config.VPIN_TOXIC_HOLD_MAX_SEC:
+        if unrealized_pct < 0.01:
+            return "VPIN_TOXIC_TIME"
+
     # 1. Forced drawdown — posterior-gated up to -20%, unconditional beyond.
     # The posterior gate prevents cutting on normal BTC noise when model still believes.
     # But if posterior has also dropped, it's a genuine adverse move — cut it.
@@ -71,6 +85,14 @@ def evaluate_exit(
             f"DRAWDOWN_HELD: unrealized={unrealized_pct*100:.1f}% but posterior={posterior:.3f}"
             f" still near entry={_entry_post:.3f} — holding"
         )
+
+    # 1b. Explicit adverse selection / book flip.
+    # If the book flips meaningfully against our side for multiple cycles, exit.
+    if book_flip_count >= Config.BOOK_FLIP_CONFIRM_CYCLES and abs(obi) >= Config.BOOK_FLIP_IMB_THRESH:
+        if held_side == "YES" and obi < 0:
+            return "BOOK_FLIP"
+        if held_side == "NO" and obi > 0:
+            return "BOOK_FLIP"
 
     # ── TRAILING POSTERIOR GUARD (suppresses soft exits 2-8 only) ─────────────
     # Holds the position while the Bayesian model still believes in the trade.
@@ -88,6 +110,21 @@ def evaluate_exit(
             _tol = 0.03   # losing >10%: tighten — model is lagging reality
         if posterior > _entry_post - _tol:
             return None   # model still believes — hold for soft exit conditions
+
+    # 1c. Volatility-adjusted trailing (ATR-aware) using peak posterior.
+    # Only arm once in profit and after minimal holding time to avoid whipsaw.
+    if (
+        posterior is not None
+        and hold_seconds >= Config.TRAIL_MIN_HOLD_SEC
+        and unrealized_pct >= Config.TRAIL_ARM_MIN_PROFIT_PCT
+        and _peak_post is not None
+    ):
+        eff_atr = atr14 if (atr14 is not None and atr14 > 0) else Config.TRAIL_ATR_REF
+        atr_scale = max(0.0, min(2.0, eff_atr / max(Config.TRAIL_ATR_REF, 1e-6)))
+        allow_drop = Config.TRAIL_BASE_POST_DROP + Config.TRAIL_ATR_SCALE * (atr_scale - 1.0)
+        allow_drop = max(Config.TRAIL_MIN_POST_DROP, min(Config.TRAIL_MAX_POST_DROP, allow_drop))
+        if posterior <= _peak_post - allow_drop:
+            return "TRAIL_POSTERIOR"
 
     # 2. Forced distance exit (near expiry, out-of-range, losing)
     if (minutes_remaining < Config.FORCED_DISTANCE_EXIT_MIN_REM
@@ -122,6 +159,14 @@ def evaluate_exit(
         return "MOMENTUM_REVERSAL"
     if held_side == "NO" and cvd_delta > 0.5 and unrealized_pct < 0 and minutes_remaining < 8.0:
         return "MOMENTUM_REVERSAL"
+
+    # 6b. Microstructure confirmation exit: reverse CVD velocity and deep OFI.
+    # Trigger only when position is not clearly winning — this is primarily adverse-selection defense.
+    if unrealized_pct < 0.01 and minutes_remaining < 10.0:
+        ofi_rev = abs(deep_ofi) > 0 and ((held_side == "YES" and deep_ofi < -Config.EXIT_DEEP_OFI_REV_THRESH) or (held_side == "NO" and deep_ofi > Config.EXIT_DEEP_OFI_REV_THRESH))
+        cvd_vel_rev = abs(cvd_velocity) > 0 and ((held_side == "YES" and cvd_velocity < -Config.EXIT_CVD_VEL_REV_THRESH) or (held_side == "NO" and cvd_velocity > Config.EXIT_CVD_VEL_REV_THRESH))
+        if ofi_rev and cvd_vel_rev:
+            return "MICRO_REVERSAL"
 
     # 7. Probability decay — posterior declining while losing AND cvd reverses
     if posterior is not None and prev_posterior is not None:

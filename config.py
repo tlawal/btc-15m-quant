@@ -36,7 +36,7 @@ class Config:
     MIN_SCORE_HIGH_VOL         = 2.0
     # Required edge by regime
     REQUIRED_EDGE_LOW          = 0.050
-    REQUIRED_EDGE_NORMAL       = 0.035
+    REQUIRED_EDGE_NORMAL       = 0.005   # lower edge req in normal regime → higher trade frequency
     REQUIRED_EDGE_HIGH         = 0.025
     # Balance-adaptive edge: when wallet is small, use lower edge requirement
     # This prevents the bot from being perpetually blocked at low capital.
@@ -62,7 +62,11 @@ class Config:
     # ── OFI / microstructure ─────────────────────────────────────────────────
     OFI_STRONG                 = 5.0
     OFI_15M                    = 15.0
-    VPIN_BLOCK_THRESHOLD       = 0.70     # block entry if vpin > this AND score weak
+    VPIN_BLOCK_THRESHOLD       = 0.85     # block entry if vpin > this AND score weak (raised: fewer false halts)
+
+    # ── VPIN toxicity regimes (exit/hold shaping) ─────────────────────────────
+    VPIN_TOXIC_THRESHOLD       = 0.85     # VPIN above this = toxic flow regime
+    VPIN_TOXIC_HOLD_MAX_SEC    = 240.0    # shorten holding in toxic regime (theta + adverse selection)
 
     # ── Scoring constants ─────────────────────────────────────────────────────
     BLIND_ENTRY_SCORE          = 7.0      # legacy; use min_score_* in practice
@@ -84,6 +88,27 @@ class Config:
     FORCED_PROFIT_PCT          = 0.25
     FORCED_DISTANCE_MAX        = 30.0     # abs(btcPrice - strike) < this triggers late exit
 
+    # Volatility-adjusted trailing stop (probability-space, ATR-scaled)
+    TRAIL_ATR_REF              = 120.0    # reference ATR level for scaling trailing width
+    TRAIL_BASE_POST_DROP       = 0.04     # base allowable posterior drop from peak before exit
+    TRAIL_ATR_SCALE            = 0.06     # additional allowed drop at high ATR (scaled by atr/ref)
+    TRAIL_MIN_POST_DROP        = 0.02     # floor (tightest) trailing width
+    TRAIL_MAX_POST_DROP        = 0.12     # cap (widest) trailing width
+    TRAIL_ARM_MIN_PROFIT_PCT   = 0.01     # only arm trailing after at least +1% unrealized
+    TRAIL_MIN_HOLD_SEC         = 30.0     # minimum hold before trailing can trigger
+
+    # Microstructure confirmation exits
+    EXIT_CVD_VEL_REV_THRESH    = 0.50     # reverse CVD velocity threshold (units: from cvd_ws slope)
+    EXIT_DEEP_OFI_REV_THRESH   = 0.20     # reverse normalized deep OFI threshold
+
+    # Explicit adverse selection / book flip
+    BOOK_FLIP_IMB_THRESH       = 0.18     # OBI magnitude threshold to consider a flip meaningful
+    BOOK_FLIP_CONFIRM_CYCLES   = 2        # require N consecutive flips to trigger
+
+    # Distribution shift / robustness gating (WILDS-inspired)
+    # If model posterior diverges too far from market-implied probability, treat as shift.
+    MODEL_MKT_DIVERGENCE_MAX   = 0.18
+
     # ── Risk / sizing (FIX #8) ────────────────────────────────────────────────
     RISK_TIER_50               = 0.15     # ≤ $50   (was 0.25 — capped at ~50% exposure)
     RISK_TIER_100              = 0.15     # $50–100
@@ -93,6 +118,10 @@ class Config:
     MIN_TRADE_USD              = 5.75    # Polymarket CLOB minimum is ~$5
     MAX_TRADES_PER_WINDOW      = 5
     STREAK_HALT_AT             = 5        # halt trading after N consecutive losses
+
+    # Dynamic Kelly scaling based on belief volatility (sigma_b)
+    KELLY_MULT_MIN             = 0.50
+    KELLY_MULT_MAX             = 1.50
 
     # ── BB Squeeze gate thresholds (regime-adaptive) ──────────────────────────
     BB_SQUEEZE_LOW             = 0.0015   # low-vol regime (ATR < 80)

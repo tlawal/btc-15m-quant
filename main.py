@@ -1456,6 +1456,25 @@ class Engine:
         prev_post = self.state.last_posterior_up if pos.side == "YES" else self.state.last_posterior_down
         curr_post = sig.posterior_final_up if pos.side == "YES" else sig.posterior_final_down
 
+        # Track peak posterior for trailing exits
+        if curr_post is not None:
+            prev_peak = getattr(pos, "peak_posterior", None)
+            if prev_peak is None or curr_post > prev_peak:
+                setattr(pos, "peak_posterior", curr_post)
+
+        # Track adverse-selection / book-flip persistence
+        # A "flip" is meaningful if OBI crosses sign against the held side with enough magnitude.
+        flip = False
+        if hasattr(sig, "obi"):
+            if pos.side == "YES" and sig.obi <= -Config.BOOK_FLIP_IMB_THRESH:
+                flip = True
+            if pos.side == "NO" and sig.obi >= Config.BOOK_FLIP_IMB_THRESH:
+                flip = True
+        if flip:
+            setattr(pos, "book_flip_count", int(getattr(pos, "book_flip_count", 0)) + 1)
+        else:
+            setattr(pos, "book_flip_count", 0)
+
         hold_secs = float(int(time.time()) - (pos.placed_at_ts or int(time.time())))
         reason = evaluate_exit(
             held_side         = pos.side,
@@ -1466,9 +1485,16 @@ class Engine:
             entry_score       = pos.entry_signed_score or 0.0,
             distance          = sig.distance,
             cvd_delta         = cvd_delta,
+            cvd_velocity      = self.cvd_ws.get_cvd_slope(),
+            deep_ofi          = getattr(sig, "deep_ofi", 0.0) or 0.0,
+            obi               = getattr(sig, "obi", 0.0) or 0.0,
+            atr14             = getattr(sig, "atr14", None),
+            vpin              = getattr(sig, "vpin_proxy", 0.0) or 0.0,
             posterior         = curr_post,
             prev_posterior    = prev_post,
             entry_posterior   = pos.entry_posterior,
+            peak_posterior    = getattr(pos, "peak_posterior", None),
+            book_flip_count   = int(getattr(pos, "book_flip_count", 0)),
             hold_seconds      = hold_secs,
         )
         if not reason:

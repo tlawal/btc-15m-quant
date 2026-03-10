@@ -77,7 +77,8 @@ def compute_position_size(
     full_kelly = max(0.0, (p * b - q) / b) if b > 0 else 0.0
 
     # True quarter-Kelly, scaled by Sharpe-calibrated multiplier
-    quarter_kelly = full_kelly * 0.25 * kelly_multiplier
+    km = max(Config.KELLY_MULT_MIN, min(Config.KELLY_MULT_MAX, float(kelly_multiplier or 1.0)))
+    quarter_kelly = full_kelly * 0.25 * km
 
     # Position = fraction of bankroll to bet, capped at risk budget
     position_usd = balance * quarter_kelly

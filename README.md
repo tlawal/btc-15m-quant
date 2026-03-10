@@ -10,7 +10,7 @@ Pure async Python — `asyncio` + `aiohttp` + `py-clob-client` + SQLite/PostgreS
 ```
 main.py              — Async engine loop (3s cadence), orchestration
 signals.py           — Bayesian posterior, belief-vol, CVD/OFI/MFI scoring
-exit_policy.py       — Exit evaluation: 9 conditions (drawdown, alpha decay, momentum, time-decay)
+exit_policy.py       — Exit evaluation: hard breakers + ATR-scaled trailing + microstructure/adverse-selection exits
 sizing.py            — Quarter-Kelly sizing with streak de-risking + depth cap
 polymarket_client.py — CLOB wrapper: limit/FOK orders, cancel/replace, fill tracking
 data_feeds.py        — BTC price, klines, CVD WebSocket, order book feeds
@@ -50,20 +50,24 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 **Hard circuit breakers — always fire regardless of model state:**
 1. **HARD_STOP** — unconditional cut at `unrealized < -25%`. No posterior gate. Lesson learned from a -65% loss where the trailing guard held the position while the Bayesian model lagged BTC's real price action by 10+ minutes.
 2. **FORCED_LATE_EXIT** — cuts losers > 10% when < 5 min remain. Also hard — model is stale near expiry.
+3. **VPIN_TOXIC_TIME** — in toxic flow regime (`vpin_proxy >= 0.85`), cap hold time to 240s unless clearly winning; avoids adverse selection + theta decay.
 
 **Posterior-gated exits (soft):**
-3. **FORCED_DRAWDOWN** — cuts if `unrealized < -12%` AND posterior fell > 5pp from entry; unconditional beyond -20%
-4. **FORCED_DISTANCE** — exits near expiry when BTC is within $30 of strike and losing
-5. **FORCED_PROFIT_LOCK** — locks in profit > 25% when < 2 min remain
-6. **TAKE_PROFIT** — exits at offer price ≥ $0.99
+4. **FORCED_DRAWDOWN** — cuts if `unrealized < -12%` AND posterior fell > 5pp from entry; unconditional beyond -20%
+5. **BOOK_FLIP** — exits if order book imbalance flips against held side for 2+ consecutive cycles (adverse selection defense)
+6. **TRAIL_POSTERIOR** — ATR-scaled trailing stop in probability-space: exit if posterior falls from peak by an ATR-adjusted amount (arms only once in profit)
+7. **FORCED_DISTANCE** — exits near expiry when BTC is within $30 of strike and losing
+8. **FORCED_PROFIT_LOCK** — locks in profit > 25% when < 2 min remain
+9. **TAKE_PROFIT** — exits at offer price ≥ $0.99
 
 **Trailing posterior guard** — suppresses conditions 4-9 only (never blocks hard circuit breakers). Holds while `posterior > entry_posterior - tolerance` where tolerance = 2–5pp scaled by profitability; tightens to 3pp when losing > 10%.
 
 **Soft exits (60s minimum hold gate):**
-7. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry
-8. **MOMENTUM_REVERSAL** — CVD flipped against position while losing and < 8 min remain
-9. **PROBABILITY_DECAY** — posterior fell > 8pp in one cycle AND CVD reversed
-10. **TIME_DECAY** — losing position < 2 min to expiry (held if posterior > 60%)
+10. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry
+11. **MOMENTUM_REVERSAL** — CVD flipped against position while losing and < 8 min remain
+12. **MICRO_REVERSAL** — reverse CVD velocity + deep OFI confirmation when not clearly winning (<1%)
+13. **PROBABILITY_DECAY** — posterior fell > 8pp in one cycle AND CVD reversed
+14. **TIME_DECAY** — losing position < 2 min to expiry (held if posterior > 60%)
 
 ### Execution
 - **Smart entry pricing** — passive `bid+1tick` for GTC, aggressive `ask` for FOK monster signals
@@ -220,7 +224,7 @@ python main.py --reset
 | `MAX_EXPOSURE_USD` | 100.00 | Total exposure cap |
 | `STREAK_HALT_AT` | 5 | Loss streak halt threshold |
 | `MIN_SCORE_NORMAL` | 2.5 | Required signed score (normal regime) |
-| `REQUIRED_EDGE_NORMAL` | 0.035 | Required edge (normal ATR regime) |
+| `REQUIRED_EDGE_NORMAL` | 0.005 | Required edge (normal ATR regime) |
 | `HARD_STOP_PCT` | 0.25 | **Unconditional** circuit breaker at -25% — no posterior gate |
 | `MAX_DRAWDOWN_PCT` | 0.12 | Soft posterior-gated drawdown threshold |
 | `FORCED_LATE_LOSS_PCT` | 0.10 | Late-exit loss threshold (< 5 min remaining) |
@@ -232,3 +236,4 @@ python main.py --reset
 | `LATE_CONVICTION_DISTANCE` | 40.0 | Min BTC distance from strike for late sniping |
 | `BB_SQUEEZE_NORMAL` | 0.0030 | BB squeeze gate threshold (normal regime) |
 | `DAILY_LOSS_LIMIT_PCT` | 0.10 | Daily loss limit as fraction of session start balance |
+
