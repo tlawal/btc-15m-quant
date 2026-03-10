@@ -198,6 +198,7 @@ class Config:
     TELEGRAM_TOKEN             = os.getenv("TELEGRAM_TOKEN", "")
     TELEGRAM_CHAT_ID           = os.getenv("TELEGRAM_CHAT_ID", "")
     ANTHROPIC_API_KEY          = os.getenv("ANTHROPIC_API_KEY", "")
+    GEMINI_API_KEY              = os.getenv("GEMINI_API_KEY", "")
     DATABASE_URL               = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./state.db")
     LOG_LEVEL                  = os.getenv("LOG_LEVEL", "INFO")
 
