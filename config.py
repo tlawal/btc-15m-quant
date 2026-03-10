@@ -132,9 +132,26 @@ class Config:
     MAX_TRADE_USD              = 50.0     # absolute max per single trade
     MAX_TRADES_PER_HOUR        = 8        # hourly trade limit
     DAILY_LOSS_LIMIT_USD       = 25.0     # stop if daily realized loss exceeds this
-    DAILY_LOSS_LIMIT_PCT       = 0.15     # stop if daily loss > 15% of starting balance
-    DAILY_LOSS_HARD_HALT       = False
-    DAILY_LOSS_SOFT_SCALE      = 0.25
+    DAILY_LOSS_LIMIT_PCT       = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "0.15") or 0.15)
+
+    # Profit-taking dynamic thresholds (posterior-gated, trailing guard suppressed)
+    TAKE_PROFIT_STRONG_PCT = 0.25      # 25% for strong signals
+    TAKE_PROFIT_STRONG_POSTERIOR = 0.90
+    TAKE_PROFIT_STRONG_SCORE = 6.0
+    TAKE_PROFIT_STRONG_MAX_MIN = 7.5   # Early window
+
+    TAKE_PROFIT_MODERATE_PCT = 0.10    # 10% for moderate
+    TAKE_PROFIT_MODERATE_POSTERIOR = 0.75
+    TAKE_PROFIT_MODERATE_SCORE = 3.0
+    TAKE_PROFIT_MODERATE_MAX_MIN = 10.0  # Mid-window
+
+    TAKE_PROFIT_WEAK_PCT = 0.05        # 5% for weak
+    TAKE_PROFIT_WEAK_POSTERIOR = 0.60
+    TAKE_PROFIT_WEAK_SCORE = 1.5
+    # Late window or toxic microstructure
+
+    TAKE_PROFIT_TOXIC_MULTIPLIER = 0.5  # Reduce threshold by 50% in toxic flow
+    TAKE_PROFIT_LATE_MULTIPLIER = 0.5   # Tighten near expiry
     MAX_EXPOSURE_USD           = 100.0    # total notional across all positions
     KILL_SWITCH                = os.getenv("KILL_SWITCH", "false").lower() == "true"
     KILL_SWITCH_PASSWORD       = os.getenv("KILL_SWITCH_PASSWORD", "admin")

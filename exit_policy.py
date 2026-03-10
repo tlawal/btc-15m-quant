@@ -142,6 +142,49 @@ def evaluate_exit(
     if current_price >= Config.TAKE_PROFIT_PRICE:
         return "TAKE_PROFIT"
 
+    # 4b. Dynamic profit-taking based on signal strength, time, and microstructure
+    # Posterior-gated (trailing guard above suppresses if model still believes)
+    abs_score = abs(signed_score)
+    entry_abs_score = abs(entry_score)
+    profit_threshold = None
+
+    # Strong signals: 25% in early window
+    if (abs_score >= Config.TAKE_PROFIT_STRONG_SCORE and
+        posterior is not None and posterior >= Config.TAKE_PROFIT_STRONG_POSTERIOR and
+        minutes_remaining <= Config.TAKE_PROFIT_STRONG_MAX_MIN):
+        profit_threshold = Config.TAKE_PROFIT_STRONG_PCT
+
+    # Moderate signals: 10% in mid-window
+    elif (abs_score >= Config.TAKE_PROFIT_MODERATE_SCORE and
+          posterior is not None and posterior >= Config.TAKE_PROFIT_MODERATE_POSTERIOR and
+          minutes_remaining > Config.TAKE_PROFIT_STRONG_MAX_MIN and
+          minutes_remaining <= Config.TAKE_PROFIT_MODERATE_MAX_MIN):
+        profit_threshold = Config.TAKE_PROFIT_MODERATE_PCT
+
+    # Weak signals: 5% in late window or toxic microstructure
+    elif (abs_score >= Config.TAKE_PROFIT_WEAK_SCORE and
+          posterior is not None and posterior >= Config.TAKE_PROFIT_WEAK_POSTERIOR and
+          (minutes_remaining > Config.TAKE_PROFIT_MODERATE_MAX_MIN or
+           (vpin >= Config.VPIN_TOXIC_THRESHOLD and abs(deep_ofi) >= Config.EXIT_DEEP_OFI_REV_THRESH))):
+        profit_threshold = Config.TAKE_PROFIT_WEAK_PCT
+
+    if profit_threshold is not None:
+        # Microstructure scaling: reduce threshold in toxic flow
+        if vpin >= Config.VPIN_TOXIC_THRESHOLD:
+            profit_threshold *= Config.TAKE_PROFIT_TOXIC_MULTIPLIER
+
+        # Time scaling: tighten near expiry
+        if minutes_remaining < Config.FORCED_PROFIT_LOCK_MIN_REM:
+            profit_threshold *= Config.TAKE_PROFIT_LATE_MULTIPLIER
+
+        if unrealized_pct > profit_threshold:
+            log.info(
+                f"TAKE_PROFIT_DYNAMIC: unrealized={unrealized_pct*100:.1f}% > {profit_threshold*100:.1f}% "
+                f"(score={abs_score:.1f}, posterior={posterior:.3f if posterior else 'N/A'}, "
+                f"min_rem={minutes_remaining:.1f}, vpin={vpin:.3f})"
+            )
+            return "TAKE_PROFIT_DYNAMIC"
+
     # Minimum hold gate: conditions 5-8 require at least 60s in position.
     # Avoids whipsaw exits on EMA lag and first-candle noise immediately post-fill.
     if hold_seconds < 60.0:
