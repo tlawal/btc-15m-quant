@@ -81,7 +81,7 @@ class Config:
     HARD_STOP_PCT              = 0.25    # HARD unconditional circuit breaker — no posterior gate.
                                           # Trailing guard held a -65% loss when posterior lagged price.
                                           # At -25% the position is unrecoverable on a 15m binary; cut always.
-    FORCED_LATE_EXIT_MIN_REM   = 5.0
+    FORCED_LATE_EXIT_MIN_REM    = 1.0     # Force exit at <1 min if losing
     FORCED_DISTANCE_EXIT_MIN_REM = 3.0
     FORCED_PROFIT_LOCK_MIN_REM = 2.0
     FORCED_LATE_LOSS_PCT       = 0.10   # tightened from 0.15 — cut losers faster in last 5 min

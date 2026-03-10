@@ -60,13 +60,17 @@ def evaluate_exit(
         return "HARD_STOP"
 
     # 0b. Late-window hard stop: near expiry, any loss beyond small threshold.
-    # At <5 min remaining, the binary is repricing fast — the model is stale.
-    # Tighter threshold for late losers: exit at -10% if < 5 min remain.
+    # At <1 min remaining, the binary is repricing fast — the model is stale.
+    # Tighter threshold for late losers: exit at -10% if < 1 min remain.
     # Skip for late-entered positions to allow holding to expiry.
+    # Hold if posterior >0.70 (model still believes).
     if minutes_remaining < Config.FORCED_LATE_EXIT_MIN_REM and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
         if entry_min_rem is not None and entry_min_rem < 5:
             log.info(f"FORCED_LATE_EXIT_SKIPPED: late entry (entry_min_rem={entry_min_rem:.1f}) — holding to expiry")
             pass  # skip forced exit for late entries
+        elif posterior is not None and posterior > 0.70:
+            log.info(f"FORCED_LATE_EXIT_HELD: posterior={posterior:.3f} > 0.70 — holding to expiry")
+            pass  # hold if model confident
         else:
             return "FORCED_LATE_EXIT"
 
