@@ -1605,6 +1605,11 @@ class Engine:
         if self.state.held_position.side is not None:
             return   # already holding
 
+        # Hard early window no-trade zone: no entries in first 4 min
+        if min_rem is not None and min_rem > 4.0:
+            log.info(f"HARD_EARLY_WINDOW: no trades in first 4 min (min_rem={min_rem:.1f})")
+            return
+
         # Daily reset of session_start_balance
         now = int(time.time())
         today = now // 86400
