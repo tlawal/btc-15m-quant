@@ -174,6 +174,20 @@ class PolymarketMarketWSClient:
         except Exception:
             return
 
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict):
+                    await self._handle_event_dict(item)
+            return
+
+        if isinstance(data, dict):
+            await self._handle_event_dict(data)
+            return
+
+    async def _handle_event_dict(self, data: dict):
+        if not data:
+            return
+
         event_type = data.get("event_type") or data.get("type")
         if not event_type:
             return
@@ -208,8 +222,12 @@ class PolymarketMarketWSClient:
         bids = {}
         for lvl in data.get("bids", []) or []:
             try:
-                p = float(lvl.get("price"))
-                s = float(lvl.get("size"))
+                if isinstance(lvl, dict):
+                    p = float(lvl.get("price"))
+                    s = float(lvl.get("size"))
+                else:
+                    p = float(lvl[0])
+                    s = float(lvl[1])
             except Exception:
                 continue
             if p > 0 and s > 0:
@@ -218,8 +236,12 @@ class PolymarketMarketWSClient:
         asks = {}
         for lvl in data.get("asks", []) or []:
             try:
-                p = float(lvl.get("price"))
-                s = float(lvl.get("size"))
+                if isinstance(lvl, dict):
+                    p = float(lvl.get("price"))
+                    s = float(lvl.get("size"))
+                else:
+                    p = float(lvl[0])
+                    s = float(lvl[1])
             except Exception:
                 continue
             if p > 0 and s > 0:
