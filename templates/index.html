@@ -1236,7 +1236,7 @@ function updateUI() {
                         <td class="text-white">${t.entry?t.entry.toFixed(3):'--'}</td>
                         <td>${t.exit?t.exit.toFixed(3):'<span class="text-slate-600">OPEN</span>'}</td>
                         <td class="text-slate-300">${sharesStr}${txIcon}</td>
-                        <td class="text-right font-bold ${pnlC}">${pnl!==0?(pnl>0?'+':'')+(pnl*100).toFixed(1)+'%':out}</td>
+                        <td class="text-right font-bold ${pnlC}">${pnl!==0?(pnl>0?'+':'')+(pnl / sharesNum * 100).toFixed(1)+'%':out}</td>
                     </tr>`;
                 }).join('');
         }

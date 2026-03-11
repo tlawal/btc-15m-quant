@@ -343,6 +343,12 @@ class Engine:
         min_rem      = calc_minutes_remaining(now_ts)
         win_rolled   = self.state.last_window_start_sec != win_start
 
+        # ── Skip if outside preferred trading hours ───────────────────────────
+        if not Config.is_preferred_trading_time():
+            log.info("Outside preferred trading hours, skipping cycle")
+            await self.state_mgr.save(self.state)
+            return
+
         # ── Window reset ──────────────────────────────────────────────────────
         if win_rolled:
             log.info(f"New 15m window: {win_start} ({datetime.fromtimestamp(win_start, tz=timezone.utc).strftime('%H:%M:%S')} UTC)")
