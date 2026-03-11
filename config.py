@@ -74,6 +74,8 @@ class Config:
     VPIN_TOXIC_THRESHOLD       = 0.85     # VPIN above this = toxic flow regime
     VPIN_TOXIC_HOLD_MAX_SEC    = 240.0    # shorten holding in toxic regime (theta + adverse selection)
 
+    OUTSIDE_HOURS_TAKE_PROFIT_PCT = 0.03
+
     # ── Scoring constants ─────────────────────────────────────────────────────
     BLIND_ENTRY_SCORE          = 7.0      # legacy; use min_score_* in practice
     MONSTER_SCORE              = 8.0

@@ -76,8 +76,8 @@ def evaluate_exit(
         else:
             return "FORCED_LATE_EXIT"
 
-    # 0c. Outside preferred hours: aggressive profit-taking at 5%
-    if not Config.is_preferred_trading_time() and unrealized_pct >= 0.05:
+    # 0c. Outside preferred hours: aggressive profit-taking
+    if not Config.is_preferred_trading_time() and unrealized_pct >= Config.OUTSIDE_HOURS_TAKE_PROFIT_PCT:
         return "TAKE_SMALL_PROFIT_OUTSIDE"
 
     # 0e. Adverse microstructure reversal (Hawkes OFI for adverse selection)

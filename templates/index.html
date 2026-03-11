@@ -822,6 +822,9 @@
                         <span class="mx-2">|</span>
                         Intended Px: <span id="exit-intended" class="text-slate-200">--</span>
                     </div>
+                    <div id="manual-exit-hint" class="mt-2 text-[0.6rem] text-slate-500">
+                        Open a position to enable manual exit controls.
+                    </div>
                 </div>
 
                 <!-- Halt Banner + Resume Button -->
@@ -1273,12 +1276,21 @@ function updateUI() {
         // Manual exit panel
         const manualPanel = $('manual-exit-panel');
         if (manualPanel) {
-            manualPanel.style.display = (posSide !== 'FLAT') ? '' : 'none';
+            manualPanel.style.display = '';
+            manualPanel.style.opacity = (posSide !== 'FLAT') ? '1' : '0.55';
         }
         const hp = d.held_position || {};
         if ($('exit-oid')) $('exit-oid').innerText = hp.order_id ? String(hp.order_id).slice(0, 10) + '…' : '--';
         if ($('exit-reason')) $('exit-reason').innerText = hp.exit_reason || '--';
         if ($('exit-intended')) $('exit-intended').innerText = hp.intended_exit_price != null ? parseFloat(hp.intended_exit_price).toFixed(3) : '--';
+        const enabled = (posSide !== 'FLAT');
+        $('btn-exit-place') && ($('btn-exit-place').disabled = !enabled);
+        $('btn-exit-replace') && ($('btn-exit-replace').disabled = !enabled);
+        $('btn-exit-cancel') && ($('btn-exit-cancel').disabled = !enabled);
+        $('btn-exit-now') && ($('btn-exit-now').disabled = !enabled);
+        if ($('manual-exit-hint')) {
+            $('manual-exit-hint').style.display = enabled ? 'none' : '';
+        }
 
         // Trade history
         if (d.recent_trades) {

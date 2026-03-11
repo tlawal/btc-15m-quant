@@ -470,11 +470,9 @@ class Engine:
         min_rem      = calc_minutes_remaining(now_ts)
         win_rolled   = self.state.last_window_start_sec != win_start
 
-        # ── Skip if outside preferred trading hours ───────────────────────────
-        if not Config.is_preferred_trading_time():
-            log.info("Outside preferred trading hours, skipping cycle")
-            await self.state_mgr.save(self.state)
-            return
+        outside_preferred_hours = not Config.is_preferred_trading_time()
+        if outside_preferred_hours:
+            log.info("Outside preferred trading hours: exits/monitoring enabled, entries disabled")
 
         # ── Window reset ──────────────────────────────────────────────────────
         if win_rolled:
@@ -973,7 +971,7 @@ class Engine:
         )
 
         # ── Entry handling ─────────────────────────────────────────────────────
-        if not exit_executed and not self.state.trading_halted:
+        if not exit_executed and not self.state.trading_halted and not outside_preferred_hours:
             if self.state.window_trade_count >= 1:
                 # Skip entry to prevent simultaneous entries in window
                 pass
