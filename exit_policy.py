@@ -170,9 +170,14 @@ def evaluate_exit(
     if current_price >= Config.TAKE_PROFIT_PRICE:
         return "TAKE_PROFIT"
 
-    # 4a. Take small profit: lock in 2% gain quickly
-    if unrealized_pct > 0.02:
-        log.info(f"TAKE_SMALL_PROFIT: unrealized={unrealized_pct*100:.1f}% > 2%")
+    # 4a. Take profit at 10% from entry
+    if unrealized_pct >= 0.10:
+        log.info(f"TAKE_PROFIT_10PCT: unrealized={unrealized_pct*100:.1f}% >= 10% from entry")
+        return "TAKE_PROFIT_10PCT"
+
+    # 4b. Take small profit: lock in 3% gain quickly
+    if unrealized_pct > 0.03:
+        log.info(f"TAKE_SMALL_PROFIT: unrealized={unrealized_pct*100:.1f}% > 3%")
         return "TAKE_SMALL_PROFIT"
 
     # 4b. Dynamic profit-taking based on signal strength, time, and microstructure
