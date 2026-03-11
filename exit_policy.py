@@ -110,15 +110,24 @@ def evaluate_exit(
     # But if posterior has also dropped, it's a genuine adverse move — cut it.
     # NOTE: HARD_STOP_PCT (-25%) above already catches anything truly catastrophic.
     if unrealized_pct < -Config.MAX_DRAWDOWN_PCT:
-        if unrealized_pct < -0.20:
-            return "FORCED_DRAWDOWN"   # unconditional beyond 20% (belt+suspenders)
-        # Gate with posterior: only hold if model is still convinced (< 5pp drop from entry)
-        if posterior is None or posterior <= _entry_post - 0.05:
-            return "FORCED_DRAWDOWN"
-        log.info(
-            f"DRAWDOWN_HELD: unrealized={unrealized_pct*100:.1f}% but posterior={posterior:.3f}"
-            f" still near entry={_entry_post:.3f} — holding"
-        )
+        # 0.95+ conviction exemption: if model is near-certain and market is far from strike near expiry,
+        # ignore order book mid-price dips (which can trigger false drawdown at low liquidity).
+        if posterior is not None and posterior > 0.95 and minutes_remaining < 2.0 and distance is not None and abs(distance) > 50.0:
+            log.info(
+                f"DRAWDOWN_EXEMPT: posterior={posterior:.3f} > 0.95, distance={abs(distance):.1f} > 50, rem={minutes_remaining:.1f} "
+                f"— ignoring drawdown exit near expiry"
+            )
+            pass
+        else:
+            if unrealized_pct < -0.20:
+                return "FORCED_DRAWDOWN"   # unconditional beyond 20% (belt+suspenders)
+            # Gate with posterior: only hold if model is still convinced (< 5pp drop from entry)
+            if posterior is None or posterior <= _entry_post - 0.05:
+                return "FORCED_DRAWDOWN"
+            log.info(
+                f"DRAWDOWN_HELD: unrealized={unrealized_pct*100:.1f}% but posterior={posterior:.3f}"
+                f" still near entry={_entry_post:.3f} — holding"
+            )
 
     # 1b. Explicit adverse selection / book flip.
     # If the book flips meaningfully against our side for multiple cycles, exit.
@@ -133,9 +142,12 @@ def evaluate_exit(
     # Only runs after hard breakers above — it CANNOT override HARD_STOP or FORCED_LATE_EXIT.
     # Tolerance scales with profitability — hold winners tighter, give modest losers room.
     # When losing >10%, tighten tolerance: the model is increasingly suspect vs market price.
-    # Disable guard for very high confidence (sure things) to allow exits.
-    if posterior is not None and posterior <= 0.95:
-        if unrealized_pct > 0.05:
+    # High confidence override: if posterior > 0.95, hold unless it drops significantly (>10pp).
+    if posterior is not None:
+        if posterior > 0.95:
+             # Near-certain: very loose tolerance (0.10) to avoid being shaken out by noise.
+             _tol = 0.10
+        elif unrealized_pct > 0.05:
             _tol = 0.02   # winning >5%: tight hold
         elif unrealized_pct > 0:
             _tol = 0.03   # small win
@@ -143,6 +155,7 @@ def evaluate_exit(
             _tol = 0.03   # modest loss: give room for oscillation (tightened from 0.05)
         else:
             _tol = 0.02   # losing >10%: tighten — model is lagging reality (tightened from 0.03)
+
         if posterior > _entry_post - _tol:
             return None   # model still believes — hold for soft exit conditions
 
