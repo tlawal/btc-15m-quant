@@ -72,7 +72,7 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 - `MIN_TRADE_USD = 5.75` — minimum notional per trade (Polymarket CLOB minimum ~$5)
 - `MAX_TRADE_USD = 50.00` — absolute per-trade cap
 - `MAX_EXPOSURE_USD = 100.00` — blocks new entries if already at exposure limit
-- `MAX_TRADES_PER_HOUR = 8` — rolling 1-hour entry limit
+- `MAX_TRADES_PER_HOUR = 14` — rolling 1-hour entry limit
 - `STREAK_HALT_AT = 5` — halts trading after 5 consecutive losses
 - `DAILY_LOSS_LIMIT_PCT = 10%` — stops if rolling 24h realized loss > 10% of session start balance
 - **Session drawdown halt** — halts if session drawdown exceeds 30%

@@ -1743,8 +1743,8 @@ class Engine:
             return
 
         # ── Phase 3: Time-to-Expiry Gate ────────────────────────────────────────
-        if min_rem < 3.0 and not sig.monster_signal:
-            log.debug(f"Entry blocked: Time to expiry ({min_rem:.1f}m) < 3.0m")
+        if min_rem < 2.0 and not sig.monster_signal:
+            log.debug(f"Entry blocked: Time to expiry ({min_rem:.1f}m) < 2.0m")
             return
 
         # ── Phase 3: Rolling 1-Hour Trade Limit ─────────────────────────────────
@@ -1754,7 +1754,7 @@ class Engine:
             t for t in self.state.trade_history
             if t.ts >= hour_ago  # Count all entries placed in last hour
         ]
-        if len(recent_trades) >= getattr(Config, "MAX_TRADES_PER_HOUR", 6):
+        if len(recent_trades) >= getattr(Config, "MAX_TRADES_PER_HOUR", 14):
             log.warning(f"Hourly trade limit reached ({len(recent_trades)}/hour) — no new entries")
             return
 

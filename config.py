@@ -130,7 +130,7 @@ class Config:
 
     # ── Hard capital protections ──────────────────────────────────────────────
     MAX_TRADE_USD              = 50.0     # absolute max per single trade
-    MAX_TRADES_PER_HOUR        = 8        # hourly trade limit
+    MAX_TRADES_PER_HOUR        = 14        # hourly trade limit
     DAILY_LOSS_LIMIT_USD       = 25.0     # stop if daily realized loss exceeds this
     DAILY_LOSS_LIMIT_PCT       = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "0.15") or 0.15)
 
