@@ -1682,16 +1682,39 @@ class Engine:
 
         is_monster = bool(getattr(sig, "monster_signal", False))
 
+        def _entry_skipped(reason: str, **extra):
+            try:
+                import json as _json
+
+                payload = {
+                    "reason": reason,
+                    "market_slug": getattr(market_info, "slug", None),
+                    "minutes_remaining": float(min_rem) if min_rem is not None else None,
+                    "monster": bool(is_monster),
+                    "direction": getattr(sig, "direction", None),
+                    "signed_score": getattr(sig, "signed_score", None),
+                    "edge": getattr(sig, "target_edge", None),
+                    "posterior_up": getattr(sig, "posterior_final_up", None),
+                    "posterior_down": getattr(sig, "posterior_final_down", None),
+                    "gates": list(getattr(sig, "skip_gates", None) or []),
+                }
+                payload.update(extra)
+                log.info("ENTRY_SKIPPED %s", _json.dumps(payload, separators=(",", ":"), default=str))
+            except Exception:
+                log.info(f"ENTRY_SKIPPED reason={reason}")
+
         # Hard early window no-trade zone: no entries in first 7 min (monster can bypass)
         if min_rem is not None and min_rem > 8.0 and not is_monster:
             log.info(
                 f"HARD_EARLY_WINDOW: no trades in first 7 min for normal signals (min_rem={min_rem:.1f})"
             )
+            _entry_skipped("hard_early_window")
             return
 
         # Preferred trading hours: 7 AM - 6 PM ET (11:00-22:00 UTC) on weekdays
         if not Config.is_preferred_trading_time():
             log.info("Outside preferred trading window: skip entries.")
+            _entry_skipped("outside_preferred_hours")
             return
 
         # Daily reset of session_start_balance (tracks equity, not just wallet)
@@ -1722,6 +1745,7 @@ class Engine:
         if not session_halted and session_drawdown_pct > Config.MAX_SESSION_DRAWDOWN_PCT:
             self.state.session_drawdown_halted = True
             log.error(f"TRADING HALTED: session_drawdown={session_drawdown_pct:.1f}% > {Config.MAX_SESSION_DRAWDOWN_PCT:.1f}%")
+            _entry_skipped("session_drawdown_halt", session_drawdown_pct=session_drawdown_pct)
             return
         elif session_halted and session_drawdown_pct < Config.SESSION_DRAWDOWN_RESUME_PCT:
             self.state.session_drawdown_halted = False
@@ -1729,6 +1753,7 @@ class Engine:
 
         if getattr(self.state, "session_drawdown_halted", False):
             log.warning(f"Trading halted due to session drawdown ({session_drawdown_pct:.1f}%)")
+            _entry_skipped("session_drawdown_halted", session_drawdown_pct=session_drawdown_pct)
             return
 
         # Log balance for drawdown monitoring
@@ -1737,14 +1762,17 @@ class Engine:
         # ── Hard capital protections ──────────────────────────────────────────
         if Config.KILL_SWITCH:
             log.warning("KILL_SWITCH is active — no new entries")
+            _entry_skipped("kill_switch")
             return
 
         if self.state.trades_this_window >= Config.MAX_TRADES_PER_WINDOW and not sig.monster_signal:
+            _entry_skipped("max_trades_per_window")
             return
 
         # ── Phase 3: Time-to-Expiry Gate ────────────────────────────────────────
         if min_rem < 2.0 and not sig.monster_signal:
             log.debug(f"Entry blocked: Time to expiry ({min_rem:.1f}m) < 2.0m")
+            _entry_skipped("time_to_expiry", min_rem=float(min_rem) if min_rem is not None else None)
             return
 
         # ── Phase 3: Rolling 1-Hour Trade Limit ─────────────────────────────────
@@ -1756,6 +1784,7 @@ class Engine:
         ]
         if len(recent_trades) >= getattr(Config, "MAX_TRADES_PER_HOUR", 14):
             log.warning(f"Hourly trade limit reached ({len(recent_trades)}/hour) — no new entries")
+            _entry_skipped("max_trades_per_hour", recent_trades=len(recent_trades))
             return
 
         # Daily loss limit: sum realized losses from today's trades
@@ -1820,6 +1849,7 @@ class Engine:
                     "Daily loss limit active — monster-only mode (scale=%.2f): skipping non-monster entry",
                     self.state.daily_loss_soft_scale,
                 )
+                _entry_skipped("daily_loss_monster_only", daily_loss=daily_loss, daily_loss_limit=max_daily_loss)
                 return
 
         # ── Exposure cap ──────────────────────────────────────────────────────
@@ -1827,6 +1857,7 @@ class Engine:
         # position_usd not computed yet — check against conservative max
         if current_exposure >= Config.MAX_EXPOSURE_USD:
             log.warning(f"Exposure limit reached (${current_exposure:.2f} >= ${Config.MAX_EXPOSURE_USD:.2f}) — no new entries")
+            _entry_skipped("exposure_cap", current_exposure=current_exposure)
             return
 
         # Low-balance near-certain override: bypass non-fatal gates when posterior is
@@ -1858,6 +1889,7 @@ class Engine:
         elif skip_gates:
             primary_gate = skip_gates[0] if skip_gates else "unknown"
             log.info(f"Entry blocked by gate: {primary_gate} (all={skip_gates})")
+            _entry_skipped("gated", primary_gate=primary_gate, gates=list(skip_gates))
             return
 
         try:
@@ -1888,6 +1920,7 @@ class Engine:
             pass
 
         if sig.direction == "NEUTRAL":
+            _entry_skipped("neutral_direction")
             return
 
         # Determine token + price (Phase 3: Smart Pricing)
@@ -1909,6 +1942,11 @@ class Engine:
             posterior = sig.posterior_final_down or 0.5
 
         if entry_px <= 0.0 or entry_px >= 1.0:
+            _entry_skipped("invalid_entry_price", entry_px=entry_px, side=side_name)
+            return
+
+        if entry_px >= 0.98:
+            _entry_skipped("entry_price_too_high", entry_px=entry_px, side=side_name)
             return
 
         # Size (FIX #8: Kelly with riskPct floor)
@@ -1933,6 +1971,7 @@ class Engine:
             position_usd *= self.state.daily_loss_soft_scale
         if not position_usd:
             log.info(f"Position size below minimum (bal={balance:.2f})")
+            _entry_skipped("position_size_below_min", balance=balance, entry_px=entry_px)
             return
 
         # Integer shares for CLOB precision (maker_amount must have ≤2 decimals)
@@ -1940,6 +1979,7 @@ class Engine:
         raw_shares = position_usd / entry_px
         shares = math.ceil(raw_shares) if raw_shares < 10 else math.floor(raw_shares)
         if shares < 1:
+            _entry_skipped("shares_below_one", shares=shares, entry_px=entry_px)
             return
         # Cap shares so we don't exceed balance
         max_shares = math.floor(balance / entry_px) if entry_px > 0 else shares
@@ -1999,6 +2039,7 @@ class Engine:
 
         if not order_id:
             log.error("Entry order failed")
+            _entry_skipped("entry_order_failed", entry_px=entry_px, shares=shares)
             return
 
         # Phase 3: record as PENDING and track order_id
