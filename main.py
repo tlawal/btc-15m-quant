@@ -1680,21 +1680,18 @@ class Engine:
         if self.state.held_position.side is not None:
             return   # already holding
 
-        # Hard early window no-trade zone: no entries in first 4 min
-        if min_rem is not None and min_rem > 4.0:
-            log.info(f"HARD_EARLY_WINDOW: no trades in first 4 min (min_rem={min_rem:.1f})")
+        is_monster = bool(getattr(sig, "monster_signal", False))
+
+        # Hard early window no-trade zone: no entries in first 7 min (monster can bypass)
+        if min_rem is not None and min_rem > 8.0 and not is_monster:
+            log.info(
+                f"HARD_EARLY_WINDOW: no trades in first 7 min for normal signals (min_rem={min_rem:.1f})"
+            )
             return
 
         # Preferred trading hours: 7 AM - 6 PM ET (11:00-22:00 UTC) on weekdays
-        from datetime import datetime
-        now = datetime.utcnow()
-        weekday = now.weekday() < 5  # Mon-Fri
-        hour = now.hour + now.minute / 60.0
-        in_preferred = any(start <= hour <= end for start, end in Config.PREFERRED_HOURS_UTC) and weekday
-        # Calculate best posterior for outside hours check
-        _best_posterior = max(sig.posterior_final_up or 0.0, sig.posterior_final_down or 0.0)
-        if not in_preferred and _best_posterior < Config.OUTSIDE_HOURS_POSTERIOR_MIN:
-            log.info(f"OUTSIDE_HOURS_LOW_POSTERIOR: skipping entry (posterior={_best_posterior:.3f} < {Config.OUTSIDE_HOURS_POSTERIOR_MIN:.2f})")
+        if not Config.is_preferred_trading_time():
+            log.info("Outside preferred trading window: skip entries.")
             return
 
         # Daily reset of session_start_balance (tracks equity, not just wallet)
@@ -1839,8 +1836,12 @@ class Engine:
             sig.posterior_final_up or 0.0,
             sig.posterior_final_down or 0.0,
         )
-        _fatal_gates = {"neutral_direction", "monster_too_early"}
-        _has_fatal = any(any(f in g for f in _fatal_gates) for g in (sig.skip_gates or []))
+        skip_gates = list(sig.skip_gates or [])
+        if is_monster:
+            skip_gates = [g for g in skip_gates if "monster_too_early" not in g]
+
+        _fatal_gates = {"neutral_direction"}
+        _has_fatal = any(any(f in g for f in _fatal_gates) for g in skip_gates)
         _override_active = (
             balance < Config.LOW_BALANCE_THRESHOLD_USD
             and _best_posterior >= 0.97
@@ -1854,9 +1855,9 @@ class Engine:
                 f"LOW_BAL_NEAR_CERTAIN_OVERRIDE: posterior={_best_posterior:.4f} "
                 f"edge={sig.target_edge:.4f} gates_bypassed={sig.skip_gates}"
             )
-        elif sig.skip_gates:
-            primary_gate = sig.skip_gates[0] if sig.skip_gates else "unknown"
-            log.info(f"Entry blocked by gate: {primary_gate} (all={sig.skip_gates})")
+        elif skip_gates:
+            primary_gate = skip_gates[0] if skip_gates else "unknown"
+            log.info(f"Entry blocked by gate: {primary_gate} (all={skip_gates})")
             return
 
         try:
@@ -1876,7 +1877,7 @@ class Engine:
                 "edge": sig.target_edge,
                 "monster": bool(sig.monster_signal),
                 "override_active": bool(_override_active),
-                "gates": list(sig.skip_gates or []),
+                "gates": list(skip_gates),
                 "daily_loss": daily_loss,
                 "daily_loss_limit": max_daily_loss,
                 "daily_loss_scale": getattr(self.state, "daily_loss_soft_scale", 1.0),
