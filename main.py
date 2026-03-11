@@ -1533,11 +1533,13 @@ class Engine:
 
         # Track adverse-selection / book-flip persistence
         # A "flip" is meaningful if OBI crosses sign against the held side with enough magnitude.
+        # Config may not define book-flip params if this exit is disabled.
         flip = False
-        if hasattr(sig, "obi"):
-            if pos.side == "YES" and sig.obi <= -Config.BOOK_FLIP_IMB_THRESH:
+        _book_flip_imb = getattr(Config, "BOOK_FLIP_IMB_THRESH", None)
+        if _book_flip_imb is not None and hasattr(sig, "obi"):
+            if pos.side == "YES" and sig.obi <= -_book_flip_imb:
                 flip = True
-            if pos.side == "NO" and sig.obi >= Config.BOOK_FLIP_IMB_THRESH:
+            if pos.side == "NO" and sig.obi >= _book_flip_imb:
                 flip = True
         if flip:
             setattr(pos, "book_flip_count", int(getattr(pos, "book_flip_count", 0)) + 1)

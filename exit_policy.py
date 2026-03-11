@@ -131,11 +131,14 @@ def evaluate_exit(
 
     # 1b. Explicit adverse selection / book flip.
     # If the book flips meaningfully against our side for multiple cycles, exit.
-    if book_flip_count >= Config.BOOK_FLIP_CONFIRM_CYCLES and abs(obi) >= Config.BOOK_FLIP_IMB_THRESH:
-        if held_side == "YES" and obi < 0:
-            return "BOOK_FLIP"
-        if held_side == "NO" and obi > 0:
-            return "BOOK_FLIP"
+    _book_flip_cycles = getattr(Config, "BOOK_FLIP_CONFIRM_CYCLES", None)
+    _book_flip_imb = getattr(Config, "BOOK_FLIP_IMB_THRESH", None)
+    if _book_flip_cycles is not None and _book_flip_imb is not None:
+        if book_flip_count >= _book_flip_cycles and abs(obi) >= _book_flip_imb:
+            if held_side == "YES" and obi < 0:
+                return "BOOK_FLIP"
+            if held_side == "NO" and obi > 0:
+                return "BOOK_FLIP"
 
     # ── TRAILING POSTERIOR GUARD (suppresses soft exits 2-8 only) ─────────────
     # Holds the position while the Bayesian model still believes in the trade.
