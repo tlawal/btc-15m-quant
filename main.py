@@ -247,15 +247,25 @@ class Engine:
             async with asyncio.timeout(10):
                 wallet_usdc = await self.pm.get_wallet_usdc_balance()
                 margin_usdc = await self.pm.get_margin()
+                positions = await self.pm.get_positions()
                 balance = wallet_usdc or 0.0
                 if balance <= 1e-6:
                     balance = (margin_usdc or {}).get("available_usdc", 0.0)
                 if balance <= 1e-6:
                     balance = (margin_usdc or {}).get("balance_usdc", 0.0)
+
+                equity_usd = balance
+                try:
+                    exposure = self.pm.summarize_exposure(positions or []) if hasattr(self.pm, "summarize_exposure") else None
+                    exposure_usd = float((exposure or {}).get("exposure_usd") or 0.0)
+                    wallet_component = wallet_usdc if (wallet_usdc is not None and wallet_usdc > 0) else balance
+                    equity_usd = float(wallet_component or 0.0) + exposure_usd
+                except Exception:
+                    equity_usd = balance
                     
                 if getattr(self.state, "session_start_balance", None) is None or self.state.session_start_balance == 0:
-                    self.state.session_start_balance = balance
-                    log.info(f"Session start balance recorded: ${balance:.2f} (20% limit = ${balance * 0.20:.2f})")
+                    self.state.session_start_balance = equity_usd
+                    log.info(f"Session start balance recorded: ${equity_usd:.2f} (20% limit = ${equity_usd * 0.20:.2f})")
         except asyncio.TimeoutError:
             log.warning("Timeout while fetching initial balance; dashboard will show 0 until first successful cycle.")
         except Exception as e:
@@ -517,6 +527,33 @@ class Engine:
             balance = None
 
         balance = balance or 0.0
+
+        # Total equity (wallet + open position notional). This prevents false session drawdown
+        # halts when cash is converted into an open position.
+        equity_usd = balance
+        try:
+            # Preferred: mark-to-market the currently held position using mid.
+            mtm_usd = 0.0
+            if self.state.held_position and self.state.held_position.side and self.state.held_position.size:
+                if self.state.held_position.side == "YES":
+                    mid = ob.yes_mid
+                else:
+                    mid = ob.no_mid
+                if mid is not None and mid > 0:
+                    mtm_usd = float(self.state.held_position.size or 0.0) * float(mid)
+
+            exposure_usd = 0.0
+            if mtm_usd <= 1e-9:
+                exposure = self.pm.summarize_exposure(positions or []) if hasattr(self.pm, "summarize_exposure") else None
+                exposure_usd = float((exposure or {}).get("exposure_usd") or 0.0)
+            else:
+                exposure_usd = mtm_usd
+
+            # Use wallet_usdc when available since it reflects true on-chain free collateral.
+            wallet_component = wallet_usdc if (wallet_usdc is not None and wallet_usdc > 0) else balance
+            equity_usd = float(wallet_component or 0.0) + float(exposure_usd or 0.0)
+        except Exception:
+            equity_usd = balance
         if ob.yes_mid:  self.state.last_pm_px_yes = ob.yes_mid
         if ob.no_mid:   self.state.last_pm_px_no  = ob.no_mid
 
@@ -798,10 +835,18 @@ class Engine:
             else:
                 prev_side = self.state.held_position.side
                 await self._handle_entry(
-                    sig, ob, market_info, min_rem, btc_price, balance, win_start=win_start
+                    sig,
+                    ob,
+                    market_info,
+                    min_rem,
+                    btc_price,
+                    balance,
+                    equity_usd,
+                    win_start=win_start,
                 )
                 if self.state.held_position.side and not prev_side:  # entry made
-                    self.state.window_trade_count += 1
+                    await self.state_mgr.save(self.state)
+                    return
 
         # ── No-trade alert ────────────────────────────────────────────────────
         if self.state.held_position.side:
@@ -819,7 +864,7 @@ class Engine:
         # ── Halt check ────────────────────────────────────────────────────────
         session_drawdown = 0.0
         if self.state.session_start_balance and self.state.session_start_balance > 0:
-            session_drawdown = (self.state.session_start_balance - balance) / self.state.session_start_balance
+            session_drawdown = (self.state.session_start_balance - equity_usd) / self.state.session_start_balance
         
         # Resume if conditions cleared — but NOT if kill switch is active (manual override)
         if self.state.trading_halted and not Config.KILL_SWITCH and not (self.state.loss_streak >= Config.STREAK_HALT_AT or session_drawdown > 0.30):
@@ -912,7 +957,15 @@ class Engine:
                 self.inference.reload_model()
 
         # Heartbeat file
-        await self._write_heartbeat(now_ts, balance, runtime_ms, margin=margin, wallet_usdc=wallet_usdc, sig=sig)
+        await self._write_heartbeat(
+            now_ts,
+            balance,
+            runtime_ms,
+            margin=margin,
+            wallet_usdc=wallet_usdc,
+            equity_usd=equity_usd,
+            sig=sig,
+        )
 
         # ── Signal snapshot → structured_logs (feeds Plotly charts) ──────────
         json_logger.log("signal", {
@@ -1270,12 +1323,22 @@ class Engine:
                 except Exception as e:
                     log.warning(f"Stale order replace error: {e}")
 
-    async def _write_heartbeat(self, ts: int, balance: float, runtime_ms: int, margin: dict | None = None, wallet_usdc: float | None = None, sig = None):
+    async def _write_heartbeat(
+        self,
+        ts: int,
+        balance: float,
+        runtime_ms: int,
+        margin: dict | None = None,
+        wallet_usdc: float | None = None,
+        equity_usd: float | None = None,
+        sig = None,
+    ):
         """Phase 4: Structured heartbeat for external health monitoring."""
         hb = {
             "ts": ts,
             "status": "HEALTHY",
             "balance": balance,
+            "equity_usd": equity_usd,
             "wallet_usdc": wallet_usdc,
             "pm_collateral_usdc": (margin or {}).get("balance_usdc") if isinstance(margin, dict) else None,
             "pm_available_usdc": (margin or {}).get("available_usdc") if isinstance(margin, dict) else None,
@@ -1611,7 +1674,7 @@ class Engine:
 
     # ── Entry handler ─────────────────────────────────────────────────────────
 
-    async def _handle_entry(self, sig, ob, market_info, min_rem, btc_price, balance, win_start: int = 0):
+    async def _handle_entry(self, sig, ob, market_info, min_rem, btc_price, balance, equity_usd, win_start: int = 0):
         if self.state.held_position.side is not None:
             return   # already holding
 
@@ -1632,25 +1695,28 @@ class Engine:
             log.info(f"OUTSIDE_HOURS_LOW_POSTERIOR: skipping entry (posterior={_best_posterior:.3f} < {Config.OUTSIDE_HOURS_POSTERIOR_MIN:.2f})")
             return
 
-        # Daily reset of session_start_balance
+        # Daily reset of session_start_balance (tracks equity, not just wallet)
         now = int(time.time())
         today = now // 86400
         last_reset_day = getattr(self.state, "last_session_reset_day", 0)
         if today > last_reset_day:
-            self.state.session_start_balance = balance
+            self.state.session_start_balance = equity_usd
             self.state.last_session_reset_day = today
-            log.info(f"Daily session start reset: new session_start={balance:.2f}")
+            log.info(f"Daily session start reset: new session_start_equity={equity_usd:.2f}")
 
-        # Trailing drawdown: reset session_start_balance on wins
+        # Trailing drawdown: reset session_start_balance on wins (equity highs)
         session_start = getattr(self.state, "session_start_balance", 0.0) or 0.0
-        if balance > session_start:
-            self.state.session_start_balance = balance
-            log.info(f"Trailing drawdown reset: new session_start={balance:.2f}")
-            session_start = balance  # update local var
+        if equity_usd > session_start:
+            self.state.session_start_balance = equity_usd
+            log.info(f"Trailing drawdown reset: new session_start_equity={equity_usd:.2f}")
+            session_start = equity_usd  # update local var
 
-        # Calculate and log session drawdown
-        session_drawdown_pct = ((session_start - balance) / session_start) * 100 if session_start > 0 else 0.0
-        log.info(f"Session drawdown: {session_drawdown_pct:.1f}% (start={session_start:.2f}, current={balance:.2f})")
+        # Calculate and log session drawdown (equity-based)
+        session_drawdown_pct = ((session_start - equity_usd) / session_start) * 100 if session_start > 0 else 0.0
+        log.info(
+            f"Session drawdown: {session_drawdown_pct:.1f}% "
+            f"(start_equity={session_start:.2f}, current_equity={equity_usd:.2f}, wallet={balance:.2f})"
+        )
 
         # Session drawdown halt with hysteresis
         session_halted = getattr(self.state, "session_drawdown_halted", False)
@@ -1667,7 +1733,7 @@ class Engine:
             return
 
         # Log balance for drawdown monitoring
-        log.info(f"Balance check: current={balance:.2f}, session_start={session_start:.2f}")
+        log.info(f"Equity check: current={equity_usd:.2f}, session_start={session_start:.2f} (wallet={balance:.2f})")
 
         # ── Hard capital protections ──────────────────────────────────────────
         if Config.KILL_SWITCH:
