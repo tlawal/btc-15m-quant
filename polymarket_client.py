@@ -79,6 +79,13 @@ class OrderBook:
     total_ask_size: float = 0.0
     fetch_ms:       int   = 0
 
+    source:         str   = "unknown"  # "ws" | "rest" | "unknown"
+    yes_age_ms:     Optional[int] = None
+    no_age_ms:      Optional[int] = None
+    ws_connected:   Optional[bool] = None
+    ws_last_msg_age_ms: Optional[int] = None
+    ws_fallback_to_rest: int = 0
+
 
 class PolymarketClient:
     def __init__(self):
@@ -105,6 +112,7 @@ class PolymarketClient:
 
         self._ws_market = None
         self.ws_fallback_to_rest = 0
+        self._last_book_source_log_ts = 0.0
 
     def _warn_no_creds_once(self, caller: str):
         if self.can_trade or self._warned_missing_creds:
@@ -306,6 +314,16 @@ class PolymarketClient:
         now_ms = int(time.time() * 1000)
         ob = OrderBook(fetch_ms=now_ms)
 
+        ob.ws_fallback_to_rest = int(self.ws_fallback_to_rest)
+        if self._ws_market:
+            try:
+                ob.ws_connected = bool(getattr(self._ws_market, "connected", False))
+                last_msg_ts = float(getattr(self._ws_market, "last_msg_ts", 0.0) or 0.0)
+                ob.ws_last_msg_age_ms = int((time.time() - last_msg_ts) * 1000) if last_msg_ts > 0 else None
+            except Exception:
+                ob.ws_connected = None
+                ob.ws_last_msg_age_ms = None
+
         # Prefer WS local books when fresh; otherwise fall back to REST.
         ws_ok = False
         if self._ws_market:
@@ -315,6 +333,8 @@ class PolymarketClient:
                 if yes_book and no_book:
                     yes_age = now_ms - int(yes_book.last_ts_ms or 0)
                     no_age = now_ms - int(no_book.last_ts_ms or 0)
+                    ob.yes_age_ms = int(yes_age)
+                    ob.no_age_ms = int(no_age)
                     if yes_age <= 2500 and no_age <= 2500:
                         ob.yes_bid = yes_book.best_bid()
                         ob.yes_ask = yes_book.best_ask()
@@ -333,9 +353,34 @@ class PolymarketClient:
                 ws_ok = False
 
         if ws_ok:
+            ob.source = "ws"
+            now_s = time.time()
+            if now_s - self._last_book_source_log_ts >= 30:
+                log.info(
+                    "pm_ob_source=ws yes_age_ms=%s no_age_ms=%s ws_connected=%s ws_last_msg_age_ms=%s ws_fallback_to_rest=%s",
+                    ob.yes_age_ms,
+                    ob.no_age_ms,
+                    ob.ws_connected,
+                    ob.ws_last_msg_age_ms,
+                    self.ws_fallback_to_rest,
+                )
+                self._last_book_source_log_ts = now_s
             return ob
 
         self.ws_fallback_to_rest += 1
+        ob.ws_fallback_to_rest = int(self.ws_fallback_to_rest)
+        ob.source = "rest"
+        now_s = time.time()
+        if now_s - self._last_book_source_log_ts >= 15:
+            log.warning(
+                "pm_ob_source=rest yes_age_ms=%s no_age_ms=%s ws_connected=%s ws_last_msg_age_ms=%s ws_fallback_to_rest=%s",
+                ob.yes_age_ms,
+                ob.no_age_ms,
+                ob.ws_connected,
+                ob.ws_last_msg_age_ms,
+                self.ws_fallback_to_rest,
+            )
+            self._last_book_source_log_ts = now_s
 
         yes_ob, no_ob = await asyncio.gather(
             self._get_single_ob(yes_token_id),

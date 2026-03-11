@@ -1195,10 +1195,28 @@ function updateUI() {
         // which previously produced a false -100% display.
         const cpxNum = parseFloat(cpx);
         const isPending = d.held_position && d.held_position.is_pending;
-        if (posSide!=='FLAT' && cpx!=='--' && !isNaN(cpxNum) && cpxNum > 0.01 && d.entry_price && !isPending) {
+        const fastPnl = (d.pos_unrealized_pnl_pct !== undefined && d.pos_unrealized_pnl_pct !== null)
+            ? parseFloat(d.pos_unrealized_pnl_pct)
+            : null;
+
+        if (posSide!=='FLAT' && fastPnl !== null && !isNaN(fastPnl)) {
+            const pnl = fastPnl;
+            const suffix = isPending ? ' (est)' : '';
+            $('unreal-pnl').innerText = (pnl>0?'+':'')+(pnl*100).toFixed(2)+'%'+suffix;
+            if (isPending) {
+                $('unreal-pnl').className = 'mono text-amber-400 font-bold';
+            } else {
+                $('unreal-pnl').className = pnl>0?'mono up font-bold':'mono dn font-bold';
+            }
+        } else if (posSide!=='FLAT' && cpx!=='--' && !isNaN(cpxNum) && cpxNum > 0.01 && d.entry_price) {
             const pnl=(cpxNum-d.entry_price)/d.entry_price;
-            $('unreal-pnl').innerText = (pnl>0?'+':'')+(pnl*100).toFixed(2)+'%';
-            $('unreal-pnl').className = pnl>0?'mono up font-bold':'mono dn font-bold';
+            const suffix = isPending ? ' (est)' : '';
+            $('unreal-pnl').innerText = (pnl>0?'+':'')+(pnl*100).toFixed(2)+'%'+suffix;
+            if (isPending) {
+                $('unreal-pnl').className = 'mono text-amber-400 font-bold';
+            } else {
+                $('unreal-pnl').className = pnl>0?'mono up font-bold':'mono dn font-bold';
+            }
         } else if (isPending) {
             $('unreal-pnl').innerText = 'PENDING'; $('unreal-pnl').className='mono text-amber-400';
         } else { $('unreal-pnl').innerText='--'; $('unreal-pnl').className='mono mute'; }

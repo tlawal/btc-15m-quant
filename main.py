@@ -478,14 +478,38 @@ class Engine:
                     self.pm.get_wallet_usdc_balance(),
                     self.pm.get_positions(),
                 )
+                self._last_ob = ob
             else:
+                # Cannot trade: still compute a partial order book using REST for display.
                 ob = await self.pm.get_order_books(market_info.yes_token_id, market_info.no_token_id)
-                margin = {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
+                self._last_ob = ob
+                margin = None
                 wallet_usdc = None
                 positions = []
 
-        # ── Reconcile Pending Orders (Phase 3) ────────────────────────────────
-        # (Already done above, so we keep the order consistent)
+        # Fast unrealized PnL: update current price + PnL each cycle using the latest Polymarket mid.
+        try:
+            pos = self.state.held_position
+            if pos.side and pos.token_id and pos.size and pos.size > 0:
+                current_px = None
+                if str(pos.token_id) == str(market_info.yes_token_id):
+                    current_px = ob.yes_mid
+                elif str(pos.token_id) == str(market_info.no_token_id):
+                    current_px = ob.no_mid
+                entry_px = pos.avg_entry_price or pos.entry_price
+                self.state.pos_current_price = current_px
+                if current_px is not None and entry_px is not None and entry_px > 0:
+                    self.state.pos_unrealized_pnl_pct = (current_px - entry_px) / entry_px
+                    self.state.pos_unrealized_pnl_usd = (current_px - entry_px) * float(pos.size)
+                else:
+                    self.state.pos_unrealized_pnl_pct = None
+                    self.state.pos_unrealized_pnl_usd = None
+            else:
+                self.state.pos_unrealized_pnl_pct = None
+                self.state.pos_unrealized_pnl_usd = None
+        except Exception:
+            pass
+
 
 
         # Compute indicators locally
@@ -918,7 +942,7 @@ class Engine:
         self.state.latencies["total_cycle"] = runtime_ms
         
         # Phase 5: Log features for ML training every cycle
-        await self._log_cycle_features(sig, btc_price, min_rem, now_ts)
+        await self._log_cycle_features(sig, btc_price, min_rem, now_ts, getattr(self, "_last_ob", None))
 
         # PnL Dashboard (console only)
         if self._status_counter % 4 == 0: # Print every ~1 min
@@ -1340,12 +1364,6 @@ class Engine:
             "ts": ts,
             "status": "HEALTHY",
             "balance": balance,
-            "equity_usd": equity_usd,
-            "wallet_usdc": wallet_usdc,
-            "pm_collateral_usdc": (margin or {}).get("balance_usdc") if isinstance(margin, dict) else None,
-            "pm_available_usdc": (margin or {}).get("available_usdc") if isinstance(margin, dict) else None,
-            "pm_allowance_usdc": (margin or {}).get("allowance_usdc") if isinstance(margin, dict) else None,
-            "position": self.state.held_position.side or "FLAT",
             "runtime_ms": runtime_ms,
             "latencies": self.state.latencies,
             "trades_15m": self.state.trades_this_window,
@@ -1354,6 +1372,9 @@ class Engine:
             "last_condition_id": self.state.last_condition_id,
             "unclaimed_usdc": self.state.unclaimed_usdc,
             "api_trade_history": getattr(self, "api_trade_history", []),
+            "pos_current_price": getattr(self.state, "pos_current_price", None),
+            "pos_unrealized_pnl_pct": getattr(self.state, "pos_unrealized_pnl_pct", None),
+            "pos_unrealized_pnl_usd": getattr(self.state, "pos_unrealized_pnl_usd", None),
             "held_position": {
                 "side":        self.state.held_position.side,
                 "size":        self.state.held_position.size,
@@ -2091,7 +2112,7 @@ class Engine:
                 self.state.last_window_start_sec or 0, balance,
             )
         )
-    async def _log_cycle_features(self, sig, btc_price: float, min_rem: float, ts: int):
+    async def _log_cycle_features(self, sig, btc_price: float, min_rem: float, ts: int, ob=None):
         """Phase 5: Log all signals/features to JSONL every cycle."""
         try:
             feats = sig.to_feature_dict()
@@ -2107,6 +2128,16 @@ class Engine:
                 "gates":      sig.skip_gates,
                 "kelly_mult": self.optimizer.get_kelly_multiplier(),
             })
+
+            if ob is not None:
+                feats.update({
+                    "pm_ob_source": getattr(ob, "source", None),
+                    "pm_ob_yes_age_ms": getattr(ob, "yes_age_ms", None),
+                    "pm_ob_no_age_ms": getattr(ob, "no_age_ms", None),
+                    "pm_ws_connected": getattr(ob, "ws_connected", None),
+                    "pm_ws_last_msg_age_ms": getattr(ob, "ws_last_msg_age_ms", None),
+                    "pm_ws_fallback_to_rest": getattr(ob, "ws_fallback_to_rest", None),
+                })
             
             # Phase 5: Structured JSON logging
             json_logger.log("feature_snapshot", feats)

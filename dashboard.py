@@ -386,6 +386,8 @@ async def get_metrics():
         "performance_metrics": getattr(state, "performance_metrics", None) or hb.get("performance") or {},
         "last_tuned_time": getattr(state, "last_tuned_time", 0),
         "pos_current_price": getattr(state, "pos_current_price", None),
+        "pos_unrealized_pnl_pct": getattr(state, "pos_unrealized_pnl_pct", None),
+        "pos_unrealized_pnl_usd": getattr(state, "pos_unrealized_pnl_usd", None),
         "open_positions_api": getattr(state, "open_positions_api", []),
         "recent_trades": [
             {
