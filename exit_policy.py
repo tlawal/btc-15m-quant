@@ -30,6 +30,8 @@ def evaluate_exit(
     peak_posterior:   Optional[float] = None,
     book_flip_count:  int = 0,
     hold_seconds:     float = 999.0,
+    entry_min_rem:    Optional[float] = None,
+    yes_mid:          float = 0.5,
 ) -> Optional[str]:
     """
     Returns exit reason string or None.
@@ -83,6 +85,42 @@ def evaluate_exit(
     # 0d. Outside preferred hours: aggressive profit-taking at 5%
     if not Config.is_preferred_trading_time() and unrealized_pct >= 0.05:
         return "TAKE_SMALL_PROFIT_OUTSIDE"
+
+    # 0e. Price-distance sanity check for forced hold near expiry (Liu 2022 regime-switching)
+    # If model posterior disagrees significantly with market prob, force exit despite confidence
+    if minutes_remaining <= 1.0 and posterior is not None and posterior > 0.7:
+        market_prob = yes_mid if held_side == "YES" else (1 - yes_mid)
+        if abs(posterior - market_prob) > 0.25:
+            log.warning(
+                f"FORCED_MODEL_MARKET_DISAGREE: posterior={posterior:.3f} vs market={market_prob:.3f} "
+                f"(unrealized={unrealized_pct*100:.1f}%) — model-market disagreement >25%, forcing exit"
+            )
+            return "FORCED_MODEL_MARKET_DISAGREE"
+
+    # 0f. Adverse microstructure reversal (Hawkes OFI for adverse selection)
+    # Force exit if OFI indicates strong adverse flow despite model confidence
+    if minutes_remaining <= 1.0 and posterior is not None and posterior > 0.7 and unrealized_pct < 0:
+        ofi_threshold = Config.EXIT_DEEP_OFI_REV_THRESH
+        if (held_side == "YES" and deep_ofi < -ofi_threshold) or (held_side == "NO" and deep_ofi > ofi_threshold):
+            log.warning(
+                f"FORCED_ADVERSE_OFI: deep_ofi={deep_ofi:.1f} threshold={ofi_threshold} "
+                f"(unrealized={unrealized_pct*100:.1f}%) — adverse selection via OFI reversal"
+            )
+            return "FORCED_ADVERSE_OFI"
+
+    # 0g. Regime-aware forced exit (Habibi MDP, Leung optimal stopping)
+    # Tighten posterior threshold in high volatility regimes
+    if minutes_remaining <= 1.0 and posterior is not None:
+        regime_threshold = 0.65 if (atr14 is not None and atr14 > Config.ATR_HIGH_THRESHOLD) else 0.7
+        if posterior <= regime_threshold and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
+            if entry_min_rem is not None and entry_min_rem < 5:
+                pass  # skip for late entries
+            else:
+                log.warning(
+                    f"FORCED_LATE_EXIT_REGIME: posterior={posterior:.3f} <= {regime_threshold:.2f} in high vol "
+                    f"(atr14={atr14:.1f}, unrealized={unrealized_pct*100:.1f}%) — regime-adjusted exit"
+                )
+                return "FORCED_LATE_EXIT_REGIME"
 
     # 1. Forced drawdown — posterior-gated up to -20%, unconditional beyond.
     # The posterior gate prevents cutting on normal BTC noise when model still believes.

@@ -1497,6 +1497,7 @@ class Engine:
             book_flip_count   = int(getattr(pos, "book_flip_count", 0)),
             hold_seconds      = hold_secs,
             entry_min_rem     = getattr(pos, "entry_min_rem", None),
+            yes_mid           = getattr(sig, "yes_mid", 0.5),
         )
         if reason == "FORCED_LATE_EXIT" and getattr(pos, "entry_min_rem", None) is not None:
             reason = None
