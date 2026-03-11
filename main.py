@@ -70,6 +70,123 @@ class Engine:
         self._last_sig = None # Phase 6: Store signal for trade logging
         self._last_early_claim_window = 0  # throttle: one early-claim attempt per window
 
+        self._manual_cmd_q: asyncio.Queue = asyncio.Queue()
+
+    async def enqueue_manual_exit_limit(self, *, price: float, order_type: str = "GTC") -> dict:
+        await self._manual_cmd_q.put({"op": "exit_limit", "price": float(price), "order_type": str(order_type)})
+        return {"ok": True}
+
+    async def enqueue_manual_exit_replace(self, *, price: float) -> dict:
+        await self._manual_cmd_q.put({"op": "exit_replace", "price": float(price)})
+        return {"ok": True}
+
+    async def enqueue_manual_exit_cancel(self) -> dict:
+        await self._manual_cmd_q.put({"op": "exit_cancel"})
+        return {"ok": True}
+
+    async def enqueue_manual_exit_now(self) -> dict:
+        await self._manual_cmd_q.put({"op": "exit_now"})
+        return {"ok": True}
+
+    async def _process_manual_commands(self):
+        # Process all queued manual commands quickly at the start of a cycle.
+        # Only supports exit-only management of the current held_position.
+        while True:
+            try:
+                cmd = self._manual_cmd_q.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+            try:
+                op = (cmd or {}).get("op")
+                if op == "exit_limit":
+                    await self._manual_exit_limit(price=float(cmd.get("price")), order_type=str(cmd.get("order_type") or "GTC"))
+                elif op == "exit_replace":
+                    await self._manual_exit_replace(price=float(cmd.get("price")))
+                elif op == "exit_cancel":
+                    await self._manual_exit_cancel()
+                elif op == "exit_now":
+                    await self._manual_exit_now()
+            except Exception as e:
+                log.warning(f"manual_cmd_failed: op={cmd.get('op') if isinstance(cmd, dict) else 'unknown'} err={e}")
+
+    async def _manual_exit_limit(self, *, price: float, order_type: str = "GTC"):
+        pos = self.state.held_position
+        if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
+            log.warning("manual_exit_limit: no active position")
+            return
+        if pos.is_pending:
+            log.warning("manual_exit_limit: position has pending order; try cancel/replace after fill")
+            return
+        px = max(0.01, min(0.99, round(float(price), 2)))
+        oid = await self.pm.limit_sell(str(pos.token_id), px, float(pos.size), order_type=order_type)
+        if not oid:
+            log.warning("manual_exit_limit: order placement failed")
+            return
+        pos.exit_reason = "MANUAL_LIMIT_EXIT"
+        pos.intended_exit_price = px
+        pos.order_id = oid
+        pos.is_pending = True
+        pos.placed_at_ts = int(time.time())
+        log.warning(f"MANUAL_EXIT_LIMIT_PLACED: side={pos.side} price={px:.3f} size={pos.size} oid={oid}")
+
+    async def _manual_exit_replace(self, *, price: float):
+        pos = self.state.held_position
+        if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
+            log.warning("manual_exit_replace: no active position")
+            return
+        if not pos.order_id:
+            log.warning("manual_exit_replace: no existing order_id to replace")
+            return
+        px = max(0.01, min(0.99, round(float(price), 2)))
+        new_oid = await self.pm.replace_order(old_order_id=str(pos.order_id), token_id=str(pos.token_id), new_price=px, size=float(pos.size), side="SELL", order_type="GTC")
+        if not new_oid:
+            log.warning("manual_exit_replace: replace failed")
+            return
+        pos.exit_reason = "MANUAL_LIMIT_EXIT"
+        pos.intended_exit_price = px
+        pos.order_id = new_oid
+        pos.is_pending = True
+        pos.placed_at_ts = int(time.time())
+        log.warning(f"MANUAL_EXIT_REPLACED: side={pos.side} price={px:.3f} size={pos.size} oid={new_oid}")
+
+    async def _manual_exit_cancel(self):
+        pos = self.state.held_position
+        if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
+            log.warning("manual_exit_cancel: no active position")
+            return
+        if not pos.order_id:
+            log.warning("manual_exit_cancel: no order_id to cancel")
+            return
+        try:
+            await self.pm.cancel_order(str(pos.order_id))
+        except Exception as e:
+            log.warning(f"manual_exit_cancel: cancel failed: {e}")
+            return
+        pos.is_pending = False
+        pos.exit_reason = None
+        pos.intended_exit_price = None
+        pos.order_id = None
+        log.warning("MANUAL_EXIT_CANCELED")
+
+    async def _manual_exit_now(self):
+        pos = self.state.held_position
+        if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
+            log.warning("manual_exit_now: no active position")
+            return
+        if pos.is_pending:
+            log.warning("manual_exit_now: position has pending order")
+            return
+        oid = await self.pm.market_sell(str(pos.token_id), float(pos.size))
+        if not oid:
+            log.warning("manual_exit_now: order placement failed")
+            return
+        pos.exit_reason = "MANUAL_EXIT_NOW"
+        pos.intended_exit_price = None
+        pos.order_id = oid
+        pos.is_pending = True
+        pos.placed_at_ts = int(time.time())
+        log.warning(f"MANUAL_EXIT_NOW_PLACED: side={pos.side} size={pos.size} oid={oid}")
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _record_redemption(self, size_usd: float):
@@ -421,6 +538,8 @@ class Engine:
 
         if self.state.held_position.is_pending and self.state.held_position.order_id:
             await self._reconcile_pending_order()
+
+        await self._process_manual_commands()
 
         # ── Parallel Data Fetch (Phase 4: Latency track) ──────────────────────
         with Timer("data_fetch_all", self.state.latencies):
@@ -1381,6 +1500,9 @@ class Engine:
                 "entry_price": self.state.held_position.avg_entry_price or self.state.held_position.entry_price,
                 "tx_hash":     self.state.held_position.tx_hash,
                 "is_pending":  self.state.held_position.is_pending,
+                "order_id":    self.state.held_position.order_id,
+                "exit_reason": self.state.held_position.exit_reason,
+                "intended_exit_price": self.state.held_position.intended_exit_price,
             },
         }
         if sig:

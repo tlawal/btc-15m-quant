@@ -3,6 +3,7 @@ import json
 import os
 import time
 import logging
+from typing import Optional
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
@@ -304,6 +305,92 @@ async def kill_switch(request: Request):
         return {"status": "success", "message": "Kill switch activated — trading halted"}
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
+def _require_admin(request: Request) -> Optional[JSONResponse]:
+    try:
+        from config import Config
+        token = (Config.DASHBOARD_ADMIN_TOKEN or "").strip()
+        if not token:
+            return JSONResponse(
+                {"status": "error", "message": "Admin token not configured"},
+                status_code=503,
+            )
+        got = (request.headers.get("x-admin-token") or "").strip()
+        if got != token:
+            return JSONResponse(
+                {"status": "error", "message": "Unauthorized"},
+                status_code=403,
+            )
+    except Exception:
+        return JSONResponse(
+            {"status": "error", "message": "Unauthorized"},
+            status_code=403,
+        )
+    return None
+
+
+@app.post("/api/manual/exit-limit")
+async def manual_exit_limit(request: Request):
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    if not engine:
+        return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
+    try:
+        data = await request.json()
+        price = float((data or {}).get("price"))
+        order_type = str((data or {}).get("order_type") or "GTC").upper()
+        if order_type not in ("GTC", "FOK", "IOC"):
+            order_type = "GTC"
+        await engine.enqueue_manual_exit_limit(price=price, order_type=order_type)
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+
+@app.post("/api/manual/exit-replace")
+async def manual_exit_replace(request: Request):
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    if not engine:
+        return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
+    try:
+        data = await request.json()
+        price = float((data or {}).get("price"))
+        await engine.enqueue_manual_exit_replace(price=price)
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+
+@app.post("/api/manual/exit-cancel")
+async def manual_exit_cancel(request: Request):
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    if not engine:
+        return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
+    try:
+        await engine.enqueue_manual_exit_cancel()
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+
+@app.post("/api/manual/exit-now")
+async def manual_exit_now(request: Request):
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    if not engine:
+        return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
+    try:
+        await engine.enqueue_manual_exit_now()
+        return {"status": "ok"}
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
 
 
 @app.get("/debug/templates")

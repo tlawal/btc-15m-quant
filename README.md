@@ -96,9 +96,22 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 - Risk radar chart — regime intensity, gate clearance, score consistency, edge magnitude, streak safety
 - Halt banner with manual resume button (password-protected)
 - Active position panel: entry price, shares held, unrealized PnL, tx link to Polygonscan
+- Manual exit-only management: place/replace/cancel an exit limit order, or “exit now” (admin-token protected)
 - Trade history table: side, entry/exit price, shares, PnL%, tx link, outcome
 - Nightly AI review panel
 - `/api/metrics` — live engine state; falls back to heartbeat file; returns 503 with `engine_stale: true` if heartbeat > 30s old
+
+#### Manual exit-only management (Dashboard)
+
+The dashboard includes an **exit-only** “Manual Exit” panel that lets you manage an exit like the Polymarket UI:
+- **Place Exit**: submit an exit limit order (default `GTC`)
+- **Replace**: cancel + re-place the exit at a new price
+- **Cancel**: cancel the tracked exit order
+- **Exit Now**: immediate market sell (`FOK`) for the full position size
+
+Security:
+- These endpoints are **admin-token protected** to prevent anyone on the internet from forcing your exits.
+- Set `DASHBOARD_ADMIN_TOKEN` on the server, then paste the token into the dashboard panel (stored locally in your browser).
 
 ---
 
@@ -127,6 +140,7 @@ LOG_LEVEL                    — Default: INFO
 PAPER_TRADE_ENABLED          — Set "true" for paper trading (no real orders placed)
 KILL_SWITCH                  — Set "true" to halt all entries immediately
 KILL_SWITCH_PASSWORD         — Password for dashboard kill/resume buttons
+DASHBOARD_ADMIN_TOKEN         — Enables authenticated dashboard manual exit controls (required for /api/manual/*)
 ```
 
 ### Persistent Volume
@@ -170,6 +184,10 @@ Mount a volume at `/data` to persist:
 | `/api/db/reset` | POST | Deletes `state.db` — wipes all trade history, positions, and state. Bot recreates DB with fresh migrations on next start. Restart the Railway service after calling this. |
 | `/api/kill` | POST | Password-protected kill switch |
 | `/api/resume` | POST | Password-protected resume (clears halt + loss streak) |
+| `/api/manual/exit-limit` | POST | Admin-token protected: place exit limit order (body: `{price, order_type}`) |
+| `/api/manual/exit-replace` | POST | Admin-token protected: replace exit limit price (body: `{price}`) |
+| `/api/manual/exit-cancel` | POST | Admin-token protected: cancel tracked exit order |
+| `/api/manual/exit-now` | POST | Admin-token protected: immediate market sell (`FOK`) |
 
 **Reset procedure (Railway):**
 ```bash

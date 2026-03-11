@@ -19,6 +19,11 @@ class Config:
     # When enabled, high σ_B early in the candle has more influence than very late.
     BELIEF_VOL_TIME_DECAY_ENABLED = False
 
+    # ── Dashboard admin controls ─────────────────────────────────────────────
+    # If set, dashboard can issue authenticated manual commands (e.g. manual exits).
+    # Must be provided via env var on the server.
+    DASHBOARD_ADMIN_TOKEN      = os.getenv("DASHBOARD_ADMIN_TOKEN", "")
+
     # ── Score → posterior coupling (optional) ──────────────────────────────────
     # Allows a very strong signed_score to gently tilt the Bayesian posterior.
     # This is deliberately small and off by default; downstream consumers can
