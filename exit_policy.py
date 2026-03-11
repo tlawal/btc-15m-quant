@@ -76,28 +76,11 @@ def evaluate_exit(
         else:
             return "FORCED_LATE_EXIT"
 
-    # 0c. Regime-aware toxic VPIN stop: shorten holding time in toxic flow regime.
-    # In toxic VPIN, the expected adverse selection dominates — cut sooner.
-    if vpin and vpin >= Config.VPIN_TOXIC_THRESHOLD and hold_seconds >= Config.VPIN_TOXIC_HOLD_MAX_SEC:
-        if unrealized_pct < 0.01:
-            return "VPIN_TOXIC_TIME"
-
-    # 0d. Outside preferred hours: aggressive profit-taking at 5%
+    # 0c. Outside preferred hours: aggressive profit-taking at 5%
     if not Config.is_preferred_trading_time() and unrealized_pct >= 0.05:
         return "TAKE_SMALL_PROFIT_OUTSIDE"
 
-    # 0e. Price-distance sanity check for forced hold near expiry (Liu 2022 regime-switching)
-    # If model posterior disagrees significantly with market prob, force exit despite confidence
-    if minutes_remaining <= 1.0 and posterior is not None and posterior > 0.7:
-        market_prob = yes_mid if held_side == "YES" else (1 - yes_mid)
-        if abs(posterior - market_prob) > 0.25:
-            log.warning(
-                f"FORCED_MODEL_MARKET_DISAGREE: posterior={posterior:.3f} vs market={market_prob:.3f} "
-                f"(unrealized={unrealized_pct*100:.1f}%) — model-market disagreement >25%, forcing exit"
-            )
-            return "FORCED_MODEL_MARKET_DISAGREE"
-
-    # 0f. Adverse microstructure reversal (Hawkes OFI for adverse selection)
+    # 0e. Adverse microstructure reversal (Hawkes OFI for adverse selection)
     # Force exit if OFI indicates strong adverse flow despite model confidence
     if minutes_remaining <= 1.0 and posterior is not None and posterior > 0.7 and unrealized_pct < 0:
         ofi_threshold = Config.EXIT_DEEP_OFI_REV_THRESH
@@ -108,19 +91,19 @@ def evaluate_exit(
             )
             return "FORCED_ADVERSE_OFI"
 
-    # 0g. Regime-aware forced exit (Habibi MDP, Leung optimal stopping)
-    # Tighten posterior threshold in high volatility regimes
-    if minutes_remaining <= 1.0 and posterior is not None:
-        regime_threshold = 0.65 if (atr14 is not None and atr14 > Config.ATR_HIGH_THRESHOLD) else 0.7
-        if posterior <= regime_threshold and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
-            if entry_min_rem is not None and entry_min_rem < 5:
-                pass  # skip for late entries
-            else:
-                log.warning(
-                    f"FORCED_LATE_EXIT_REGIME: posterior={posterior:.3f} <= {regime_threshold:.2f} in high vol "
-                    f"(atr14={atr14:.1f}, unrealized={unrealized_pct*100:.1f}%) — regime-adjusted exit"
-                )
-                return "FORCED_LATE_EXIT_REGIME"
+    # 0f. Distance-based forced exit near expiry (replaces posterior-based Forced Late Exit)
+    # If price distance from strike is >5 under 1 minute, hold for potential recovery.
+    # Otherwise, force exit losing positions to avoid catastrophic losses.
+    if minutes_remaining <= 1.0 and distance is not None and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
+        if abs(distance) <= 5.0:
+            log.warning(
+                f"FORCED_DISTANCE_LATE: distance={abs(distance):.1f} <= 5, unrealized={unrealized_pct*100:.1f}% — forcing exit near expiry"
+            )
+            return "FORCED_DISTANCE_LATE"
+        else:
+            log.info(
+                f"DISTANCE_HELD: distance={abs(distance):.1f} > 5, unrealized={unrealized_pct*100:.1f}% — holding for expiry"
+            )
 
     # 1. Forced drawdown — posterior-gated up to -20%, unconditional beyond.
     # The posterior gate prevents cutting on normal BTC noise when model still believes.
@@ -178,14 +161,7 @@ def evaluate_exit(
         if posterior <= _peak_post - allow_drop:
             return "TRAIL_POSTERIOR"
 
-    # 2. Forced distance exit (near expiry, out-of-range, losing)
-    if (minutes_remaining < Config.FORCED_DISTANCE_EXIT_MIN_REM
-            and distance is not None
-            and abs(distance) < Config.FORCED_DISTANCE_MAX
-            and unrealized_pct < 0):
-        return "FORCED_DISTANCE"
-
-    # 3. Forced profit lock (near expiry, strong profit)
+    # 2. Forced profit lock (near expiry, strong profit)
     if (minutes_remaining < Config.FORCED_PROFIT_LOCK_MIN_REM
             and unrealized_pct > Config.FORCED_PROFIT_PCT):
         return "FORCED_PROFIT_LOCK"
@@ -262,10 +238,17 @@ def evaluate_exit(
 
     # 6b. Microstructure confirmation exit: reverse CVD velocity and deep OFI.
     # Trigger only when position is not clearly winning — this is primarily adverse-selection defense.
+    # Consolidated with adverse OFI: includes near-expiry losing positions with high posterior.
+    microstructure_trigger = False
     if unrealized_pct < 0.01 and minutes_remaining < 10.0:
+        microstructure_trigger = True
+    elif minutes_remaining <= 1.0 and posterior is not None and posterior > 0.7 and unrealized_pct < 0:
+        microstructure_trigger = True
+
+    if microstructure_trigger:
         ofi_rev = abs(deep_ofi) > 0 and ((held_side == "YES" and deep_ofi < -Config.EXIT_DEEP_OFI_REV_THRESH) or (held_side == "NO" and deep_ofi > Config.EXIT_DEEP_OFI_REV_THRESH))
         cvd_vel_rev = abs(cvd_velocity) > 0 and ((held_side == "YES" and cvd_velocity < -Config.EXIT_CVD_VEL_REV_THRESH) or (held_side == "NO" and cvd_velocity > Config.EXIT_CVD_VEL_REV_THRESH))
-        if ofi_rev and cvd_vel_rev:
+        if ofi_rev or cvd_vel_rev:  # Consolidated: trigger on either OFI or CVD reversal
             return "MICRO_REVERSAL"
 
     # 7. Probability decay — posterior declining while losing AND cvd reverses

@@ -104,7 +104,6 @@ class Config:
 
     # Explicit adverse selection / book flip
     BOOK_FLIP_IMB_THRESH       = 0.18     # OBI magnitude threshold to consider a flip meaningful
-    BOOK_FLIP_CONFIRM_CYCLES   = 2        # require N consecutive flips to trigger
 
     # Distribution shift / robustness gating (WILDS-inspired)
     # If model posterior diverges too far from market-implied probability, treat as shift.
