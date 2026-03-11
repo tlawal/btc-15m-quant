@@ -103,6 +103,9 @@ class PolymarketClient:
         self._redeem_cooldown_sec = 60 * 30
         self._last_redeem_attempt_ts_by_condition: dict[str, float] = {}
 
+        self._ws_market = None
+        self.ws_fallback_to_rest = 0
+
     def _warn_no_creds_once(self, caller: str):
         if self.can_trade or self._warned_missing_creds:
             return
@@ -118,9 +121,32 @@ class PolymarketClient:
             headers={"User-Agent": "btc-15m-quant/1.0"},
         )
 
+        try:
+            from polymarket_ws import PolymarketMarketWSClient
+
+            self._ws_market = PolymarketMarketWSClient()
+            await self._ws_market.start()
+        except Exception as e:
+            self._ws_market = None
+            log.warning(f"Polymarket market WS disabled: {e}")
+
     async def close(self):
+        if self._ws_market:
+            try:
+                await self._ws_market.stop()
+            except Exception:
+                pass
         if self._session:
             await self._session.close()
+
+    async def set_active_market_assets(self, yes_token_id: Optional[str], no_token_id: Optional[str]):
+        if not self._ws_market:
+            return
+        try:
+            assets = [a for a in [yes_token_id, no_token_id] if a]
+            await self._ws_market.set_active_assets(assets)
+        except Exception:
+            return
 
     @property
     def session(self) -> aiohttp.ClientSession:
@@ -277,13 +303,45 @@ class PolymarketClient:
     async def get_order_books(
         self, yes_token_id: str, no_token_id: str
     ) -> OrderBook:
-        import time
+        now_ms = int(time.time() * 1000)
+        ob = OrderBook(fetch_ms=now_ms)
+
+        # Prefer WS local books when fresh; otherwise fall back to REST.
+        ws_ok = False
+        if self._ws_market:
+            try:
+                yes_book = self._ws_market.get_book(str(yes_token_id))
+                no_book = self._ws_market.get_book(str(no_token_id))
+                if yes_book and no_book:
+                    yes_age = now_ms - int(yes_book.last_ts_ms or 0)
+                    no_age = now_ms - int(no_book.last_ts_ms or 0)
+                    if yes_age <= 2500 and no_age <= 2500:
+                        ob.yes_bid = yes_book.best_bid()
+                        ob.yes_ask = yes_book.best_ask()
+                        ob.yes_mid = yes_book.mid()
+                        ob.no_bid = no_book.best_bid()
+                        ob.no_ask = no_book.best_ask()
+                        ob.no_mid = no_book.mid()
+                        ob.total_bid_size = yes_book.total_bid_size()
+                        ob.total_ask_size = yes_book.total_ask_size()
+                        if yes_book.tick_size:
+                            ob.yes_tick = yes_book.tick_size
+                        if no_book.tick_size:
+                            ob.no_tick = no_book.tick_size
+                        ws_ok = True
+            except Exception:
+                ws_ok = False
+
+        if ws_ok:
+            return ob
+
+        self.ws_fallback_to_rest += 1
+
         yes_ob, no_ob = await asyncio.gather(
             self._get_single_ob(yes_token_id),
             self._get_single_ob(no_token_id),
             return_exceptions=True,
         )
-        ob = OrderBook(fetch_ms=int(time.time() * 1000))
         if isinstance(yes_ob, dict):
             bids = yes_ob.get("bids", [])
             asks = yes_ob.get("asks", [])

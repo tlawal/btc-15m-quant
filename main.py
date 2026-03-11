@@ -465,6 +465,8 @@ class Engine:
             await self.state_mgr.save(self.state)
             return
 
+        await self.pm.set_active_market_assets(market_info.yes_token_id, market_info.no_token_id)
+
         # ── Polymarket context (Phase 4: Latency track) ──────────────────────
         # Always fetch balance/margin even when halted so session_drawdown is
         # computed from real wallet data and the resume check can fire correctly.
