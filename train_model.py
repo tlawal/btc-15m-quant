@@ -8,6 +8,7 @@ Walk-forward: trains on data up to day N, validates on day N+1, repeating
 across the entire dataset to simulate real production performance.
 """
 
+import argparse
 import json
 import os
 import numpy as np
@@ -18,15 +19,8 @@ import logging
 
 log = logging.getLogger(__name__)
 
-# Try LightGBM first, fall back to sklearn GBM
-try:
-    import lightgbm as lgb
-    HAS_LGBM = True
-except ImportError:
-    HAS_LGBM = False
-
-from sklearn.ensemble import GradientBoostingClassifier
-from sklearn.metrics import classification_report, accuracy_score, log_loss
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import accuracy_score, log_loss
 
 
 def load_data(log_dir="./logs"):
@@ -56,6 +50,45 @@ def load_data(log_dir="./logs"):
     df_outs = pd.DataFrame(outs)
 
     return df_feats, df_outs
+
+
+def load_trade_features_jsonl(path: str):
+    if not os.path.exists(path):
+        return None, None
+
+    rows = []
+    with open(path, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                item = json.loads(line)
+            except Exception:
+                continue
+            feats = item.get("features") or {}
+            if not isinstance(feats, dict):
+                continue
+            outcome = item.get("outcome")
+            if outcome is None:
+                continue
+            try:
+                outcome = int(outcome)
+            except Exception:
+                continue
+            row = feats.copy()
+            row["target"] = outcome
+            rows.append(row)
+
+    if not rows:
+        return None, None
+
+    df = pd.DataFrame(rows)
+    if "target" not in df.columns:
+        return None, None
+    X = df.drop(columns=["target"]).apply(pd.to_numeric, errors="coerce").fillna(0.0)
+    y = df["target"].astype(int)
+    return X, y
 
 
 def load_db_data(db_url: str = None):
@@ -130,43 +163,38 @@ def walk_forward_validate(X, y, n_splits=5):
 
 
 def _build_model(X_train, y_train):
-    """Build a GBM model — LightGBM if available, else sklearn."""
-    if HAS_LGBM:
-        dtrain = lgb.Dataset(X_train, label=y_train)
-        params = {
-            "objective": "binary",
-            "metric": "binary_logloss",
-            "num_leaves": 15,
-            "max_depth": 4,
-            "learning_rate": 0.05,
-            "n_estimators": 200,
-            "min_child_samples": 10,
-            "subsample": 0.8,
-            "colsample_bytree": 0.8,
-            "verbose": -1,
-        }
-        model = lgb.LGBMClassifier(**params)
-        model.fit(X_train, y_train)
-        return model
-
-    model = GradientBoostingClassifier(
-        n_estimators=200, max_depth=4, learning_rate=0.05,
-        min_samples_leaf=10, subsample=0.8, random_state=42
+    model = RandomForestClassifier(
+        n_estimators=300,
+        max_depth=6,
+        min_samples_leaf=10,
+        random_state=42,
+        n_jobs=-1,
+        class_weight="balanced_subsample",
     )
     model.fit(X_train, y_train)
     return model
 
 
-def train(use_db=True):
-    log_dir = "/data" if os.path.exists("/data") else "./logs"
+def train(*, use_db: bool = True, prefer_trade_features: bool = True):
+    log_dir = "/data" if os.path.exists("/data") else "."
 
     X, y = None, None
-    if use_db:
+
+    if prefer_trade_features:
+        trade_path = f"{log_dir}/trade_features.jsonl" if log_dir != "." else "trade_features.jsonl"
+        X, y = load_trade_features_jsonl(trade_path)
+        if X is None:
+            log.info(f"No usable training rows found in {trade_path}")
+
+    if X is None and use_db:
         X, y = load_db_data()
 
     if X is None:
-        df_feats, df_outs = load_data(log_dir)
+        df_feats, df_outs = load_data("./logs")
         if df_feats is None:
+            print("No training data available.")
+            print("If you're on Railway and /data/trade_features.jsonl is empty, generate seed data with:")
+            print("  python backtest_from_logs.py railway_logs.txt --seed-trade-features")
             return
         X, y = preprocess(df_feats, df_outs)
 
@@ -180,7 +208,7 @@ def train(use_db=True):
 
     print(f"Training on {len(X)} samples with {len(feature_names)} features...")
     print(f"Class balance: {y.value_counts().to_dict()}")
-    print(f"Using {'LightGBM' if HAS_LGBM else 'sklearn GBM'}")
+    print("Using RandomForestClassifier")
 
     # Walk-forward validation
     print("\n── Walk-Forward Validation ──")
@@ -202,20 +230,33 @@ def train(use_db=True):
             print(f"  {name:30s} {importance:.4f}")
 
     # Save
-    model_path = f"{log_dir}/model.joblib"
+    model_path = f"{log_dir}/model.joblib" if log_dir != "." else "model.joblib"
+    feats_path = f"{log_dir}/feature_names.json" if log_dir != "." else "feature_names.json"
     joblib.dump(model, model_path)
-    with open(f"{log_dir}/feature_names.json", 'w') as f:
+    with open(feats_path, 'w') as f:
         json.dump(feature_names, f)
 
+    optimizer_model_path = f"{log_dir}/optimizer_model.joblib" if log_dir != "." else "optimizer_model.joblib"
+    try:
+        joblib.dump(model, optimizer_model_path)
+    except Exception:
+        pass
+
     # Save walk-forward results
-    with open(f"{log_dir}/wf_results.json", 'w') as f:
+    wf_path = f"{log_dir}/wf_results.json" if log_dir != "." else "wf_results.json"
+    with open(wf_path, 'w') as f:
         json.dump(wf_results, f)
 
     print(f"\nModel saved to {model_path}")
-    print(f"Feature names saved ({len(feature_names)} features)")
+    print(f"Feature names saved to {feats_path} ({len(feature_names)} features)")
 
     return model, feature_names
 
 
 if __name__ == "__main__":
-    train()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--no-db", action="store_true", help="Disable DB training source")
+    parser.add_argument("--no-trade-features", action="store_true", help="Disable trade_features.jsonl training source")
+    args = parser.parse_args()
+
+    train(use_db=not args.no_db, prefer_trade_features=not args.no_trade_features)

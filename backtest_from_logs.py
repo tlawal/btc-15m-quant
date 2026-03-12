@@ -14,6 +14,7 @@ import re
 import json
 import sys
 import argparse
+import os
 import pandas as pd
 from datetime import datetime
 
@@ -245,6 +246,80 @@ def simulate_whatif(cycles: list) -> pd.DataFrame:
     return pd.DataFrame(records)
 
 
+def seed_trade_features_from_logs(
+    *,
+    log_file: str,
+    out_path: str,
+):
+    cycles = parse_log_file(log_file)
+    if not cycles:
+        print("No parseable engine cycles found. Check log format.")
+        return 1
+
+    # Group by window (approximate: group by strike value)
+    windows = {}
+    for c in cycles:
+        strike = c.get("strike", 0)
+        if not strike:
+            continue
+        key = round(float(strike), 2)
+        windows.setdefault(key, []).append(c)
+
+    records_written = 0
+    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+
+    with open(out_path, "w") as f:
+        for _, window_cycles in windows.items():
+            if not window_cycles:
+                continue
+
+            last = window_cycles[-1]
+            price = float(last.get("price") or 0.0)
+            strike = float(last.get("strike") or 0.0)
+            if price <= 0 or strike <= 0:
+                continue
+
+            actual_up = price > strike
+            actual_outcome = "UP" if actual_up else "DOWN"
+
+            # Pick the cycle with the highest |signed_score| as a proxy for a decision point.
+            best = None
+            best_abs = -1.0
+            for c in window_cycles:
+                s = float(c.get("signed_score") or 0.0)
+                if abs(s) > best_abs:
+                    best_abs = abs(s)
+                    best = c
+            if best is None:
+                continue
+
+            posterior_up = float(best.get("posterior_up") or 0.5)
+            direction = "UP" if posterior_up >= 0.5 else "DOWN"
+            won = (direction == actual_outcome)
+
+            features = {
+                "signed_score": float(best.get("signed_score") or 0.0),
+                "posterior_fair_up": posterior_up,
+                "posterior_final_up": posterior_up,
+                "edge": float(best.get("edge") or 0.0),
+                "minutes_remaining": float(best.get("minutes_remaining") or 0.0),
+                "atr14": float(best.get("atr") or 0.0),
+                "cvd": float(best.get("cvd") or 0.0),
+                "obi": float(best.get("obi") or 0.0),
+            }
+
+            rec = {
+                "ts": int(best.get("now_ts") or 0),
+                "outcome": 1 if won else 0,
+                "features": features,
+            }
+            f.write(json.dumps(rec) + "\n")
+            records_written += 1
+
+    print(f"Seeded {records_written} rows into {out_path}")
+    return 0
+
+
 def backtest_from_logs(log_file: str):
     """Main entry point."""
     print(f"═══════════════════════════════════════════════════")
@@ -317,5 +392,13 @@ def backtest_from_logs(log_file: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predi-Quant Railway Log Backtester")
     parser.add_argument("logfile", nargs="?", default="railway_logs.txt", help="Path to Railway log file (JSON or text)")
+    parser.add_argument("--seed-trade-features", action="store_true", help="Write trade_features.jsonl from logs")
+    parser.add_argument("--out", default=None, help="Output path for trade_features.jsonl (default: /data/trade_features.jsonl if /data exists)")
     args = parser.parse_args()
+
+    if args.seed_trade_features:
+        default_out = "/data/trade_features.jsonl" if os.path.exists("/data") else "trade_features.jsonl"
+        out_path = args.out or default_out
+        raise SystemExit(seed_trade_features_from_logs(log_file=args.logfile, out_path=out_path))
+
     backtest_from_logs(args.logfile)
