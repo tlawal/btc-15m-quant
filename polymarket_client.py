@@ -26,6 +26,7 @@ from py_clob_client.clob_types import (
     ApiCreds, AssetType, BalanceAllowanceParams,
     OpenOrderParams, OrderArgs, OrderType, MarketOrderArgs,
 )
+from py_clob_client.exceptions import PolyApiException
 
 POLYMARKET_HOST = "https://clob.polymarket.com"
 
@@ -97,6 +98,16 @@ class PolymarketClient:
             chain_id=Config.CHAIN_ID,
             funder=Config.FUNDER_ADDRESS or None,
         )
+
+        try:
+            clob_usdc_addr = self._get_clob_usdc_address()
+            log.info(
+                "polymarket_client: POLY_USDC_ADDR=%s clob_client_addr=%s",
+                (Config.POLYGON_USDC_ADDRESS or "").lower(),
+                (clob_usdc_addr or "unknown"),
+            )
+        except Exception:
+            pass
 
         # Derive fresh API creds each startup (library-intended flow)
         try:
@@ -183,6 +194,99 @@ class PolymarketClient:
             log.warning("ensure_approvals timed out (5s), API might be hanging.")
         except Exception as e:
             log.error(f"ensure_approvals failed: {e}")
+
+    def _get_clob_usdc_address(self) -> Optional[str]:
+        """Best-effort extraction of the USDC collateral token address used by the SDK."""
+        for name in (
+            "usdc_address",
+            "USDC_ADDRESS",
+            "collateral_address",
+            "COLLATERAL_ADDRESS",
+            "collateralToken",
+            "collateral_token",
+        ):
+            v = getattr(self.client, name, None)
+            if isinstance(v, str) and v.startswith("0x") and len(v) >= 10:
+                return v.lower()
+        return None
+
+    async def _ensure_onchain_allowance(self, min_required_usd: float = 1.0) -> bool:
+        """Ensure the wallet has sufficient collateral allowance on-chain.
+
+        Returns True if allowance appears sufficient, else False.
+        """
+        if not self.can_trade:
+            self._warn_no_creds_once("_ensure_onchain_allowance")
+            return False
+
+        clob_usdc_addr = self._get_clob_usdc_address()
+        cfg_usdc_addr = (Config.POLYGON_USDC_ADDRESS or "").lower()
+        if clob_usdc_addr and cfg_usdc_addr and clob_usdc_addr != cfg_usdc_addr:
+            log.error(
+                "USDC address mismatch: config=%s clob_client=%s",
+                cfg_usdc_addr,
+                clob_usdc_addr,
+            )
+            return False
+
+        def _parse_allowance(result: dict) -> Optional[float]:
+            if not isinstance(result, dict):
+                return None
+            allowance_raw = result.get("allowance")
+            if allowance_raw is None:
+                allowances_dict = result.get("allowances")
+                if isinstance(allowances_dict, dict) and allowances_dict:
+                    allowance_raw = next(iter(allowances_dict.values()), None)
+            if allowance_raw is None:
+                allowance_raw = result.get("approved") or result.get("spend")
+            return self._parse_usdc(allowance_raw)
+
+        async def _fetch_allowance() -> Optional[float]:
+            try:
+                loop = asyncio.get_event_loop()
+                params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: self.client.get_balance_allowance(params)),
+                    timeout=5.0,
+                )
+                return _parse_allowance(result)
+            except asyncio.TimeoutError:
+                log.error("Allowance check timed out (5s)")
+                return None
+            except Exception as e:
+                log.error("Allowance check failed: %s", e)
+                return None
+
+        allowance = await _fetch_allowance()
+        if allowance is None:
+            return False
+        if allowance >= float(min_required_usd or 0.0):
+            return True
+
+        # Try to set allowance/approvals synchronously and re-check.
+        try:
+            loop = asyncio.get_event_loop()
+            params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL)
+            await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: self.client.update_balance_allowance(params)),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            log.error("Allowance update timed out (10s)")
+            return False
+        except Exception as e:
+            log.error("Allowance update failed: %s", e)
+            return False
+
+        allowance2 = await _fetch_allowance()
+        if allowance2 is None:
+            return False
+        if allowance2 >= float(min_required_usd or 0.0):
+            log.info("Allowance updated: %.4f -> %.4f", allowance, allowance2)
+            return True
+
+        log.error("Allowance still insufficient after update: %.4f < %.4f", allowance2, float(min_required_usd or 0.0))
+        return False
 
     def _get_auth_headers_best_effort(self) -> dict:
         """Best-effort extraction of auth headers for direct REST calls.
@@ -1067,6 +1171,10 @@ class PolymarketClient:
         if not self.can_trade:
             self._warn_no_creds_once("limit_buy")
             return None
+        ok = await self._ensure_onchain_allowance(min_required_usd=Config.MIN_TRADE_USD)
+        if not ok:
+            log.error("Order blocked: allowance check failed for configured USDC address.")
+            raise PolyApiException(error_msg="allowance_missing")
         try:
             # CLOB requires: maker_amount max 2 decimals, taker_amount max 4 decimals
             # For BUY: maker_amount = price * size (USDC cost), taker_amount = size (shares)
@@ -1104,6 +1212,10 @@ class PolymarketClient:
         if not self.can_trade:
             self._warn_no_creds_once("market_buy")
             return None
+        ok = await self._ensure_onchain_allowance(min_required_usd=Config.MIN_TRADE_USD)
+        if not ok:
+            log.error("Order blocked: allowance check failed for configured USDC address.")
+            raise PolyApiException(error_msg="allowance_missing")
         try:
             args = MarketOrderArgs(
                 token_id = token_id,
@@ -1130,6 +1242,10 @@ class PolymarketClient:
         if not self.can_trade:
             self._warn_no_creds_once("market_sell")
             return None
+        ok = await self._ensure_onchain_allowance(min_required_usd=Config.MIN_TRADE_USD)
+        if not ok:
+            log.error("Order blocked: allowance check failed for configured USDC address.")
+            raise PolyApiException(error_msg="allowance_missing")
         try:
             args = MarketOrderArgs(
                 token_id = token_id,
@@ -1155,6 +1271,10 @@ class PolymarketClient:
         if not self.can_trade:
             self._warn_no_creds_once("limit_sell")
             return None
+        ok = await self._ensure_onchain_allowance(min_required_usd=Config.MIN_TRADE_USD)
+        if not ok:
+            log.error("Order blocked: allowance check failed for configured USDC address.")
+            raise PolyApiException(error_msg="allowance_missing")
         try:
             clean_price = round(price, 2)
             clean_size = int(size) if size > 1 else round(size, 2)
