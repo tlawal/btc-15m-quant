@@ -832,6 +832,8 @@ class Engine:
         score_offset, edge_offset = self.optimizer.get_adjusted_thresholds(0.0, 0.0)
 
         # ── Phase 4: Compute full signal suite ───────────────────────────────
+        perp_basis_pct = await self.feeds.get_binance_perp_basis_pct("BTCUSDT")
+
         sig = compute_signals(
             indic             = indic,
             btc_price         = btc_price,
@@ -842,6 +844,8 @@ class Engine:
             strike_source     = self.state.strike_source or "none",
             bid_depth20       = book.bid_depth20,
             ask_depth20       = book.ask_depth20,
+            bid_levels        = getattr(book, "bids", None),
+            ask_levels        = getattr(book, "asks", None),
             deep_imbalance    = book.deep_imbalance,
             vpin_proxy        = book.vpin_proxy,
             deep_ofi          = book.deep_ofi,
@@ -849,6 +853,7 @@ class Engine:
             is_stale_micro    = is_stale_micro,
             tob_imbalance     = book.tob_imbalance,
             cvd_velocity      = self.cvd_ws.get_cvd_slope(),
+            arrival_ts_ms     = getattr(self.cvd_ws, "cvd_timestamps", None),
             pm_net_flow       = pm_net_flow,
             cvd_delta         = cvd_delta_for_signals,
             true_cvd          = self.state.cvd,
@@ -859,6 +864,7 @@ class Engine:
             oracle_px         = oracle_px,
             oracle_update_ts  = oracle_update_ts,
             funding_rate      = funding_rate,
+            perp_basis_pct    = perp_basis_pct,
             yes_mid           = ob.yes_mid,
             no_mid            = ob.no_mid,
             yes_bid           = ob.yes_bid,
@@ -1254,6 +1260,7 @@ class Engine:
             symbol           = "BTCUSDT",
             prev_bid_depth20 = self.state.prev_bid_depth20,
             prev_ask_depth20 = self.state.prev_ask_depth20,
+            limit            = 100,
         )
 
         if not book.is_stale:

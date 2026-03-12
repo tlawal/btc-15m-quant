@@ -36,6 +36,9 @@ utils.py             — Logging, Telegram alerts, formatting
 - **EMA score smoothing** — `signed_score = 0.6 * raw + 0.4 * prev` to reduce single-cycle noise
 - **Group-max scoring** — 5 signal groups (Trend, Momentum, Flow, Microstructure, New Signals) each contribute only their strongest member; prevents correlated feature inflation; raw score capped at ±8.0
 - **Microstructure signals** — TOB imbalance, CVD velocity, deep OFI (10-level), VPIN proxy
+- **Deep LOB + ML ensemble (real-time)** — compute 40-level cumulative imbalance + depth VWAP deviation + momentum-change proxy from Binance L2 (`limit=100`), feed into the lightweight ML model (`inference.py`), and blend with the Bayesian posterior each cycle via weights `ENSEMBLE_BAYES_WEIGHT` and `ENSEMBLE_MODEL_WEIGHT`
+- **Hawkes-style timing gate (late window)** — estimate next-event timing from clustered trade arrivals; within last 5 min, if `next_event_sec < 5` and the signal direction agrees, relax required edge down to `HAWKES_LATE_REQUIRED_EDGE`
+- **Cross-market perp basis edge override** — compute perp basis `(mark-index)/index` from Binance futures; when `abs(basis_pct) >= BASIS_EDGE_MIN` and basis sign agrees with direction, bypass the `edge_insufficient` gate
 - **Tier 1 signals** — Whale flow (Polymarket fills ≥$50), spread skew (NO/YES spread ratio), multi-window momentum
 - **Tier 2 signals** — Liquidation cascade (Binance forced orders), funding rate delta
 - **Regime-adaptive thresholds** — min score and required edge scale with 15m ATR (low/normal/high vol)
@@ -65,6 +68,9 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 References (microstructure / adverse selection):
 1. **Kyle, A. S. (1985). "Continuous Auctions and Insider Trading." _Econometrica_, 53(6), 1315–1335.**
 2. **Easley, D., López de Prado, M., & O’Hara, M. (2012). "The volume clock: Insights into the high frequency paradigm." _Journal of Portfolio Management_, 39(1).** (VPIN / toxic flow intuition)
+3. **Cont, R., Stoikov, S., & Talreja, R. (2014). "A stochastic model for order book dynamics." _Operations Research_, 62(6), 1263–1283.** (order book imbalance and short-horizon price impact)
+4. **Bacry, E., Mastromatteo, I., & Muzy, J.-F. (2015). "Hawkes processes in finance." _Market Microstructure and Liquidity_, 1(1).** (event-time clustering / intensity models)
+5. **Zhang, Z., Zohren, S., & Roberts, S. (2019). "DeepLOB: Deep Convolutional Neural Networks for Limit Order Books." _IEEE Transactions on Signal Processing_, 67(11), 3001–3012.** (deep LOB features outperform lagged candle features at short horizons)
 
 ### Execution
 - **Smart entry pricing** — passive `bid+1tick` for GTC, aggressive `ask` for FOK monster signals

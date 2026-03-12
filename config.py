@@ -12,6 +12,11 @@ class Config:
     BELIEF_VOL_LOOKBACK_SEC    = 180      # rolling σ_B window (3 min)
     BELIEF_VOL_DEFAULT         = 0.15
     BELIEF_VOL_MULT_MIN        = 0.70
+    ENSEMBLE_BAYES_WEIGHT      = 0.40
+    ENSEMBLE_MODEL_WEIGHT      = 0.60
+    BASIS_EDGE_MIN             = 0.008
+    HAWKES_LATE_REQUIRED_EDGE  = 0.003
+    OUTSIDE_HOURS_ENTRY_POSTERIOR_MIN = 0.75
     # Belief-volatility multiplier caps: keep regression toward 0.5 gentle, not crushing.
     BELIEF_VOL_MULT_MAX        = 1.30     # normal cap when more than 5 min remain
     BELIEF_VOL_LATE_MAX        = 1.15     # tighter cap when < 5 min remain

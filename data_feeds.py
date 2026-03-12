@@ -20,6 +20,7 @@ log = logging.getLogger(__name__)
 BINANCE_REST    = "https://api.binance.com"
 BINANCE_ALT     = "https://api1.binance.com"   # fallback mirror
 BINANCE_ALT2    = "https://api2.binance.com"   # fallback mirror 2
+BINANCE_FAPI    = "https://fapi.binance.com"
 BYBIT_REST      = "https://api.bybit.com"       # secondary source (US-friendly)
 COINBASE_REST   = "https://api.exchange.coinbase.com"
 
@@ -40,6 +41,8 @@ class Candle:
 class DeepBook:
     bid_depth20:    float = 0.0
     ask_depth20:    float = 0.0
+    bids:           list = field(default_factory=list)  # list[(price, size)] best→worse
+    asks:           list = field(default_factory=list)  # list[(price, size)] best→worse
     deep_imbalance: float = 0.5   # cumBid / (cumBid + cumAsk)
     vpin_proxy:     float = 0.0   # |deepImbalance - 0.5| * 2
     deep_ofi:       float = 0.0   # depth delta vs previous snapshot
@@ -264,6 +267,28 @@ class DataFeeds:
         except Exception as e:
             log.debug(f"liquidation_cascade: {e}")
             return 0.0
+
+    async def get_binance_perp_basis_pct(self, symbol: str = "BTCUSDT") -> Optional[float]:
+        """Return perp basis as a percentage proxy: (mark - index) / index.
+
+        Uses Binance USDT-margined futures premiumIndex endpoint.
+        """
+        url = f"{BINANCE_FAPI}/fapi/v1/premiumIndex?symbol={symbol}"
+        try:
+            async with self.session.get(url, timeout=aiohttp.ClientTimeout(total=3)) as r:
+                if r.status != 200:
+                    return None
+                data = await r.json()
+            if not isinstance(data, dict):
+                return None
+            mark = float(data.get("markPrice") or 0.0)
+            index = float(data.get("indexPrice") or 0.0)
+            if index <= 0 or mark <= 0:
+                return None
+            return (mark - index) / index
+        except Exception as e:
+            log.debug(f"perp_basis_pct: {e}")
+            return None
 
     # ── Klines ────────────────────────────────────────────────────────────────
 
@@ -535,13 +560,15 @@ class DataFeeds:
         symbol: str = "BTCUSDT",
         prev_bid_depth20: Optional[float] = None,
         prev_ask_depth20: Optional[float] = None,
+        limit: int = 20,
     ) -> DeepBook:
         """
-        Fetch 20-level L2 depth from Binance.
+        Fetch N-level L2 depth from Binance.
         schema: {"lastUpdateId":..., "bids": [["px","qty"],...], "asks": [...]}
         """
-        url = f"{BINANCE_REST}/api/v3/depth?symbol={symbol}&limit=20"
-        alt = f"{BINANCE_ALT}/api/v3/depth?symbol={symbol}&limit=20"
+        _limit = 100 if int(limit) >= 100 else (20 if int(limit) >= 20 else 5)
+        url = f"{BINANCE_REST}/api/v3/depth?symbol={symbol}&limit={_limit}"
+        alt = f"{BINANCE_ALT}/api/v3/depth?symbol={symbol}&limit={_limit}"
         try:
             data = await self._fetch_json_with_fallback(url, alt)
             if not data or "bids" not in data:
@@ -604,6 +631,8 @@ class DataFeeds:
         return DeepBook(
             bid_depth20    = bid20,
             ask_depth20    = ask20,
+            bids           = bids,
+            asks           = asks,
             deep_imbalance = deep_imbalance,
             vpin_proxy     = vpin_proxy,
             deep_ofi       = deep_ofi,

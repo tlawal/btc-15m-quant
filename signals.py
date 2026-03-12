@@ -6,7 +6,7 @@ Extracted from logic.py during Phase 3 refactor.
 import math
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Sequence
 
 from config import Config
 from indicators import Indicators, normal_cdf, logit, inv_logit, clamp
@@ -88,6 +88,21 @@ class SignalResult:
     oracle_px:            Optional[float] = None
     oracle_update_age:    Optional[float] = None
     funding_rate:         Optional[float] = None
+    perp_basis_pct:       Optional[float] = None
+    basis_edge:           Optional[float] = None
+
+    # Deep LOB (40-level)
+    lob_imbalance_40:      Optional[float] = None
+    lob_imbalance_40_norm: Optional[float] = None
+    lob_spread:            Optional[float] = None
+    lob_vwap_dev:          Optional[float] = None
+    lob_mom_change:        Optional[float] = None
+
+    # Model ensemble
+    model_prob_up:         Optional[float] = None
+
+    # Hawkes timing proxy
+    hawkes_next_event_sec: Optional[float] = None
 
     # Edge
     edge_up:              Optional[float] = None
@@ -156,6 +171,15 @@ class SignalResult:
             "oracle_lag_score":   self.oracle_lag_score,
             "funding_rate_score": self.funding_rate_score,
             "funding_rate":       self.funding_rate,
+            "perp_basis_pct":     self.perp_basis_pct,
+            "basis_edge":         self.basis_edge,
+            "lob_imbalance_40":      self.lob_imbalance_40,
+            "lob_imbalance_40_norm": self.lob_imbalance_40_norm,
+            "lob_spread":            self.lob_spread,
+            "lob_vwap_dev":          self.lob_vwap_dev,
+            "lob_mom_change":        self.lob_mom_change,
+            "model_prob_up":         self.model_prob_up,
+            "hawkes_next_event_sec": self.hawkes_next_event_sec,
             "tob_score":          self.tob_score,
             "cvd_velocity_score": self.cvd_velocity_score,
             "pm_flow_score":      self.pm_flow_score,
@@ -182,6 +206,8 @@ def compute_signals(
     # Microstructure
     bid_depth20:      float,
     ask_depth20:      float,
+    bid_levels:       Optional[Sequence] = None,
+    ask_levels:       Optional[Sequence] = None,
     deep_imbalance:   float,
     vpin_proxy:       float,
     deep_ofi:         float,
@@ -198,9 +224,11 @@ def compute_signals(
     oracle_px:        Optional[float],
     oracle_update_ts: Optional[int],
     funding_rate:     Optional[float],
+    perp_basis_pct:   Optional[float] = None,
     # Phase 3: TOB + CVD velocity + Polymarket flow
     tob_imbalance:    float = 0.5,
     cvd_velocity:     float = 0.0,
+    arrival_ts_ms:    Optional[Sequence[int]] = None,
     pm_net_flow:      float = 0.0,
     # Polymarket
     yes_mid:          Optional[float] = None,
@@ -226,6 +254,9 @@ def compute_signals(
 ) -> SignalResult:
 
     res = SignalResult()
+
+    window_min = Config.WINDOW_SEC / 60.0
+    t_frac = minutes_remaining / window_min if window_min > 0 else 0.5
 
     # ── Regime ───────────────────────────────────────────────────────
     atr14 = indic.atr14
@@ -254,6 +285,76 @@ def compute_signals(
     res.yes_mid        = yes_mid
     res.no_mid         = no_mid
 
+    res.perp_basis_pct = perp_basis_pct
+    if perp_basis_pct is not None:
+        try:
+            res.basis_edge = abs(float(perp_basis_pct))
+        except Exception:
+            res.basis_edge = None
+
+    # ── Deep LOB features (40-level) ─────────────────────────────────────────
+    def _compute_deep_lob_feats(
+        bids: Optional[Sequence],
+        asks: Optional[Sequence],
+        levels: int = 40,
+    ) -> dict:
+        if not bids or not asks:
+            return {}
+        try:
+            bb = []
+            aa = []
+            for px, sz in list(bids)[:levels]:
+                bb.append((float(px), float(sz)))
+            for px, sz in list(asks)[:levels]:
+                aa.append((float(px), float(sz)))
+        except Exception:
+            return {}
+
+        if not bb or not aa:
+            return {}
+
+        bid_vol = sum(sz for _, sz in bb)
+        ask_vol = sum(sz for _, sz in aa)
+        imb = bid_vol - ask_vol
+        denom = bid_vol + ask_vol
+        imb_norm = (imb / denom) if denom > 0 else 0.0
+
+        best_bid = bb[0][0] if bb else None
+        best_ask = aa[0][0] if aa else None
+        spread = (best_ask - best_bid) if (best_bid and best_ask) else None
+
+        num = sum(px * sz for px, sz in bb) + sum(px * sz for px, sz in aa)
+        den = bid_vol + ask_vol
+        depth_vwap = (num / den) if den > 0 else None
+        mid = ((best_bid + best_ask) / 2.0) if (best_bid and best_ask) else None
+        vwap_dev = (depth_vwap - mid) if (depth_vwap is not None and mid is not None) else None
+
+        # Momentum-change proxy: difference between 40-level and 10-level imbalance.
+        # This captures whether pressure is strengthening deeper in the book.
+        b10 = bb[:10]
+        a10 = aa[:10]
+        bid10 = sum(sz for _, sz in b10)
+        ask10 = sum(sz for _, sz in a10)
+        imb10 = bid10 - ask10
+        denom10 = bid10 + ask10
+        imb10_norm = (imb10 / denom10) if denom10 > 0 else 0.0
+        mom_change = imb_norm - imb10_norm
+
+        return {
+            "lob_imbalance_40": imb,
+            "lob_imbalance_40_norm": imb_norm,
+            "lob_spread": spread,
+            "lob_vwap_dev": vwap_dev,
+            "lob_mom_change": mom_change,
+        }
+
+    deep_feats = _compute_deep_lob_feats(bid_levels, ask_levels, levels=40)
+    res.lob_imbalance_40 = deep_feats.get("lob_imbalance_40")
+    res.lob_imbalance_40_norm = deep_feats.get("lob_imbalance_40_norm")
+    res.lob_spread = deep_feats.get("lob_spread")
+    res.lob_vwap_dev = deep_feats.get("lob_vwap_dev")
+    res.lob_mom_change = deep_feats.get("lob_mom_change")
+
     # ── Z-score + Bayesian posteriors ─────────────────────────────────────────
     if strike and res.expected_move and res.expected_move > 0:
         res.distance = btc_price - strike
@@ -266,8 +367,7 @@ def compute_signals(
     # With < 2 min remaining, the z-score becomes more deterministic — amplify conviction.
     # With > 10 min remaining, dampen conviction toward 0.5 (uncertainty is high).
     if res.posterior_fair_up is not None and minutes_remaining > 0:
-        window_min = Config.WINDOW_SEC / 60.0
-        t_frac = minutes_remaining / window_min  # 1.0 at start, 0.0 at expiry
+        t_frac = clamp(t_frac, 0.0, 1.0)  # 1.0 at start, 0.0 at expiry
         if t_frac > 0.67:  # first third: dampen toward 0.5
             dampen = 0.7 + 0.3 * (1.0 - t_frac) / 0.33  # 0.7 at start → 1.0 at 67%
             res.posterior_fair_up = 0.5 + (res.posterior_fair_up - 0.5) * dampen
@@ -735,8 +835,6 @@ def compute_signals(
         signed *= 0.8
 
     # Window-specific calibration
-    window_min = Config.WINDOW_SEC / 60.0
-    t_frac = minutes_remaining / window_min if window_min > 0 else 0.5
     if t_frac > 0.87:  # first ~2 min: dampen
         signed *= 0.75
     elif t_frac < 0.20:  # last ~3 min: add micro boost
@@ -765,13 +863,20 @@ def compute_signals(
     # ── Phase 5: ML Inference ────────────────────────────────────────────────
     if inference_engine:
         feats = res.to_feature_dict()
-        res.model_score = inference_engine.predict_up_prob(feats)
-        if res.model_score is not None:
-            log.info(f"ML Inference UP probability: {res.model_score:.4f}")
-            if res.model_score > 0.8:
-                res.signed_score += 1.0
-            elif res.model_score < 0.2:
-                res.signed_score -= 1.0
+        res.model_prob_up = inference_engine.predict_up_prob(feats)
+        res.model_score = res.model_prob_up
+
+    # Ensemble: blend Bayesian posterior (prior) with model probability every cycle.
+    if res.posterior_final_up is not None and res.model_prob_up is not None:
+        w_b = float(getattr(Config, "ENSEMBLE_BAYES_WEIGHT", 0.40) or 0.40)
+        w_m = float(getattr(Config, "ENSEMBLE_MODEL_WEIGHT", 0.60) or 0.60)
+        w_sum = w_b + w_m
+        if w_sum <= 0:
+            w_b, w_m, w_sum = 0.40, 0.60, 1.0
+        p = (w_b * res.posterior_final_up + w_m * res.model_prob_up) / w_sum
+        p = clamp(p, 1e-6, 1 - 1e-6)
+        res.posterior_final_up = p
+        res.posterior_final_down = 1.0 - p
 
     # Delta tracking for reporting
     if state.prev_cycle_score is not None:
@@ -903,7 +1008,8 @@ def compute_signals(
         (res.direction == "DOWN" and res.signed_score > 2.0) or
         (res.direction == "UP" and res.signed_score < -2.0)
     )
-    if _score_disagrees and not res.monster_signal:
+
+    if _score_disagrees and not res.monster_signal and t_frac <= 0.30:
         gates.append(f"score_direction_disagree={res.signed_score:+.1f}_vs_{res.direction}")
 
     # VPIN toxicity gate — exempts high-conviction signals (posterior ≥ 0.85)
@@ -952,14 +1058,65 @@ def compute_signals(
         else:
             effective_required_edge = 0.018  # was 0.035
 
+    # Hawkes timing proxy: use trade-arrival clustering to allow more aggressive
+    # late-window sniping when the next event is likely imminent.
+    if arrival_ts_ms and minutes_remaining < 5.0:
+        try:
+            now_ms = int(now_ts) * 1000
+            ts_list = [int(x) for x in list(arrival_ts_ms)[-100:] if x]
+            ts_list = [x for x in ts_list if x > 0 and x <= now_ms]
+            if len(ts_list) >= 5:
+                # Base intensity from recent mean interarrival.
+                dts = [(ts_list[i] - ts_list[i - 1]) / 1000.0 for i in range(1, len(ts_list))]
+                avg_dt = sum(dts) / len(dts) if dts else 0.0
+                mu = (1.0 / avg_dt) if avg_dt > 1e-6 else 0.0
+                alpha = 0.5 * mu
+                beta = 1.0
+                lam = mu
+                for t_ms in ts_list[-50:]:
+                    dt = max((now_ms - t_ms) / 1000.0, 0.0)
+                    lam += alpha * math.exp(-beta * dt)
+                if lam > 1e-9:
+                    res.hawkes_next_event_sec = 1.0 / lam
+        except Exception:
+            res.hawkes_next_event_sec = None
+
+    sign_agrees = (
+        (res.direction == "UP" and res.signed_score >= 0) or
+        (res.direction == "DOWN" and res.signed_score <= 0)
+    )
+    if (
+        minutes_remaining < 5.0
+        and res.hawkes_next_event_sec is not None
+        and res.hawkes_next_event_sec < 5.0
+        and sign_agrees
+    ):
+        hawkes_edge = float(getattr(Config, "HAWKES_LATE_REQUIRED_EDGE", 0.003) or 0.003)
+        effective_required_edge = min(effective_required_edge, hawkes_edge)
+        res.required_edge = min(res.required_edge, hawkes_edge)
+
     # Ultra-late force
     if minutes_remaining < 1.0 and best_posterior >= 0.97:
         effective_required_edge = 0.0
         log.info("ULTRA_LATE_FORCE: last minute + 97%+ conviction → edge=0")
 
+    # Cross-market perp basis filter: treat basis as an independent edge proxy.
+    _basis_agrees = (
+        perp_basis_pct is not None and (
+            (res.direction == "UP" and perp_basis_pct > 0) or
+            (res.direction == "DOWN" and perp_basis_pct < 0)
+        )
+    )
+    _basis_override = bool(
+        _basis_agrees
+        and res.basis_edge is not None
+        and res.basis_edge >= float(getattr(Config, "BASIS_EDGE_MIN", 0.008) or 0.008)
+    )
+
     # Edge gate
     if res.target_edge is None or res.target_edge < effective_required_edge:
-        gates.append(f"edge_insufficient={res.target_edge or 0:.4f}_req={effective_required_edge:.3f}")
+        if not _basis_override:
+            gates.append(f"edge_insufficient={res.target_edge or 0:.4f}_req={effective_required_edge:.3f}")
 
     # Monster sure-thing override
     if res.monster_signal and best_posterior >= 0.95:
@@ -1051,7 +1208,10 @@ def compute_signals(
         log.info(f"LOW_VOLUME_BLOCK: volume={cvd_total_vol:.1f} on 95%+ conviction")
 
     # Preferred trading time gate
-    if not Config.is_preferred_trading_time() and chosen_posterior < 0.85:
+    if (
+        not Config.is_preferred_trading_time()
+        and chosen_posterior < float(getattr(Config, "OUTSIDE_HOURS_ENTRY_POSTERIOR_MIN", 0.75) or 0.75)
+    ):
         gates.append('outside_preferred_hours')
 
     res.skip_gates = gates
