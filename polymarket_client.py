@@ -90,23 +90,25 @@ class OrderBook:
 class PolymarketClient:
     def __init__(self):
         self._warned_missing_creds = False
-        # Fix base64 padding if needed
-        secret = Config.POLYMARKET_API_SECRET or ""
-        if secret and len(secret) % 4 != 0:
-            secret += "=" * (4 - (len(secret) % 4))
 
         self.client = ClobClient(
-            host     = POLYMARKET_HOST,
-            key      = Config.POLYMARKET_PRIVATE_KEY,
-            chain_id = Config.CHAIN_ID,
-            creds    = ApiCreds(
-                api_key        = Config.POLYMARKET_API_KEY,
-                api_secret     = secret,
-                api_passphrase = Config.POLYMARKET_API_PASSPHRASE,
-            ),
+            host=Config.POLYMARKET_HOST,
+            key=Config.POLYMARKET_PRIVATE_KEY,
+            chain_id=Config.CHAIN_ID,
+            funder=Config.FUNDER_ADDRESS or None,
         )
+
+        # Derive fresh API creds each startup (library-intended flow)
+        try:
+            creds = self.client.create_or_derive_api_creds()
+            self.client.set_api_creds(creds)
+            log.info("Polymarket CLOB credentials derived successfully")
+            self.can_trade = True
+        except Exception as e:
+            log.error(f"Polymarket CLOB credential derivation failed: {e}")
+            self.can_trade = False
+
         self._session: Optional[aiohttp.ClientSession] = None
-        self.can_trade = True
         self._redeem_cooldown_sec = 60 * 30
         self._last_redeem_attempt_ts_by_condition: dict[str, float] = {}
 

@@ -186,8 +186,11 @@ class Config:
     # 4. NEVER: live EMA / current price
 
     # ── Polymarket ────────────────────────────────────────────────────────────
-    CHAIN_ID                   = 137      # Polygon mainnet (use 80002 for Amoy testnet)
+    CHAIN_ID                   = 137
     POLYMARKET_HOST            = "https://clob.polymarket.com"
+
+    POLYMARKET_PRIVATE_KEY     = os.getenv("POLYMARKET_PRIVATE_KEY", "")
+    FUNDER_ADDRESS             = os.getenv("FUNDER_ADDRESS", "")
 
     # ── Polygon RPC / Tokens ──────────────────────────────────────────────────
     # Switch to a dedicated Alchemy or QuickNode endpoint for better stability
@@ -203,7 +206,6 @@ class Config:
     BINANCE_API_SECRET         = os.getenv("BINANCE_API_SECRET", "")
     COINBASE_API_KEY           = os.getenv("COINBASE_API_KEY", "")
     COINBASE_API_SECRET        = os.getenv("COINBASE_API_SECRET", "")
-    POLYMARKET_PRIVATE_KEY     = os.getenv("POLYMARKET_PRIVATE_KEY", "")
     POLYMARKET_API_KEY         = os.getenv("POLYMARKET_API_KEY", "")
     POLYMARKET_API_SECRET      = os.getenv("POLYMARKET_API_SECRET", "")
     POLYMARKET_API_PASSPHRASE  = os.getenv("POLYMARKET_API_PASSPHRASE", "")
@@ -269,10 +271,10 @@ class Config:
     @classmethod
     def validate(cls):
         missing = []
-        # Require Polymarket credentials to run
-        for key in ["POLYMARKET_PRIVATE_KEY", "POLYMARKET_API_KEY", "POLYMARKET_API_SECRET", "POLYMARKET_API_PASSPHRASE"]:
-            if not getattr(cls, key):
-                missing.append(key)
+        if not cls.POLYMARKET_PRIVATE_KEY:
+            missing.append("POLYMARKET_PRIVATE_KEY")
+        if not cls.FUNDER_ADDRESS:
+            pass
         if missing:
             raise ValueError(f"CRITICAL: Missing required environment variables: {', '.join(missing)}")
 
