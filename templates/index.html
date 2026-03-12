@@ -1249,7 +1249,9 @@ function updateUI() {
                 $('unreal-pnl').className = pnl>0?'mono up font-bold':'mono dn font-bold';
             }
         } else if (posSide!=='FLAT' && cpx!=='--' && !isNaN(cpxNum) && cpxNum > 0.01 && d.entry_price) {
-            const pnl=(cpxNum-d.entry_price)/d.entry_price;
+            const pnl = posSide === 'NO'
+                ? (d.entry_price - cpxNum) / d.entry_price
+                : (cpxNum - d.entry_price) / d.entry_price;
             const suffix = isPending ? ' (est)' : '';
             $('unreal-pnl').innerText = (pnl>0?'+':'')+(pnl*100).toFixed(2)+'%'+suffix;
             if (isPending) {

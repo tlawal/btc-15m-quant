@@ -72,6 +72,18 @@ class Engine:
 
         self._manual_cmd_q: asyncio.Queue = asyncio.Queue()
 
+    @staticmethod
+    def _calc_pnl_pct(side: str, entry_px: float, current_px: float) -> float:
+        if not entry_px or entry_px <= 0 or current_px is None:
+            return 0.0
+        if side == "NO":
+            return (entry_px - current_px) / entry_px
+        return (current_px - entry_px) / entry_px
+
+    @staticmethod
+    def _calc_pnl_usd(side: str, entry_px: float, current_px: float, size: float) -> float:
+        return Engine._calc_pnl_pct(side, entry_px, current_px) * entry_px * (size or 0.0)
+
     async def enqueue_manual_exit_limit(self, *, price: float, order_type: str = "GTC") -> dict:
         await self._manual_cmd_q.put({"op": "exit_limit", "price": float(price), "order_type": str(order_type)})
         return {"ok": True}
@@ -174,8 +186,21 @@ class Engine:
             log.warning("manual_exit_now: no active position")
             return
         if pos.is_pending:
-            log.warning("manual_exit_now: position has pending order")
-            return
+            # If an exit order is already pending, cancel it and force immediate exit.
+            # This keeps the dashboard "Exit Now" button useful under live conditions.
+            if pos.exit_reason and pos.order_id:
+                try:
+                    await self.pm.cancel_order(str(pos.order_id))
+                except Exception as e:
+                    log.warning(f"manual_exit_now: failed to cancel pending exit first: {e}")
+                    return
+                pos.is_pending = False
+                pos.order_id = None
+                pos.intended_exit_price = None
+                log.warning("manual_exit_now: canceled pending exit order; forcing market sell")
+            else:
+                log.warning("manual_exit_now: position has pending ENTRY order")
+                return
         oid = await self.pm.market_sell(str(pos.token_id), float(pos.size))
         if not oid:
             log.warning("manual_exit_now: order placement failed")
@@ -616,8 +641,8 @@ class Engine:
                 entry_px = pos.avg_entry_price or pos.entry_price
                 self.state.pos_current_price = current_px
                 if current_px is not None and entry_px is not None and entry_px > 0:
-                    self.state.pos_unrealized_pnl_pct = (current_px - entry_px) / entry_px
-                    self.state.pos_unrealized_pnl_usd = (current_px - entry_px) * float(pos.size)
+                    self.state.pos_unrealized_pnl_pct = self._calc_pnl_pct(pos.side, entry_px, current_px)
+                    self.state.pos_unrealized_pnl_usd = self._calc_pnl_usd(pos.side, entry_px, current_px, float(pos.size))
                 else:
                     self.state.pos_unrealized_pnl_pct = None
                     self.state.pos_unrealized_pnl_usd = None
@@ -1304,7 +1329,7 @@ class Engine:
                 slippage = (actual_px - intended_px) / intended_px if intended_px > 0 else 0.0
                 
                 entry_px = pos.avg_entry_price or pos.entry_price or actual_px
-                pnl_pct = (actual_px - entry_px) / entry_px if entry_px > 0 else 0.0
+                pnl_pct = self._calc_pnl_pct(pos.side, entry_px, actual_px)
                 
                 # Update stats
                 if pnl_pct < 0:
@@ -1334,7 +1359,7 @@ class Engine:
                     size=pos.size,
                     entry_price=entry_px,
                     exit_price=actual_px,
-                    pnl_usd=(actual_px - entry_px) * pos.size,
+                    pnl_usd=self._calc_pnl_usd(pos.side, entry_px, actual_px, pos.size),
                     outcome_win=1 if outcome == "WIN" else 0,
                     regime=getattr(self.state, "entry_regime", None),
                     features=entry_feats,
@@ -1746,7 +1771,7 @@ class Engine:
 
         # Paper-trade mode: apply exits locally without touching Polymarket.
         if Config.PAPER_TRADE_ENABLED:
-            pnl_pct = (current_px - entry_px) / entry_px if entry_px > 0 else 0.0
+            pnl_pct = self._calc_pnl_pct(pos.side, entry_px, current_px)
 
             if pnl_pct < 0:
                 self.state.loss_streak += 1
@@ -1769,7 +1794,7 @@ class Engine:
                     size=pos.size,
                     entry_price=entry_px,
                     exit_price=current_px,
-                    pnl_usd=(current_px - entry_px) * pos.size if entry_px > 0 else 0.0,
+                    pnl_usd=self._calc_pnl_usd(pos.side, entry_px, current_px, pos.size),
                     outcome_win=1 if outcome == "WIN" else 0,
                     regime=getattr(self.state, "entry_regime", None),
                     features=getattr(self.state, "entry_features", None),
@@ -1785,7 +1810,7 @@ class Engine:
             else:
                 self.state.total_losses += 1
 
-            self.state.total_pnl_usd += (current_px - entry_px) * pos.size if entry_px > 0 else 0.0
+            self.state.total_pnl_usd += self._calc_pnl_usd(pos.side, entry_px, current_px, pos.size)
             self.state.held_position = HeldPosition()
             self._last_exit_reason = reason
             log.info(f"PAPER EXIT: {pos.side} reason={reason} pnl={pnl_pct*100:.2f}%")
