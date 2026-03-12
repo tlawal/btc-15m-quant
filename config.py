@@ -91,7 +91,7 @@ class Config:
                                           # At -25% the position is unrecoverable on a 15m binary; cut always.
     FORCED_LATE_EXIT_MIN_REM    = 1.0     # Force exit at <1 min if losing
     FORCED_DISTANCE_EXIT_MIN_REM = 3.0
-    FORCED_PROFIT_LOCK_MIN_REM = 2.0
+    FORCED_PROFIT_LOCK_MIN_REM = 1.0
     FORCED_LATE_LOSS_PCT       = 0.10   # tightened from 0.15 — cut losers faster in last 5 min
     FORCED_PROFIT_PCT          = 0.25
     FORCED_DISTANCE_MAX        = 30.0     # abs(btcPrice - strike) < this triggers late exit

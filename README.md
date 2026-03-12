@@ -57,6 +57,15 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 13. **TIME_DECAY** — losing position < 2 min to expiry (held if posterior > 60%)
 14. **TAKE_PROFIT_OPEN** — Profit-taking on open positions at 25% PNL if >2 min left (in `monitor_and_exit_open_positions`). Grounded in Brock et al. (1992) for timing exits.
 
+**Recent exit hardening changes:**
+- **Profit lock timing** — `FORCED_PROFIT_LOCK` now triggers at `minutes_remaining <= 1.0` (60s) by default (configurable via `FORCED_PROFIT_LOCK_MIN_REM`).
+- **No loser-holding posterior exemption near expiry** — late forced-loss exits and adverse microstructure exits do not allow a “posterior says hold” override.
+- **Adverse OFI (Hawkes-style) strengthened** — `FORCED_ADVERSE_OFI` applies at ≤60s remaining with no posterior exemption when deep OFI reverses against the held side while losing.
+
+References (microstructure / adverse selection):
+1. **Kyle, A. S. (1985). "Continuous Auctions and Insider Trading." _Econometrica_, 53(6), 1315–1335.**
+2. **Easley, D., López de Prado, M., & O’Hara, M. (2012). "The volume clock: Insights into the high frequency paradigm." _Journal of Portfolio Management_, 39(1).** (VPIN / toxic flow intuition)
+
 ### Execution
 - **Smart entry pricing** — passive `bid+1tick` for GTC, aggressive `ask` for FOK monster signals
 - **Mid-price fallback** — when ask is None (deep ITM), uses `mid + 0.01` capped at 0.99
@@ -86,7 +95,7 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 - **Signal accuracy tracking** — 7-day rolling directional accuracy per signal
 - **Auto-disable** — signals with < 45% accuracy over 20+ samples are zeroed out
 - **Kelly recalibration** — Kelly multiplier adjusts to Sharpe (0.4x / 0.7x / 1.0x)
-- **Exit outcome logging (Phase A)** — every `evaluate_exit()` call logs to `exit_outcomes.jsonl`: exit reason, unrealized%, posteriors, time remaining, hold duration; filled with settlement outcome at each window roll for counterfactual analysis
+- **Exit outcome logging (Phase A)** — every triggered exit is logged to `exit_outcomes.jsonl` (via `main.py` calling `optimizer.log_exit_attempt()`): exit reason, unrealized%, posteriors, time remaining, hold duration; filled with settlement outcome at each window roll for counterfactual analysis
 - **Nightly AI review** — Claude `claude-sonnet-4-6` reviews 24h performance at 00:05 UTC, saves to `/data/nightly_review_{date}.md`, sends Telegram summary
 
 ### Dashboard

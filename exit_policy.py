@@ -65,14 +65,10 @@ def evaluate_exit(
     # At <1 min remaining, the binary is repricing fast — the model is stale.
     # Tighter threshold for late losers: exit at -10% if < 1 min remain.
     # Skip for late-entered positions to allow holding to expiry.
-    # Hold if posterior >0.70 (model still believes).
     if minutes_remaining < Config.FORCED_LATE_EXIT_MIN_REM and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
         if entry_min_rem is not None and entry_min_rem < 5:
             log.info(f"FORCED_LATE_EXIT_SKIPPED: late entry (entry_min_rem={entry_min_rem:.1f}) — holding to expiry")
             pass  # skip forced exit for late entries
-        elif posterior is not None and posterior > 0.70:
-            log.info(f"FORCED_LATE_EXIT_HELD: posterior={posterior:.3f} > 0.70 — holding to expiry")
-            pass  # hold if model confident
         else:
             return "FORCED_LATE_EXIT"
 
@@ -81,8 +77,8 @@ def evaluate_exit(
         return "TAKE_SMALL_PROFIT_OUTSIDE"
 
     # 0e. Adverse microstructure reversal (Hawkes OFI for adverse selection)
-    # Force exit if OFI indicates strong adverse flow despite model confidence
-    if minutes_remaining <= 1.0 and posterior is not None and posterior > 0.7 and unrealized_pct < 0:
+    # No posterior override: near expiry, microstructure can dominate model state.
+    if minutes_remaining <= 1.0 and unrealized_pct < 0:
         ofi_threshold = Config.EXIT_DEEP_OFI_REV_THRESH
         if (held_side == "YES" and deep_ofi < -ofi_threshold) or (held_side == "NO" and deep_ofi > ofi_threshold):
             log.warning(
@@ -146,7 +142,7 @@ def evaluate_exit(
     # Tolerance scales with profitability — hold winners tighter, give modest losers room.
     # When losing >10%, tighten tolerance: the model is increasingly suspect vs market price.
     # High confidence override: if posterior > 0.95, hold unless it drops significantly (>10pp).
-    if posterior is not None:
+    if posterior is not None and unrealized_pct >= 0:
         if posterior > 0.95:
              # Near-certain: very loose tolerance (0.10) to avoid being shaken out by noise.
              _tol = 0.10
@@ -154,10 +150,6 @@ def evaluate_exit(
             _tol = 0.02   # winning >5%: tight hold
         elif unrealized_pct > 0:
             _tol = 0.03   # small win
-        elif unrealized_pct > -0.10:
-            _tol = 0.03   # modest loss: give room for oscillation (tightened from 0.05)
-        else:
-            _tol = 0.02   # losing >10%: tighten — model is lagging reality (tightened from 0.03)
 
         if posterior > _entry_post - _tol:
             return None   # model still believes — hold for soft exit conditions
@@ -178,9 +170,9 @@ def evaluate_exit(
             return "TRAIL_POSTERIOR"
 
     # 2. Forced profit lock (near expiry, strong profit)
-    if (minutes_remaining < Config.FORCED_PROFIT_LOCK_MIN_REM
-            and unrealized_pct > Config.FORCED_PROFIT_PCT):
-        return "FORCED_PROFIT_LOCK"
+    if minutes_remaining <= Config.FORCED_PROFIT_LOCK_MIN_REM:
+        if unrealized_pct > Config.FORCED_PROFIT_PCT:
+            return "FORCED_PROFIT_LOCK"
 
     # 4. Take profit
     if current_price >= Config.TAKE_PROFIT_PRICE:
