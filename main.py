@@ -1853,12 +1853,22 @@ class Engine:
             except Exception:
                 log.info(f"ENTRY_SKIPPED reason={reason}")
 
-        # Hard early window no-trade zone: no entries in first 7 min (monster can bypass)
-        if min_rem is not None and min_rem > 8.0 and not is_monster:
+        # Hard early window no-trade zone: block entries for the first Config.EARLY_WINDOW_GUARD_MIN minutes.
+        # min_rem starts near window_len and decreases toward 0.
+        window_min = Config.WINDOW_SEC / 60.0
+        early_block_cutoff_min_rem = max(0.0, window_min - float(getattr(Config, "EARLY_WINDOW_GUARD_MIN", 0.0) or 0.0))
+        if min_rem is not None and min_rem > early_block_cutoff_min_rem and not is_monster:
             log.info(
-                f"HARD_EARLY_WINDOW: no trades in first 7 min for normal signals (min_rem={min_rem:.1f})"
+                "HARD_EARLY_WINDOW: no trades in first %.1f min for normal signals (min_rem=%.1f > cutoff=%.1f)",
+                float(getattr(Config, "EARLY_WINDOW_GUARD_MIN", 0.0) or 0.0),
+                float(min_rem),
+                float(early_block_cutoff_min_rem),
             )
-            _entry_skipped("hard_early_window")
+            _entry_skipped(
+                "hard_early_window",
+                min_rem=float(min_rem),
+                cutoff_min_rem=float(early_block_cutoff_min_rem),
+            )
             return
 
         # Preferred trading hours: 7 AM - 6 PM ET (11:00-22:00 UTC) on weekdays
