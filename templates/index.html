@@ -827,6 +827,32 @@
                     </div>
                 </div>
 
+                <!-- Sweep Resolved → Proxy (admin) -->
+                <div id="sweep-dust-panel" class="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3">
+                    <div class="flex items-center justify-between">
+                        <div class="text-[0.6rem] text-slate-400 uppercase tracking-wide">Sweep Resolved → Proxy</div>
+                        <div class="text-[0.55rem] text-slate-500 mono">EOA → Proxy</div>
+                    </div>
+                    <div class="mt-2 grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
+                        <div>
+                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Max Transfers</div>
+                            <input id="sweep-max" type="number" min="1" max="50" step="1" value="10" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200" />
+                        </div>
+                        <div>
+                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Min Shares</div>
+                            <input id="sweep-min" type="number" min="0" step="0.000001" value="0" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200" />
+                        </div>
+                        <div class="md:col-span-2 grid grid-cols-2 gap-2">
+                            <button id="btn-sweep-dry" class="rounded bg-slate-500/20 border border-slate-500/40 text-slate-200 text-xs px-2 py-1 hover:bg-slate-500/30">Dry Run</button>
+                            <button id="btn-sweep-exec" class="rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs px-2 py-1 hover:bg-amber-500/30">Execute Sweep</button>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-[0.6rem] text-slate-500">
+                        Sweeps full balances of resolved YES+NO ERC-1155 positions from your EOA into the Polymarket proxy wallet.
+                    </div>
+                    <pre id="sweep-out" class="mt-2 text-[0.62rem] mono bg-black/40 border border-white/10 rounded p-2 overflow-auto" style="max-height:180px">Ready.</pre>
+                </div>
+
                 <!-- Halt Banner + Resume Button -->
                 <div id="halt-banner" style="display:none" class="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs">
                     <div class="flex items-center justify-between gap-2">
@@ -1582,6 +1608,55 @@ async function postManual(path, body) {
     }
 }
 
+async function postAdminJson(path, body) {
+    persistAdminToken();
+    const token = getAdminToken();
+    if (!token) {
+        alert('Missing Admin Token (set DASHBOARD_ADMIN_TOKEN on server and paste it here).');
+        return null;
+    }
+    const res = await fetch(path, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Admin-Token': token,
+        },
+        body: JSON.stringify(body || {}),
+    });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) {
+        alert('❌ ' + ((data && data.message) ? data.message : ('Request failed: ' + res.status)));
+        return null;
+    }
+    return data;
+}
+
+function _sweepParams(dry) {
+    const maxTransfers = parseInt(($('sweep-max')?.value)||'10', 10);
+    const minShares = parseFloat(($('sweep-min')?.value)||'0');
+    return {
+        dry_run: !!dry,
+        max_transfers: isFinite(maxTransfers) ? maxTransfers : 10,
+        min_shares: isFinite(minShares) ? minShares : 0,
+    };
+}
+
+async function sweepDryRun() {
+    const out = $('sweep-out');
+    if (out) out.textContent = 'Loading (dry run)...';
+    const data = await postAdminJson('/api/sweep-dust', _sweepParams(true));
+    if (out) out.textContent = data ? JSON.stringify(data, null, 2) : 'Error.';
+}
+
+async function sweepExecute() {
+    const ok = confirm('This will broadcast on-chain ERC-1155 transfers. Continue?');
+    if (!ok) return;
+    const out = $('sweep-out');
+    if (out) out.textContent = 'Broadcasting sweep...';
+    const data = await postAdminJson('/api/sweep-dust', _sweepParams(false));
+    if (out) out.textContent = data ? JSON.stringify(data, null, 2) : 'Error.';
+}
+
 async function manualExitPlace() {
     const px = parseFloat(($('exit-price')?.value)||'');
     if (!isFinite(px) || px <= 0) { alert('Enter a valid exit price (0.01–0.99)'); return; }
@@ -1613,6 +1688,8 @@ try {
     $('btn-exit-replace')?.addEventListener('click', manualExitReplace);
     $('btn-exit-cancel')?.addEventListener('click', manualExitCancel);
     $('btn-exit-now')?.addEventListener('click', manualExitNow);
+    $('btn-sweep-dry')?.addEventListener('click', sweepDryRun);
+    $('btn-sweep-exec')?.addEventListener('click', sweepExecute);
 } catch(e) {}
 
 async function resumeTrading() {

@@ -4,10 +4,15 @@ import os
 import time
 import logging
 from typing import Optional
+from decimal import Decimal
+
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+
+from web3 import AsyncWeb3
+import httpx
 
 log = logging.getLogger("dashboard")
 start_time = time.time()
@@ -328,6 +333,285 @@ def _require_admin(request: Request) -> Optional[JSONResponse]:
             status_code=403,
         )
     return None
+
+
+@app.post("/api/sweep-dust")
+async def sweep_dust(request: Request):
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    from config import Config
+    from eth_account import Account
+
+    if not Config.POLYGON_RPC_URL:
+        return JSONResponse({"status": "error", "message": "POLYGON_RPC_URL not set"}, status_code=503)
+    if not Config.POLYMARKET_PRIVATE_KEY:
+        return JSONResponse({"status": "error", "message": "POLYMARKET_PRIVATE_KEY not set"}, status_code=503)
+
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    dry_run = bool((body or {}).get("dry_run", True))
+    max_transfers = int((body or {}).get("max_transfers", 20) or 20)
+    min_shares = Decimal(str((body or {}).get("min_shares", "0") or "0"))
+
+    expected_from = "0x7AbA1F81034d418A4DED1613626cA7573FD85153"
+    to_wallet = "0xddb76ec1164a72d01211524a0a056bc9c1d8574c"
+
+    account = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+    from_wallet = account.address
+    if from_wallet.lower() != expected_from.lower():
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": f"Configured private key address mismatch. expected={expected_from} actual={from_wallet}",
+            },
+            status_code=400,
+        )
+
+    try:
+        w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(Config.POLYGON_RPC_URL))
+        if not await w3.is_connected():
+            return JSONResponse({"status": "error", "message": "Could not connect to Polygon RPC"}, status_code=503)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"RPC init failed: {e}"}, status_code=503)
+
+    CONDITIONAL_TOKENS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+    CONDITIONAL_ABI = [
+        {
+            "inputs": [
+                {"internalType": "address", "name": "from", "type": "address"},
+                {"internalType": "address", "name": "to", "type": "address"},
+                {"internalType": "uint256", "name": "id", "type": "uint256"},
+                {"internalType": "uint256", "name": "amount", "type": "uint256"},
+                {"internalType": "bytes", "name": "data", "type": "bytes"},
+            ],
+            "name": "safeTransferFrom",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function",
+        },
+        {
+            "inputs": [
+                {"internalType": "address", "name": "account", "type": "address"},
+                {"internalType": "uint256", "name": "id", "type": "uint256"},
+            ],
+            "name": "balanceOf",
+            "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+            "stateMutability": "view",
+            "type": "function",
+        },
+        {
+            "inputs": [
+                {"internalType": "bytes32", "name": "parentCollectionId", "type": "bytes32"},
+                {"internalType": "bytes32", "name": "conditionId", "type": "bytes32"},
+                {"internalType": "uint256", "name": "indexSet", "type": "uint256"},
+            ],
+            "name": "getCollectionId",
+            "outputs": [{"internalType": "bytes32", "name": "", "type": "bytes32"}],
+            "stateMutability": "view",
+            "type": "function",
+        },
+        {
+            "inputs": [
+                {"internalType": "address", "name": "collateralToken", "type": "address"},
+                {"internalType": "bytes32", "name": "collectionId", "type": "bytes32"},
+            ],
+            "name": "getPositionId",
+            "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+            "stateMutability": "pure",
+            "type": "function",
+        },
+    ]
+
+    conditional = w3.eth.contract(address=w3.to_checksum_address(CONDITIONAL_TOKENS), abi=CONDITIONAL_ABI)
+    parent_collection_id = "0x" + ("00" * 32)
+    collateral_tokens = [
+        "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+        "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+    ]
+
+    async def compute_position_id(condition_id: str, index_set: int) -> tuple[Optional[int], Optional[str]]:
+        for collateral in collateral_tokens:
+            try:
+                collection_id = await conditional.functions.getCollectionId(
+                    parent_collection_id,
+                    w3.to_bytes(hexstr=condition_id),
+                    int(index_set),
+                ).call()
+                position_id = await conditional.functions.getPositionId(
+                    w3.to_checksum_address(collateral),
+                    collection_id,
+                ).call()
+                return int(position_id), collateral
+            except Exception:
+                continue
+        return None, None
+
+    def is_resolved(p: dict) -> bool:
+        if p.get("redeemable") is True:
+            return True
+        if p.get("closed") is True:
+            return True
+        if p.get("resolved") is True:
+            return True
+        if p.get("settled") is True:
+            return True
+        if p.get("status") in ("CLOSED", "RESOLVED", "SETTLED"):
+            return True
+        return False
+
+    try:
+        url = f"https://data-api.polymarket.com/positions?user={from_wallet.lower()}"
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(url)
+            r.raise_for_status()
+            positions = r.json() or []
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"Data API positions fetch failed: {e}"}, status_code=502)
+
+    resolved = [p for p in positions if is_resolved(p)]
+    transfers: list[dict] = []
+    broadcasted = 0
+
+    base_nonce: Optional[int] = None
+    if not dry_run:
+        try:
+            base_nonce = await w3.eth.get_transaction_count(from_wallet, "pending")
+        except Exception:
+            base_nonce = await w3.eth.get_transaction_count(from_wallet)
+
+    for p in resolved:
+        condition_id = p.get("conditionId") or p.get("condition_id")
+        if not condition_id:
+            continue
+
+        for index_set in (1, 2):
+            if broadcasted >= max_transfers:
+                break
+
+            position_id, collateral = await compute_position_id(condition_id, index_set)
+            if not position_id:
+                transfers.append(
+                    {
+                        "condition_id": condition_id,
+                        "index_set": index_set,
+                        "status": "skipped",
+                        "reason": "could_not_compute_position_id",
+                    }
+                )
+                continue
+
+            try:
+                bal_raw = await conditional.functions.balanceOf(from_wallet, position_id).call()
+            except Exception as e:
+                transfers.append(
+                    {
+                        "condition_id": condition_id,
+                        "index_set": index_set,
+                        "token_id": str(position_id),
+                        "collateral": collateral,
+                        "status": "skipped",
+                        "reason": f"balance_check_failed: {e}",
+                    }
+                )
+                continue
+
+            if not bal_raw or int(bal_raw) <= 0:
+                continue
+
+            shares = Decimal(int(bal_raw)) / Decimal(1_000_000)
+            if shares < min_shares:
+                transfers.append(
+                    {
+                        "condition_id": condition_id,
+                        "index_set": index_set,
+                        "token_id": str(position_id),
+                        "collateral": collateral,
+                        "shares": float(shares),
+                        "status": "skipped",
+                        "reason": f"below_min_shares({min_shares})",
+                    }
+                )
+                continue
+
+            if dry_run:
+                transfers.append(
+                    {
+                        "condition_id": condition_id,
+                        "index_set": index_set,
+                        "token_id": str(position_id),
+                        "collateral": collateral,
+                        "shares": float(shares),
+                        "status": "dry_run",
+                    }
+                )
+                continue
+
+            try:
+                if base_nonce is None:
+                    base_nonce = await w3.eth.get_transaction_count(from_wallet, "pending")
+                nonce = base_nonce
+                tx = await conditional.functions.safeTransferFrom(
+                    from_wallet,
+                    w3.to_checksum_address(to_wallet),
+                    int(position_id),
+                    int(bal_raw),
+                    b"",
+                ).build_transaction(
+                    {
+                        "from": from_wallet,
+                        "nonce": nonce,
+                        "chainId": int(getattr(Config, "CHAIN_ID", 137) or 137),
+                        "gas": 220000,
+                        "gasPrice": await w3.eth.gas_price,
+                    }
+                )
+                signed = w3.eth.account.sign_transaction(tx, private_key=Config.POLYMARKET_PRIVATE_KEY)
+                raw = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction")
+                tx_hash = await w3.eth.send_raw_transaction(raw)
+                receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
+                ok = int(getattr(receipt, "status", 0) or 0) == 1
+                transfers.append(
+                    {
+                        "condition_id": condition_id,
+                        "index_set": index_set,
+                        "token_id": str(position_id),
+                        "collateral": collateral,
+                        "shares": float(shares),
+                        "status": "sent" if ok else "failed",
+                        "tx_hash": tx_hash.hex() if hasattr(tx_hash, "hex") else str(tx_hash),
+                    }
+                )
+                broadcasted += 1
+                base_nonce += 1
+            except Exception as e:
+                transfers.append(
+                    {
+                        "condition_id": condition_id,
+                        "index_set": index_set,
+                        "token_id": str(position_id),
+                        "collateral": collateral,
+                        "shares": float(shares),
+                        "status": "failed",
+                        "reason": str(e),
+                    }
+                )
+
+        if broadcasted >= max_transfers:
+            break
+
+    return {
+        "status": "ok",
+        "dry_run": dry_run,
+        "from": from_wallet,
+        "to": to_wallet,
+        "resolved_positions": len(resolved),
+        "transfers": transfers,
+    }
 
 
 @app.post("/api/manual/exit-limit")
