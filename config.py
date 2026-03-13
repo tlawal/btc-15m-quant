@@ -161,7 +161,7 @@ class Config:
     STREAK_HALVE               = True     # halve size after 2 consecutive losses
     MIN_TRADE_USD              = 5.75    # Polymarket CLOB minimum is ~$5
     MAX_TRADES_PER_WINDOW      = 5
-    STREAK_HALT_AT             = 5        # halt trading after N consecutive losses
+    STREAK_HALT_AT             = 2        # halt trading after N consecutive losses
 
     # Dynamic Kelly scaling based on belief volatility (sigma_b)
     KELLY_MULT_MIN             = 0.50
@@ -175,11 +175,11 @@ class Config:
     # ── Hard capital protections ──────────────────────────────────────────────
     MAX_TRADE_USD              = 50.0     # absolute max per single trade
     MAX_TRADES_PER_HOUR        = 14        # hourly trade limit
-    DAILY_LOSS_LIMIT_USD       = 25.0     # stop if daily realized loss exceeds this
+    DAILY_LOSS_LIMIT_USD       = 12.0     # stop if daily realized loss exceeds this
     DAILY_LOSS_LIMIT_PCT       = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "0.15") or 0.15)
 
     # Profit-taking dynamic thresholds (posterior-gated, trailing guard suppressed)
-    TAKE_PROFIT_STRONG_PCT = 0.25      # 25% for strong signals
+    TAKE_PROFIT_STRONG_PCT = 0.20      # 25% for strong signals
     TAKE_PROFIT_STRONG_POSTERIOR = 0.90
     TAKE_PROFIT_STRONG_SCORE = 6.0
     TAKE_PROFIT_STRONG_MAX_MIN = 7.5   # Early window

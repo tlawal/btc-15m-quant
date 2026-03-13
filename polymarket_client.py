@@ -304,16 +304,24 @@ class PolymarketClient:
             log.error("_ensure_conditional_allowance: missing token_id")
             return False
 
+        # Conditional-token approvals are not naturally expressed in "shares". Some SDK/API
+        # responses return `approved: true/false` instead of a numeric allowance.
+        # We treat `approved=True` as sufficient and avoid comparing allowance to share count.
+        min_required = 1.0
+
         def _parse_allowance(result: dict) -> Optional[float]:
             if not isinstance(result, dict):
                 return None
+            approved = result.get("approved")
+            if isinstance(approved, bool):
+                return 1.0 if approved else 0.0
             allowance_raw = result.get("allowance")
             if allowance_raw is None:
                 allowances_dict = result.get("allowances")
                 if isinstance(allowances_dict, dict) and allowances_dict:
                     allowance_raw = next(iter(allowances_dict.values()), None)
             if allowance_raw is None:
-                allowance_raw = result.get("approved") or result.get("spend")
+                allowance_raw = result.get("spend")
             try:
                 return float(allowance_raw)
             except (TypeError, ValueError):
@@ -338,7 +346,7 @@ class PolymarketClient:
         allowance = await _fetch_allowance()
         if allowance is None:
             return False
-        if allowance >= float(min_required_shares or 0.0):
+        if allowance >= float(min_required):
             return True
 
         try:
@@ -358,7 +366,7 @@ class PolymarketClient:
         allowance2 = await _fetch_allowance()
         if allowance2 is None:
             return False
-        if allowance2 >= float(min_required_shares or 0.0):
+        if allowance2 >= float(min_required):
             log.info(
                 "Conditional allowance updated for token_id=%s: %.4f -> %.4f",
                 str(token_id),
@@ -371,7 +379,7 @@ class PolymarketClient:
             "Conditional allowance still insufficient after update for token_id=%s: %.4f < %.4f",
             str(token_id),
             allowance2,
-            float(min_required_shares or 0.0),
+            float(min_required),
         )
         return False
 
