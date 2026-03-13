@@ -849,6 +849,250 @@ async def sweep_dust(request: Request):
     }
 
 
+@app.post("/api/transfer-conditional-token")
+async def transfer_conditional_token(request: Request):
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    from config import Config
+    from eth_account import Account
+
+    if not Config.POLYGON_RPC_URL:
+        return JSONResponse({"status": "error", "message": "POLYGON_RPC_URL not set"}, status_code=503)
+    if not Config.POLYMARKET_PRIVATE_KEY:
+        return JSONResponse({"status": "error", "message": "POLYMARKET_PRIVATE_KEY not set"}, status_code=503)
+
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    condition_id = str((body or {}).get("condition_id") or (body or {}).get("conditionId") or "").strip()
+    if not condition_id:
+        return JSONResponse({"status": "error", "message": "condition_id is required"}, status_code=400)
+    if not condition_id.startswith("0x"):
+        condition_id = "0x" + condition_id
+    if len(condition_id) != 66:
+        return JSONResponse({"status": "error", "message": "condition_id must be 32-byte hex (0x + 64 hex chars)"}, status_code=400)
+
+    # Convention: index_set=1 or 2; for binary markets we treat 1 as NO, 2 as YES.
+    index_set = int((body or {}).get("index_set", 1) or 1)
+    if index_set not in (1, 2):
+        return JSONResponse({"status": "error", "message": "index_set must be 1 (NO) or 2 (YES)"}, status_code=400)
+
+    dry_run = bool((body or {}).get("dry_run", True))
+    max_gas = int((body or {}).get("gas", 220000) or 220000)
+
+    expected_from = "0x7AbA1F81034d418A4DED1613626cA7573FD85153"
+    default_to = "0xddb76ec1164a72d01211524a0a056bc9c1d8574c"
+    to_wallet = str((body or {}).get("to") or (body or {}).get("to_wallet") or default_to).strip()
+
+    account = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+    from_wallet = account.address
+    if from_wallet.lower() != expected_from.lower():
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": f"Configured private key address mismatch. expected={expected_from} actual={from_wallet}",
+            },
+            status_code=400,
+        )
+
+    # Safety: only allow sending to the proxy by default.
+    if to_wallet.lower() != default_to.lower():
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": f"Refusing to transfer to non-proxy address. expected_to={default_to} got_to={to_wallet}",
+            },
+            status_code=400,
+        )
+
+    try:
+        w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(Config.POLYGON_RPC_URL))
+        if not await w3.is_connected():
+            return JSONResponse({"status": "error", "message": "Could not connect to Polygon RPC"}, status_code=503)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"RPC init failed: {e}"}, status_code=503)
+
+    CONDITIONAL_TOKENS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+    CONDITIONAL_ABI = [
+        {
+            "inputs": [
+                {"internalType": "address", "name": "from", "type": "address"},
+                {"internalType": "address", "name": "to", "type": "address"},
+                {"internalType": "uint256", "name": "id", "type": "uint256"},
+                {"internalType": "uint256", "name": "amount", "type": "uint256"},
+                {"internalType": "bytes", "name": "data", "type": "bytes"},
+            ],
+            "name": "safeTransferFrom",
+            "outputs": [],
+            "stateMutability": "nonpayable",
+            "type": "function",
+        },
+        {
+            "inputs": [
+                {"internalType": "address", "name": "account", "type": "address"},
+                {"internalType": "uint256", "name": "id", "type": "uint256"},
+            ],
+            "name": "balanceOf",
+            "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+            "stateMutability": "view",
+            "type": "function",
+        },
+        {
+            "inputs": [
+                {"internalType": "bytes32", "name": "parentCollectionId", "type": "bytes32"},
+                {"internalType": "bytes32", "name": "conditionId", "type": "bytes32"},
+                {"internalType": "uint256", "name": "indexSet", "type": "uint256"},
+            ],
+            "name": "getCollectionId",
+            "outputs": [{"internalType": "bytes32", "name": "", "type": "bytes32"}],
+            "stateMutability": "view",
+            "type": "function",
+        },
+        {
+            "inputs": [
+                {"internalType": "address", "name": "collateralToken", "type": "address"},
+                {"internalType": "bytes32", "name": "collectionId", "type": "bytes32"},
+            ],
+            "name": "getPositionId",
+            "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+            "stateMutability": "pure",
+            "type": "function",
+        },
+    ]
+
+    conditional = w3.eth.contract(address=w3.to_checksum_address(CONDITIONAL_TOKENS), abi=CONDITIONAL_ABI)
+    parent_collection_id = "0x" + ("00" * 32)
+    collateral_tokens = [
+        "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  # USDC.e (bridged)
+        "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",  # USDC (native)
+    ]
+
+    position_id = None
+    collateral_used = None
+    for collateral in collateral_tokens:
+        try:
+            collection_id = await conditional.functions.getCollectionId(
+                parent_collection_id,
+                w3.to_bytes(hexstr=condition_id),
+                int(index_set),
+            ).call()
+            pid = await conditional.functions.getPositionId(
+                w3.to_checksum_address(collateral),
+                collection_id,
+            ).call()
+            position_id = int(pid)
+            collateral_used = collateral
+            break
+        except Exception:
+            continue
+
+    if not position_id:
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": "Could not compute position_id from condition_id",
+                "condition_id": condition_id,
+                "index_set": int(index_set),
+            },
+            status_code=400,
+        )
+
+    try:
+        bal_raw = await conditional.functions.balanceOf(from_wallet, int(position_id)).call()
+    except Exception as e:
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": f"balanceOf failed: {e}",
+                "token_id": str(position_id),
+            },
+            status_code=502,
+        )
+
+    if not bal_raw or int(bal_raw) <= 0:
+        return {
+            "status": "ok",
+            "dry_run": dry_run,
+            "from": from_wallet,
+            "to": to_wallet,
+            "condition_id": condition_id,
+            "index_set": int(index_set),
+            "collateral": collateral_used,
+            "token_id": str(position_id),
+            "raw_balance": int(bal_raw or 0),
+            "message": "No balance to transfer",
+        }
+
+    shares = Decimal(int(bal_raw)) / Decimal(1_000_000)
+
+    if dry_run:
+        return {
+            "status": "ok",
+            "dry_run": True,
+            "from": from_wallet,
+            "to": to_wallet,
+            "condition_id": condition_id,
+            "index_set": int(index_set),
+            "collateral": collateral_used,
+            "token_id": str(position_id),
+            "raw_balance": int(bal_raw),
+            "shares": float(shares),
+            "message": "dry_run",
+        }
+
+    try:
+        nonce = await w3.eth.get_transaction_count(from_wallet, "pending")
+        tx = await conditional.functions.safeTransferFrom(
+            from_wallet,
+            w3.to_checksum_address(to_wallet),
+            int(position_id),
+            int(bal_raw),
+            b"",
+        ).build_transaction(
+            {
+                "from": from_wallet,
+                "nonce": nonce,
+                "chainId": int(getattr(Config, "CHAIN_ID", 137) or 137),
+                "gas": int(max_gas),
+                "gasPrice": await w3.eth.gas_price,
+            }
+        )
+        signed = w3.eth.account.sign_transaction(tx, private_key=Config.POLYMARKET_PRIVATE_KEY)
+        raw = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction")
+        tx_hash = await w3.eth.send_raw_transaction(raw)
+        receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
+        ok = int(getattr(receipt, "status", 0) or 0) == 1
+        return {
+            "status": "ok",
+            "dry_run": False,
+            "from": from_wallet,
+            "to": to_wallet,
+            "condition_id": condition_id,
+            "index_set": int(index_set),
+            "collateral": collateral_used,
+            "token_id": str(position_id),
+            "raw_balance": int(bal_raw),
+            "shares": float(shares),
+            "tx_hash": tx_hash.hex() if hasattr(tx_hash, "hex") else str(tx_hash),
+            "tx_status": "sent" if ok else "failed",
+        }
+    except Exception as e:
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": str(e),
+                "condition_id": condition_id,
+                "index_set": int(index_set),
+                "token_id": str(position_id),
+            },
+            status_code=502,
+        )
+
+
 @app.post("/api/fetch-orphaned-tokens")
 async def fetch_orphaned_tokens(request: Request):
     deny = _require_admin(request)
