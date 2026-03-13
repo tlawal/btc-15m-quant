@@ -87,6 +87,11 @@ class Config:
     MONSTER_POSTERIOR          = 0.90
     STOP_LOSS_DELTA            = 7.0
 
+    MIN_HOLD_SECONDS           = 30
+    STOP_LOSS_CONSEC_CHECKS    = 3
+    STOP_LOSS_PERSIST_SECONDS  = 12
+    STOP_LOSS_COOLDOWN_SECONDS = 120
+
     # ── Exit parameters ───────────────────────────────────────────────────────
     TAKE_PROFIT_PRICE          = 0.99
     SLIPPAGE_BUFFER_PCT        = 0.008    # Phase 6: 80bps execution buffer

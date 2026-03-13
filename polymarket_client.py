@@ -7,7 +7,11 @@ Handles:
   - Balance check
   - Position query
   - Limit buy/sell and market IOC orders
-  - ensure_approvals onn startup
+  - ensure_approvals on startup
+  - Mid-window stop-loss handling (Option A):
+    - Enforce min-hold after entry
+    - Add persistence (consecutive checks or seconds) for STOP_LOSS_15PCT
+    - Enforce post-stop cooldown to prevent immediate re-entry/exits for same market/side
 """
 
 import asyncio
@@ -1039,7 +1043,7 @@ class PolymarketClient:
         except Exception as e:
             log.error(f"Failed to fetch open positions from Data API: {e}")
             return []
-    async def monitor_and_exit_open_positions(self, open_positions: list[dict], sig, btc_price: float, atr14: float) -> list[dict]:
+    async def monitor_and_exit_open_positions(self, open_positions: list[dict], sig, btc_price: float, atr14: float, state=None) -> list[dict]:
         """
         Evaluate open positions against mid-window exit criteria.
         Returns a list of reasons/orders for any triggered exits.
@@ -1060,6 +1064,8 @@ class PolymarketClient:
             curr_val = pos.get("currentValue", 0.0)
             token_id = pos.get("asset")
 
+            key = f"{market_slug}:{side}"
+
             posterior = None
             try:
                 if side == "YES":
@@ -1077,6 +1083,26 @@ class PolymarketClient:
 
             trigger_reason = None
 
+            # ── Option A: stop-loss min-hold + persistence + cooldown ─────────
+            now_ts = int(time.time())
+            min_hold = int(getattr(Config, "MIN_HOLD_SECONDS", 30) or 30)
+            stop_checks_req = int(getattr(Config, "STOP_LOSS_CONSEC_CHECKS", 3) or 3)
+            stop_persist_req = int(getattr(Config, "STOP_LOSS_PERSIST_SECONDS", 12) or 12)
+            cooldown_sec = int(getattr(Config, "STOP_LOSS_COOLDOWN_SECONDS", 120) or 120)
+
+            # Entry timestamp is taken from engine-held_position if available.
+            entry_ts = None
+            if state is not None:
+                hp = getattr(state, "held_position", None)
+                if hp and getattr(hp, "side", None) == side and str(getattr(hp, "condition_id", "")) == str(pos.get("conditionId")):
+                    entry_ts = getattr(hp, "placed_at_ts", None)
+            hold_age_s = (now_ts - int(entry_ts)) if entry_ts else None
+
+            if state is not None:
+                cd_until = int(getattr(state, "stop_loss_cooldown_until_ts", {}).get(key, 0) or 0)
+                if cd_until and now_ts < cd_until:
+                    continue
+
             protective_loss = float(getattr(Config, "MID_WINDOW_PROTECTIVE_LOSS_PCT", 0.05) or 0.05)
             post_ceil = float(getattr(Config, "MID_WINDOW_POSTERIOR_CEIL", 0.55) or 0.55)
             posterior_decayed = (posterior is not None and posterior <= post_ceil)
@@ -1091,7 +1117,51 @@ class PolymarketClient:
 
             # 2. Unrealized loss > 15%
             elif unrealized_pct < -0.15:
-                trigger_reason = "STOP_LOSS_15PCT"
+                # Respect min-hold window if known.
+                if hold_age_s is not None and hold_age_s < min_hold:
+                    if state is not None:
+                        log.info(
+                            "STOP_LOSS_BLOCKED_MIN_HOLD key=%s age_s=%s min_hold=%s unreal=%.2f%%",
+                            key,
+                            hold_age_s,
+                            min_hold,
+                            unrealized_pct * 100.0,
+                        )
+                    continue
+
+                if state is None:
+                    trigger_reason = "STOP_LOSS_15PCT"
+                else:
+                    breach_count = int(getattr(state, "stop_loss_breach_count", {}).get(key, 0) or 0)
+                    breach_start = int(getattr(state, "stop_loss_breach_start_ts", {}).get(key, 0) or 0)
+
+                    breach_count += 1
+                    if breach_start <= 0:
+                        breach_start = now_ts
+                    persist_s = now_ts - breach_start
+
+                    state.stop_loss_breach_count[key] = breach_count
+                    state.stop_loss_breach_start_ts[key] = breach_start
+
+                    if breach_count >= stop_checks_req or persist_s >= stop_persist_req:
+                        trigger_reason = "STOP_LOSS_15PCT_PERSIST"
+                    else:
+                        log.info(
+                            "STOP_LOSS_PERSIST_WAIT key=%s checks=%s/%s persist_s=%s/%s unreal=%.2f%%",
+                            key,
+                            breach_count,
+                            stop_checks_req,
+                            persist_s,
+                            stop_persist_req,
+                            unrealized_pct * 100.0,
+                        )
+                        continue
+
+            # Reset stop-loss persistence counters when breach condition clears.
+            elif state is not None:
+                if key in state.stop_loss_breach_count or key in state.stop_loss_breach_start_ts:
+                    state.stop_loss_breach_count.pop(key, None)
+                    state.stop_loss_breach_start_ts.pop(key, None)
 
             # 3. Distance from strike > 0.6 * ATR — only if LOSING
             # If BTC moved far from strike in our favor, that's a winning position.
@@ -1164,6 +1234,12 @@ class PolymarketClient:
                         "pnl_usd": actual_pnl_usd,
                         "condition_id": pos.get("conditionId")
                     })
+
+                    # On stop-loss exits, start cooldown and reset persistence counters.
+                    if state is not None and trigger_reason.startswith("STOP_LOSS"):
+                        state.stop_loss_cooldown_until_ts[key] = now_ts + cooldown_sec
+                        state.stop_loss_breach_count.pop(key, None)
+                        state.stop_loss_breach_start_ts.pop(key, None)
         
         return exits
 

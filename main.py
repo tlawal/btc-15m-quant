@@ -1103,7 +1103,7 @@ class Engine:
         # ── Mid-Window Reversal / Stop-Loss Tracking (Data API) ─────────────
         open_positions = await self.pm.get_open_positions()
         self.state.open_positions_api = open_positions
-        triggered_exits = await self.pm.monitor_and_exit_open_positions(open_positions, sig, btc_price, indic.atr14)
+        triggered_exits = await self.pm.monitor_and_exit_open_positions(open_positions, sig, btc_price, indic.atr14, state=self.state)
         
         for ex in triggered_exits:
             # ex contains: market_slug, reason, order_id, size, entry_price, exit_price, pnl_usd, condition_id

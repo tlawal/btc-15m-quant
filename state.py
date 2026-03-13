@@ -184,6 +184,10 @@ class EngineState:
     entry_features: Optional[dict]        = None
     entry_regime: Optional[str]           = None
 
+    stop_loss_breach_count: Dict[str, int] = field(default_factory=dict)
+    stop_loss_breach_start_ts: Dict[str, int] = field(default_factory=dict)
+    stop_loss_cooldown_until_ts: Dict[str, int] = field(default_factory=dict)
+
     # ── Tier 1: Cross-window memory ───────────────────────────────────────────
     window_outcomes: List[str]            = field(default_factory=list)  # ["UP","DOWN",...]
     last_funding_rate: Optional[float]    = None  # previous cycle's funding rate
@@ -278,6 +282,8 @@ class StateManager:
                 ]
             elif k == "latencies" and isinstance(v, dict):
                 state.latencies = v
+            elif k in ("stop_loss_breach_count", "stop_loss_breach_start_ts", "stop_loss_cooldown_until_ts") and isinstance(v, dict):
+                setattr(state, k, v)
             elif hasattr(state, k):
                 setattr(state, k, v)
 
@@ -354,6 +360,9 @@ class StateManager:
             "last_review_date":       state.last_review_date,
             "entry_features":         state.entry_features,
             "entry_regime":           state.entry_regime,
+            "stop_loss_breach_count":  state.stop_loss_breach_count,
+            "stop_loss_breach_start_ts": state.stop_loss_breach_start_ts,
+            "stop_loss_cooldown_until_ts": state.stop_loss_cooldown_until_ts,
         }
         async with self._session_factory() as session:
             async with session.begin():
