@@ -599,10 +599,270 @@ async def sweep_dust(request: Request):
                         "status": "failed",
                         "reason": str(e),
                     }
-                )
-
         if broadcasted >= max_transfers:
             break
+
+        position_id, collateral = await compute_position_id(condition_id, index_set)
+        if not position_id:
+            transfers.append(
+                {
+                    "condition_id": condition_id,
+                    "index_set": index_set,
+                    "status": "skipped",
+                    "reason": "could_not_compute_position_id",
+                }
+            )
+            continue
+
+        try:
+            bal_raw = await conditional.functions.balanceOf(from_wallet, position_id).call()
+        except Exception as e:
+            transfers.append(
+                {
+                    "condition_id": condition_id,
+                    "index_set": index_set,
+                    "token_id": str(position_id),
+                    "collateral": collateral,
+                    "status": "skipped",
+                    "reason": f"balance_check_failed: {e}",
+                }
+            )
+            continue
+
+        if not bal_raw or int(bal_raw) <= 0:
+            continue
+
+        shares = Decimal(int(bal_raw)) / Decimal(1_000_000)
+        if shares < min_shares:
+            transfers.append(
+                {
+                    "condition_id": condition_id,
+                    "index_set": index_set,
+                    "token_id": str(position_id),
+                    "collateral": collateral,
+                    "shares": float(shares),
+                    "status": "skipped",
+                    "reason": f"below_min_shares({min_shares})",
+                }
+            )
+            continue
+
+        if dry_run:
+            transfers.append(
+                {
+                    "condition_id": condition_id,
+                    "index_set": index_set,
+                    "token_id": str(position_id),
+                    "collateral": collateral,
+                    "shares": float(shares),
+                    "status": "dry_run",
+                }
+            )
+            continue
+
+        try:
+            if base_nonce is None:
+                base_nonce = await w3.eth.get_transaction_count(from_wallet, "pending")
+            nonce = base_nonce
+            tx = await conditional.functions.safeTransferFrom(
+                from_wallet,
+                w3.to_checksum_address(to_wallet),
+                int(position_id),
+                int(bal_raw),
+                b"",
+            ).build_transaction(
+                {
+                    "from": from_wallet,
+                    "nonce": nonce,
+                    "chainId": int(getattr(Config, "CHAIN_ID", 137) or 137),
+                    "gas": 220000,
+                    "gasPrice": await w3.eth.gas_price,
+                }
+            )
+            signed = w3.eth.account.sign_transaction(tx, private_key=Config.POLYMARKET_PRIVATE_KEY)
+            raw = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction")
+            tx_hash = await w3.eth.send_raw_transaction(raw)
+            receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
+            ok = int(getattr(receipt, "status", 0) or 0) == 1
+            transfers.append(
+                {
+                    "condition_id": condition_id,
+                    "index_set": index_set,
+                    "token_id": str(position_id),
+                    "collateral": collateral,
+                    "shares": float(shares),
+                    "status": "sent" if ok else "failed",
+                    "tx_hash": tx_hash.hex() if hasattr(tx_hash, "hex") else str(tx_hash),
+                }
+            )
+            broadcasted += 1
+            base_nonce += 1
+        except Exception as e:
+            transfers.append(
+                {
+                    "condition_id": condition_id,
+                    "index_set": index_set,
+                    "token_id": str(position_id),
+                    "collateral": collateral,
+                    "shares": float(shares),
+                    "status": "failed",
+                    "reason": str(e),
+                }
+            )
+
+    if broadcasted >= max_transfers:
+        break
+
+    # Fetch orphaned tokens from Zerion
+    orphaned_tokens = []
+    try:
+        # Call the fetch function internally
+        zerion_url = "https://app.zerion.io/0x7aba1f81034d418a4ded1613626ca7573fd85153/nfts"
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(zerion_url)
+            r.raise_for_status()
+            html_content = r.text
+
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        conditional_tokens_contract = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045".lower()
+
+        # Look for NFT cards or data attributes containing token info
+        scripts = soup.find_all('script')
+        for script in scripts:
+            if script.string and 'conditionaltokens' in script.string.lower():
+                import re
+                token_matches = re.findall(r'"tokenId"\s*:\s*"([^"]+)"', script.string)
+                contract_matches = re.findall(r'"contractAddress"\s*:\s*"([^"]+)"', script.string)
+
+                for i, token_id in enumerate(token_matches):
+                    if i < len(contract_matches) and contract_matches[i].lower() == conditional_tokens_contract:
+                        try:
+                            token_int = int(token_id, 16) if token_id.startswith('0x') else int(token_id)
+                            orphaned_tokens.append(str(token_int))
+                        except ValueError:
+                            continue
+
+        # Also check for data attributes on NFT elements
+        nft_elements = soup.find_all(attrs={'data-contract': True})
+        for elem in nft_elements:
+            contract = elem.get('data-contract', '').lower()
+            token_id = elem.get('data-token-id', '')
+            if contract == conditional_tokens_contract and token_id:
+                try:
+                    token_int = int(token_id, 16) if token_id.startswith('0x') else int(token_id)
+                    orphaned_tokens.append(str(token_int))
+                except ValueError:
+                    continue
+
+        # Deduplicate
+        orphaned_tokens = list(set(orphaned_tokens))
+
+    except Exception as e:
+        # Log but don't fail - continue with resolved positions only
+        print(f"Warning: Failed to fetch orphaned tokens from Zerion: {e}")
+        orphaned_tokens = []
+
+    # Process orphaned token IDs (tokens not in API)
+    orphaned_count = 0
+    for token_id_str in orphaned_tokens:
+        if broadcasted >= max_transfers:
+            break
+        try:
+            token_id = int(token_id_str)
+        except ValueError:
+            transfers.append(
+                {
+                    "token_id": token_id_str,
+                    "status": "skipped",
+                    "reason": "invalid_token_id",
+                }
+            )
+            continue
+
+        try:
+            bal_raw = await conditional.functions.balanceOf(from_wallet, token_id).call()
+        except Exception as e:
+            transfers.append(
+                {
+                    "token_id": str(token_id),
+                    "status": "skipped",
+                    "reason": f"balance_check_failed: {e}",
+                }
+            )
+            continue
+
+        if not bal_raw or int(bal_raw) <= 0:
+            continue
+
+        shares = Decimal(int(bal_raw)) / Decimal(1_000_000)
+        if shares < min_shares:
+            transfers.append(
+                {
+                    "token_id": str(token_id),
+                    "shares": float(shares),
+                    "status": "skipped",
+                    "reason": f"below_min_shares({min_shares})",
+                }
+            )
+            continue
+
+        if dry_run:
+            transfers.append(
+                {
+                    "token_id": str(token_id),
+                    "shares": float(shares),
+                    "status": "dry_run",
+                }
+            )
+            orphaned_count += 1
+            continue
+
+        try:
+            if base_nonce is None:
+                base_nonce = await w3.eth.get_transaction_count(from_wallet, "pending")
+            nonce = base_nonce
+            tx = await conditional.functions.safeTransferFrom(
+                from_wallet,
+                w3.to_checksum_address(to_wallet),
+                int(token_id),
+                int(bal_raw),
+                b"",
+            ).build_transaction(
+                {
+                    "from": from_wallet,
+                    "nonce": nonce,
+                    "chainId": int(getattr(Config, "CHAIN_ID", 137) or 137),
+                    "gas": 220000,
+                    "gasPrice": await w3.eth.gas_price,
+                }
+            )
+            signed = w3.eth.account.sign_transaction(tx, private_key=Config.POLYMARKET_PRIVATE_KEY)
+            raw = getattr(signed, "raw_transaction", None) or getattr(signed, "rawTransaction")
+            tx_hash = await w3.eth.send_raw_transaction(raw)
+            receipt = await w3.eth.wait_for_transaction_receipt(tx_hash, timeout=180)
+            ok = int(getattr(receipt, "status", 0) or 0) == 1
+            transfers.append(
+                {
+                    "token_id": str(token_id),
+                    "shares": float(shares),
+                    "status": "sent" if ok else "failed",
+                    "tx_hash": tx_hash.hex() if hasattr(tx_hash, "hex") else str(tx_hash),
+                }
+            )
+            broadcasted += 1
+            orphaned_count += 1
+            base_nonce += 1
+        except Exception as e:
+            transfers.append(
+                {
+                    "token_id": str(token_id),
+                    "shares": float(shares),
+                    "status": "failed",
+                    "reason": str(e),
+                }
+            )
 
     return {
         "status": "ok",
@@ -610,7 +870,75 @@ async def sweep_dust(request: Request):
         "from": from_wallet,
         "to": to_wallet,
         "resolved_positions": len(resolved),
+        "orphaned_tokens_fetched": len(orphaned_tokens),
+        "orphaned_tokens_processed": orphaned_count,
         "transfers": transfers,
+    }
+
+
+@app.post("/api/fetch-orphaned-tokens")
+async def fetch_orphaned_tokens(request: Request):
+    deny = _require_admin(request)
+    if deny:
+        return deny
+
+    # Fetch from Zerion NFT page
+    zerion_url = "https://app.zerion.io/0x7aba1f81034d418a4ded1613626ca7573fd85153/nfts"
+
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.get(zerion_url)
+            r.raise_for_status()
+            html_content = r.text
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"Failed to fetch Zerion page: {e}"}, status_code=502)
+
+    # Parse HTML to extract token IDs for ConditionalTokens contract
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(html_content, 'html.parser')
+
+    orphaned_tokens = []
+    conditional_tokens_contract = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045".lower()
+
+    # Look for NFT cards or data attributes containing token info
+    # Zerion typically embeds NFT data in script tags or data attributes
+    scripts = soup.find_all('script')
+    for script in scripts:
+        if script.string and 'conditionaltokens' in script.string.lower():
+            # Extract token IDs from script content
+            import re
+            token_matches = re.findall(r'"tokenId"\s*:\s*"([^"]+)"', script.string)
+            contract_matches = re.findall(r'"contractAddress"\s*:\s*"([^"]+)"', script.string)
+
+            for i, token_id in enumerate(token_matches):
+                if i < len(contract_matches) and contract_matches[i].lower() == conditional_tokens_contract:
+                    try:
+                        # Convert to int and add if valid
+                        token_int = int(token_id, 16) if token_id.startswith('0x') else int(token_id)
+                        orphaned_tokens.append(str(token_int))
+                    except ValueError:
+                        continue
+
+    # Also check for data attributes on NFT elements
+    nft_elements = soup.find_all(attrs={'data-contract': True})
+    for elem in nft_elements:
+        contract = elem.get('data-contract', '').lower()
+        token_id = elem.get('data-token-id', '')
+        if contract == conditional_tokens_contract and token_id:
+            try:
+                token_int = int(token_id, 16) if token_id.startswith('0x') else int(token_id)
+                orphaned_tokens.append(str(token_int))
+            except ValueError:
+                continue
+
+    # Deduplicate
+    orphaned_tokens = list(set(orphaned_tokens))
+
+    return {
+        "status": "ok",
+        "orphaned_tokens": orphaned_tokens,
+        "count": len(orphaned_tokens),
+        "source": zerion_url,
     }
 
 
