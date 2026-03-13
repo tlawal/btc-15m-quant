@@ -608,7 +608,7 @@ async def sweep_dust(request: Request):
         a = addr.lower().replace("0x", "")
         return "0x" + ("0" * 24) + a
 
-    async def _discover_token_ids_onchain(*, lookback_blocks: int) -> list[str]:
+    async def _discover_token_ids_onchain(*, lookback_blocks: int, chunk_size: int) -> tuple[list[str], dict]:
         try:
             latest = await w3.eth.block_number
         except Exception:
@@ -620,30 +620,64 @@ async def sweep_dust(request: Request):
         start = max(0, int(latest) - lb)
         end = int(latest)
 
+        cs = int(chunk_size or 0)
+        if cs <= 0:
+            cs = 200_000
+
         wallet_topic = _hex_topic_addr(from_wallet)
         sig_single = w3.keccak(text="TransferSingle(address,address,address,uint256,uint256)").hex()
         sig_batch = w3.keccak(text="TransferBatch(address,address,address,uint256[],uint256[])").hex()
 
         token_ids: set[int] = set()
 
-        async def fetch_logs(sig: str, topics: list[Optional[str]]):
-            try:
-                return await w3.eth.get_logs(
-                    {
-                        "fromBlock": start,
-                        "toBlock": end,
-                        "address": w3.to_checksum_address(CONDITIONAL_TOKENS),
-                        "topics": topics,
-                    }
-                )
-            except Exception:
-                return []
+        diagnostics: dict = {
+            "source": "onchain_logs",
+            "from_block": int(start),
+            "to_block": int(end),
+            "lookback_blocks": int(lb),
+            "chunk_size": int(cs),
+            "log_queries": 0,
+            "logs_returned": 0,
+            "getlogs_errors": [],
+        }
+
+        async def fetch_logs_chunked(sig: str, topics: list[Optional[str]]):
+            out_logs = []
+            cur = int(start)
+            while cur <= int(end):
+                to_b = min(int(end), cur + cs - 1)
+                diagnostics["log_queries"] += 1
+                try:
+                    chunk = await w3.eth.get_logs(
+                        {
+                            "fromBlock": cur,
+                            "toBlock": to_b,
+                            "address": w3.to_checksum_address(CONDITIONAL_TOKENS),
+                            "topics": topics,
+                        }
+                    )
+                    if chunk:
+                        out_logs.extend(chunk)
+                except Exception as e:
+                    diagnostics["getlogs_errors"].append(
+                        {
+                            "fromBlock": int(cur),
+                            "toBlock": int(to_b),
+                            "topic0": str(sig),
+                            "topics": [str(t) if t is not None else None for t in topics],
+                            "error": str(e),
+                        }
+                    )
+                cur = to_b + 1
+            return out_logs
 
         logs = []
-        logs += await fetch_logs(sig_single, [sig_single, None, None, wallet_topic])
-        logs += await fetch_logs(sig_single, [sig_single, None, wallet_topic, None])
-        logs += await fetch_logs(sig_batch, [sig_batch, None, None, wallet_topic])
-        logs += await fetch_logs(sig_batch, [sig_batch, None, wallet_topic, None])
+        logs += await fetch_logs_chunked(sig_single, [sig_single, None, None, wallet_topic])
+        logs += await fetch_logs_chunked(sig_single, [sig_single, None, wallet_topic, None])
+        logs += await fetch_logs_chunked(sig_batch, [sig_batch, None, None, wallet_topic])
+        logs += await fetch_logs_chunked(sig_batch, [sig_batch, None, wallet_topic, None])
+
+        diagnostics["logs_returned"] = int(len(logs))
 
         for lg in logs:
             try:
@@ -684,15 +718,23 @@ async def sweep_dust(request: Request):
             except Exception:
                 continue
 
-        return list(set(out))
+        diagnostics["candidate_token_ids"] = int(len(token_ids))
+        diagnostics["held_token_ids"] = int(len(set(out)))
+        return list(set(out)), diagnostics
 
     # Fetch orphaned tokens from Zerion
     orphaned_tokens = []
+    orphaned_discovery = {"source": "onchain_logs", "error": "discovery_not_run"}
     try:
         lookback_blocks = int((body or {}).get("lookback_blocks", 2_000_000) or 2_000_000)
-        orphaned_tokens = await _discover_token_ids_onchain(lookback_blocks=lookback_blocks)
-    except Exception:
+        chunk_size = int((body or {}).get("log_chunk", 200_000) or 200_000)
+        orphaned_tokens, orphaned_discovery = await _discover_token_ids_onchain(
+            lookback_blocks=lookback_blocks,
+            chunk_size=chunk_size,
+        )
+    except Exception as e:
         orphaned_tokens = []
+        orphaned_discovery = {"source": "onchain_logs", "error": str(e)}
 
     # Process orphaned token IDs (tokens not in API)
     orphaned_count = 0
@@ -802,6 +844,7 @@ async def sweep_dust(request: Request):
         "resolved_positions": len(resolved),
         "orphaned_tokens_fetched": len(orphaned_tokens),
         "orphaned_tokens_processed": orphaned_count,
+        "orphaned_discovery": orphaned_discovery,
         "transfers": transfers,
     }
 
@@ -863,28 +906,62 @@ async def fetch_orphaned_tokens(request: Request):
     start = max(0, int(latest) - int(lookback_blocks))
     end = int(latest)
 
+    cs = int(chunk_size or 0)
+    if cs <= 0:
+        cs = 200_000
+
+    diagnostics: dict = {
+        "source": "onchain_logs",
+        "from_block": int(start),
+        "to_block": int(end),
+        "lookback_blocks": int(lookback_blocks),
+        "chunk_size": int(cs),
+        "log_queries": 0,
+        "logs_returned": 0,
+        "getlogs_errors": [],
+    }
+
     wallet_topic = _hex_topic_addr(from_wallet)
     sig_single = w3.keccak(text="TransferSingle(address,address,address,uint256,uint256)").hex()
     sig_batch = w3.keccak(text="TransferBatch(address,address,address,uint256[],uint256[])").hex()
 
-    async def fetch_logs(sig: str, topics: list[Optional[str]]):
-        try:
-            return await w3.eth.get_logs(
-                {
-                    "fromBlock": start,
-                    "toBlock": end,
-                    "address": w3.to_checksum_address(CONDITIONAL_TOKENS),
-                    "topics": topics,
-                }
-            )
-        except Exception:
-            return []
+    async def fetch_logs_chunked(sig: str, topics: list[Optional[str]]):
+        out_logs = []
+        cur = int(start)
+        while cur <= int(end):
+            to_b = min(int(end), cur + cs - 1)
+            diagnostics["log_queries"] += 1
+            try:
+                chunk = await w3.eth.get_logs(
+                    {
+                        "fromBlock": cur,
+                        "toBlock": to_b,
+                        "address": w3.to_checksum_address(CONDITIONAL_TOKENS),
+                        "topics": topics,
+                    }
+                )
+                if chunk:
+                    out_logs.extend(chunk)
+            except Exception as e:
+                diagnostics["getlogs_errors"].append(
+                    {
+                        "fromBlock": int(cur),
+                        "toBlock": int(to_b),
+                        "topic0": str(sig),
+                        "topics": [str(t) if t is not None else None for t in topics],
+                        "error": str(e),
+                    }
+                )
+            cur = to_b + 1
+        return out_logs
 
     logs = []
-    logs += await fetch_logs(sig_single, [sig_single, None, None, wallet_topic])
-    logs += await fetch_logs(sig_single, [sig_single, None, wallet_topic, None])
-    logs += await fetch_logs(sig_batch, [sig_batch, None, None, wallet_topic])
-    logs += await fetch_logs(sig_batch, [sig_batch, None, wallet_topic, None])
+    logs += await fetch_logs_chunked(sig_single, [sig_single, None, None, wallet_topic])
+    logs += await fetch_logs_chunked(sig_single, [sig_single, None, wallet_topic, None])
+    logs += await fetch_logs_chunked(sig_batch, [sig_batch, None, None, wallet_topic])
+    logs += await fetch_logs_chunked(sig_batch, [sig_batch, None, wallet_topic, None])
+
+    diagnostics["logs_returned"] = int(len(logs))
 
     token_ids: set[int] = set()
     for lg in logs:
@@ -925,14 +1002,19 @@ async def fetch_orphaned_tokens(request: Request):
 
     orphaned_tokens = list(set(orphaned_tokens))
 
+    diagnostics["candidate_token_ids"] = int(len(token_ids))
+    diagnostics["held_token_ids"] = int(len(orphaned_tokens))
+
     return {
         "status": "ok",
         "orphaned_tokens": orphaned_tokens,
         "count": len(orphaned_tokens),
         "source": "onchain_logs",
         "lookback_blocks": int(lookback_blocks),
+        "log_chunk": int(cs),
         "from_block": int(start),
         "to_block": int(end),
+        "diagnostics": diagnostics,
     }
 
 
