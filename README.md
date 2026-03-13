@@ -142,6 +142,48 @@ Approval note (Polymarket conditional tokens):
 
 ---
 
+## Manual Redemption of Orphan Shares
+
+Sometimes you may hold resolved conditional tokens in an **EOA wallet** (not the Polymarket proxy wallet). The Polymarket UI cannot claim these because it only sees shares held in the proxy. You can redeem them manually on-chain.
+
+### When this happens
+- The market is resolved and you won (e.g., YES paid $1, NO paid $0)
+- Your shares are in an EOA (e.g., from a previous script or direct trading)
+- The UI shows “no shares” but the EOA still holds the ERC-1155 token
+
+### Option A: Use the provided script (recommended)
+Run `redeem_specific_yes.py` with your EOA private key in `config.py`:
+```bash
+python redeem_specific_yes.py
+```
+The script calls `redeemPositions` on the CTF Exchange for a specific condition id and waits for the receipt. If you hold a winning share, you’ll receive the USDC payout to the EOA.
+
+### Option B: One‑liner with `cast` (if you have foundry `cast`)
+```bash
+cast send \
+  --rpc-url $POLYGON_RPC_URL \
+  --private-key $EOA_PRIVATE_KEY \
+  0x4bFbB701cd4a0bba82C318CcEd1b4Ebc115A36de \
+  "redeemPositions(bytes32,uint256[])" \
+  0xf89e490675e9aa6bf294f26d1bbfb76bcaef4afaf1a3222f216ecc828cdd2247 "[1,2]"
+```
+Replace the condition id with your market if different.
+
+### Option C: Transfer to proxy wallet (then use UI)
+If you prefer the UI, you can `safeTransferFrom` the ERC-1155 from EOA → proxy wallet, then claim via Polymarket. This requires knowing the exact token amount and the proxy address.
+
+### Prerequisites
+- **Polygon RPC URL** (Alchemy/QuickNode recommended)
+- **EOA private key** (the wallet holding the orphan shares)
+- **A tiny bit of MATIC** in the EOA for gas
+
+### Addresses (Polygon mainnet)
+- **ConditionalTokens (ERC-1155):** `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045`
+- **CTF Exchange (redeemPositions):** `0x4bFbB701cd4a0bba82C318CcEd1b4Ebc115A36de`
+- **Exchange/operator (for approvals):** `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E`
+
+---
+
 ## Deployment (Railway)
 
 ### Required Environment Variables
