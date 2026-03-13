@@ -75,6 +75,13 @@ class TestTieredTakeProfits:
         assert result["reason"] == "TP_FULL"
         assert result["partial_pct"] == 1.0  # full exit
 
+    def test_tp_full_skipped_when_high_conviction(self, monkeypatch):
+        """TP_FULL should be skipped when posterior is monster-high."""
+        from config import Config
+        monkeypatch.setattr(Config, "TP1_POSTERIOR_CEIL", 0.93)
+        result = call_exit(entry_price=0.50, current_price=0.53, posterior=0.99)
+        assert result is None
+
     def test_no_tp_below_threshold(self):
         """No TP exit when unrealized is below 5%."""
         result = call_exit(entry_price=0.50, current_price=0.52)
@@ -99,6 +106,14 @@ class TestTieredTakeProfits:
         assert result is not None
         assert result["reason"] == "TP1"
         assert abs(result["partial_pct"] - 0.333) < 0.01
+
+    def test_tp1_skipped_when_high_conviction(self, monkeypatch):
+        """TP1 should be skipped when posterior is monster-high, even with partial enabled."""
+        from config import Config
+        monkeypatch.setattr(Config, "TP_PARTIAL_ENABLED", True)
+        monkeypatch.setattr(Config, "TP1_POSTERIOR_CEIL", 0.93)
+        result = call_exit(entry_price=0.50, current_price=0.53, posterior=0.99)
+        assert result is None
 
     def test_tp2_fires_when_tp1_already_hit(self, monkeypatch):
         """TP2 fires when TP1 already hit and unrealized >= 12%."""

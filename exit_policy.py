@@ -204,6 +204,8 @@ def evaluate_exit(
             return _exit("TP_LATE_ENTRY", use_maker=use_maker)
     else:
         # Normal tiered take-profits
+        tp1_post_ceil = float(getattr(Config, "TP1_POSTERIOR_CEIL", 0.93) or 0.93)
+        tp1_allowed = (posterior is None) or (posterior < tp1_post_ceil)
         if Config.TP_PARTIAL_ENABLED:
             # Partial exits: 1/3 at each tier
             if not tp3_hit and unrealized_pct >= Config.TP3_PCT:
@@ -213,16 +215,30 @@ def evaluate_exit(
                 log.info("TP2: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP2_PCT * 100)
                 return _exit("TP2", partial_pct=0.333, use_maker=use_maker)
             if not tp1_hit and unrealized_pct >= Config.TP1_PCT:
-                log.info("TP1: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP1_PCT * 100)
-                return _exit("TP1", partial_pct=0.333, use_maker=use_maker)
+                if tp1_allowed:
+                    log.info("TP1: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP1_PCT * 100)
+                    return _exit("TP1", partial_pct=0.333, use_maker=use_maker)
+                log.info(
+                    "TP1_SKIPPED_HIGH_CONVICTION: posterior=%.3f >= %.3f — holding despite unrealized=%.1f%%",
+                    float(posterior),
+                    tp1_post_ceil,
+                    unrealized_pct * 100,
+                )
         else:
             # Full exit at TP1 threshold (fallback when partial disabled)
             if unrealized_pct >= Config.TP1_PCT:
+                if tp1_allowed:
+                    log.info(
+                        "TP_FULL: unrealized=%.1f%% >= %.1f%% — full exit (partial disabled)",
+                        unrealized_pct * 100, Config.TP1_PCT * 100,
+                    )
+                    return _exit("TP_FULL", use_maker=use_maker)
                 log.info(
-                    "TP_FULL: unrealized=%.1f%% >= %.1f%% — full exit (partial disabled)",
-                    unrealized_pct * 100, Config.TP1_PCT * 100,
+                    "TP_FULL_SKIPPED_HIGH_CONVICTION: posterior=%.3f >= %.3f — holding despite unrealized=%.1f%%",
+                    float(posterior),
+                    tp1_post_ceil,
+                    unrealized_pct * 100,
                 )
-                return _exit("TP_FULL", use_maker=use_maker)
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 3: PROBABILITY-CONVERGENCE EXIT (Req #4)

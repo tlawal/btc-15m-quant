@@ -1052,6 +1052,15 @@ class PolymarketClient:
             curr_val = pos.get("currentValue", 0.0)
             token_id = pos.get("asset")
 
+            posterior = None
+            try:
+                if side == "YES":
+                    posterior = float(getattr(sig, "posterior_final_up", None))
+                elif side == "NO":
+                    posterior = float(getattr(sig, "posterior_final_down", None))
+            except Exception:
+                posterior = None
+
             if size <= 0 or entry_val <= 0:
                 continue
 
@@ -1060,11 +1069,16 @@ class PolymarketClient:
 
             trigger_reason = None
 
+            protective_loss = float(getattr(Config, "MID_WINDOW_PROTECTIVE_LOSS_PCT", 0.05) or 0.05)
+            post_ceil = float(getattr(Config, "MID_WINDOW_POSTERIOR_CEIL", 0.55) or 0.55)
+            posterior_decayed = (posterior is not None and posterior <= post_ceil)
+            protective_ok = (unrealized_pct <= -protective_loss and posterior_decayed)
+
             # 1. SignedScore reversal — only exit on strong reversal AND losing position
             # Score oscillates rapidly (±3–7 within seconds); don't panic-sell winners.
-            if side == "YES" and sig.signed_score < -5 and unrealized_pct < -0.03:
+            if side == "YES" and sig.signed_score < -5 and protective_ok:
                 trigger_reason = "SCORE_REVERSAL"
-            elif side == "NO" and sig.signed_score > 5 and unrealized_pct < -0.03:
+            elif side == "NO" and sig.signed_score > 5 and protective_ok:
                 trigger_reason = "SCORE_REVERSAL"
 
             # 2. Unrealized loss > 15%
@@ -1073,12 +1087,12 @@ class PolymarketClient:
 
             # 3. Distance from strike > 0.6 * ATR — only if LOSING
             # If BTC moved far from strike in our favor, that's a winning position.
-            elif current_distance > 0.6 * atr14 and unrealized_pct < -0.05:
+            elif current_distance > 0.6 * atr14 and protective_ok:
                 trigger_reason = "STRIKE_DISTANCE_EXCEEDED"
 
             # 4. CVD or OFI flip against position
             # (Sensitive: CVD/OFI flip while losing)
-            elif unrealized_pct < -0.05:
+            elif protective_ok:
                 if side == "YES" and (sig.cvd < -0.5 or sig.deep_ofi < -5):
                     trigger_reason = "MICROSTRUCTURE_FLIP"
                 elif side == "NO" and (sig.cvd > 0.5 or sig.deep_ofi > 5):

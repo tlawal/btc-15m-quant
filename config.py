@@ -101,6 +101,9 @@ class Config:
     FORCED_PROFIT_PCT          = 0.25
     FORCED_DISTANCE_MAX        = 30.0     # abs(btcPrice - strike) < this triggers late exit
 
+    MID_WINDOW_PROTECTIVE_LOSS_PCT = 0.05
+    MID_WINDOW_POSTERIOR_CEIL      = 0.55
+
     # Volatility-adjusted trailing stop (probability-space, ATR-scaled)
     TRAIL_ATR_REF              = 120.0    # reference ATR level for scaling trailing width
     TRAIL_BASE_POST_DROP       = 0.04     # base allowable posterior drop from peak before exit
@@ -117,6 +120,7 @@ class Config:
     TP_LATE_ENTRY_THRESH       = 0.95     # entry >= $0.95 triggers single TP
     TP_LATE_ENTRY_PCT          = 0.02     # +2% single TP for late entries
     TP_PARTIAL_ENABLED         = False    # flip to True when ready for 1/3 scaling
+    TP1_POSTERIOR_CEIL         = 0.93
 
     # ── Volatility-Adapted Stop-Loss (ATR-normalized) ────────────────────
     VOL_STOP_BASE_PCT          = 0.15     # base max drawdown
