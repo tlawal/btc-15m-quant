@@ -1091,8 +1091,9 @@ function updateUI() {
         if ($('halt-label')) $('halt-label').innerText = killActive ? '🔴 Kill Switch Active' : '⛔ Trading Halted';
 
         // ── PnL header ──
-        const pnlUsd = d.performance?.total_pnl_usd;
-        if (pnlUsd != null && d.performance?.closed_trades > 0) {
+        const perfObj = d.performance_metrics || d.performance || {};
+        const pnlUsd = perfObj?.total_pnl_usd;
+        if (pnlUsd != null && (perfObj?.closed_trades || 0) > 0) {
             $('cum-pnl').innerText = (pnlUsd>=0?'+':'-')+'$'+(Math.abs(pnlUsd)).toFixed(2);
             $('cum-pnl').className = `banner-val ${pnlUsd>=0?'text-green-400':'text-red-400'}`;
         }
@@ -1335,7 +1336,7 @@ function updateUI() {
         }
 
         // Optimizer status
-        const closed=(d.performance||{}).closed_trades||0;
+        const closed=(perfObj||{}).closed_trades||0;
         $('opt-status').innerText = closed>=10?'LEARNING':closed>0?'COLLECTING':'AWAITING';
         $('opt-status').className = `mono font-semibold ${closed>=10?'text-green-400':closed>0?'text-amber-400':'text-slate-500'}`;
 

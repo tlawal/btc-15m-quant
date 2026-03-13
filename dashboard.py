@@ -478,6 +478,7 @@ async def get_metrics():
         "trading_halted": getattr(state, "trading_halted", False),
         "last_market_slug": getattr(state, "last_market_slug", ""),
         "last_market_expiry": getattr(state, "last_market_expiry", None),
+        "latencies": getattr(state, "latencies", {}) or hb.get("latencies") or {},
         "performance_metrics": getattr(state, "performance_metrics", None) or hb.get("performance") or {},
         "last_tuned_time": getattr(state, "last_tuned_time", 0),
         "pos_current_price": getattr(state, "pos_current_price", None),
@@ -506,6 +507,10 @@ async def get_metrics():
     metrics["gate_all"] = skip_gates
     metrics["sigma_b"] = signal.get("sigma_b")
     metrics["bvol_multiplier"] = signal.get("bvol_multiplier")
+
+    # Back-compat alias for older frontend references
+    if "performance" not in metrics:
+        metrics["performance"] = metrics.get("performance_metrics") or {}
 
     return metrics
 
