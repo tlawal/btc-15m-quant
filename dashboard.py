@@ -604,55 +604,94 @@ async def sweep_dust(request: Request):
         if broadcasted >= max_transfers:
             break
 
+    def _hex_topic_addr(addr: str) -> str:
+        a = addr.lower().replace("0x", "")
+        return "0x" + ("0" * 24) + a
+
+    async def _discover_token_ids_onchain(*, lookback_blocks: int) -> list[str]:
+        try:
+            latest = await w3.eth.block_number
+        except Exception:
+            latest = await w3.eth.get_block_number()
+
+        lb = int(lookback_blocks or 0)
+        if lb <= 0:
+            lb = 2_000_000
+        start = max(0, int(latest) - lb)
+        end = int(latest)
+
+        wallet_topic = _hex_topic_addr(from_wallet)
+        sig_single = w3.keccak(text="TransferSingle(address,address,address,uint256,uint256)").hex()
+        sig_batch = w3.keccak(text="TransferBatch(address,address,address,uint256[],uint256[])").hex()
+
+        token_ids: set[int] = set()
+
+        async def fetch_logs(sig: str, topics: list[Optional[str]]):
+            try:
+                return await w3.eth.get_logs(
+                    {
+                        "fromBlock": start,
+                        "toBlock": end,
+                        "address": w3.to_checksum_address(CONDITIONAL_TOKENS),
+                        "topics": topics,
+                    }
+                )
+            except Exception:
+                return []
+
+        logs = []
+        logs += await fetch_logs(sig_single, [sig_single, None, None, wallet_topic])
+        logs += await fetch_logs(sig_single, [sig_single, None, wallet_topic, None])
+        logs += await fetch_logs(sig_batch, [sig_batch, None, None, wallet_topic])
+        logs += await fetch_logs(sig_batch, [sig_batch, None, wallet_topic, None])
+
+        for lg in logs:
+            try:
+                t0 = (lg.get("topics") or [])[0]
+                if isinstance(t0, (bytes, bytearray)):
+                    t0 = "0x" + bytes(t0).hex()
+                data_hex = lg.get("data") or "0x"
+                if isinstance(data_hex, (bytes, bytearray)):
+                    data = bytes(data_hex)
+                else:
+                    data = bytes.fromhex(str(data_hex).replace("0x", ""))
+
+                if str(t0).lower() == str(sig_single).lower():
+                    if len(data) >= 64:
+                        tid = int.from_bytes(data[0:32], "big")
+                        token_ids.add(tid)
+                elif str(t0).lower() == str(sig_batch).lower():
+                    try:
+                        from eth_abi import decode
+
+                        ids, _values = decode(["uint256[]", "uint256[]"], data)
+                        for tid in ids:
+                            try:
+                                token_ids.add(int(tid))
+                            except Exception:
+                                continue
+                    except Exception:
+                        continue
+            except Exception:
+                continue
+
+        out: list[str] = []
+        for tid in token_ids:
+            try:
+                bal_raw = await conditional.functions.balanceOf(from_wallet, int(tid)).call()
+                if bal_raw and int(bal_raw) > 0:
+                    out.append(str(int(tid)))
+            except Exception:
+                continue
+
+        return list(set(out))
+
     # Fetch orphaned tokens from Zerion
     orphaned_tokens = []
     try:
-        # Call the fetch function internally
-        zerion_url = "https://app.zerion.io/0x7aba1f81034d418a4ded1613626ca7573fd85153/nfts"
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get(zerion_url)
-            r.raise_for_status()
-            html_content = r.text
-
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html_content, 'html.parser')
-
-        conditional_tokens_contract = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045".lower()
-
-        # Look for NFT cards or data attributes containing token info
-        scripts = soup.find_all('script')
-        for script in scripts:
-            if script.string and 'conditionaltokens' in script.string.lower():
-                import re
-                token_matches = re.findall(r'"tokenId"\s*:\s*"([^"]+)"', script.string)
-                contract_matches = re.findall(r'"contractAddress"\s*:\s*"([^"]+)"', script.string)
-
-                for i, token_id in enumerate(token_matches):
-                    if i < len(contract_matches) and contract_matches[i].lower() == conditional_tokens_contract:
-                        try:
-                            token_int = int(token_id, 16) if token_id.startswith('0x') else int(token_id)
-                            orphaned_tokens.append(str(token_int))
-                        except ValueError:
-                            continue
-
-        # Also check for data attributes on NFT elements
-        nft_elements = soup.find_all(attrs={'data-contract': True})
-        for elem in nft_elements:
-            contract = elem.get('data-contract', '').lower()
-            token_id = elem.get('data-token-id', '')
-            if contract == conditional_tokens_contract and token_id:
-                try:
-                    token_int = int(token_id, 16) if token_id.startswith('0x') else int(token_id)
-                    orphaned_tokens.append(str(token_int))
-                except ValueError:
-                    continue
-
-        # Deduplicate
-        orphaned_tokens = list(set(orphaned_tokens))
-
-    except Exception as e:
-        # Log but don't fail - continue with resolved positions only
-        print(f"Warning: Failed to fetch orphaned tokens from Zerion: {e}")
+        lookback_blocks = int((body or {}).get("lookback_blocks", 2_000_000) or 2_000_000)
+        orphaned_tokens = await _discover_token_ids_onchain(lookback_blocks=lookback_blocks)
+    except Exception:
         orphaned_tokens = []
 
     # Process orphaned token IDs (tokens not in API)
@@ -773,63 +812,127 @@ async def fetch_orphaned_tokens(request: Request):
     if deny:
         return deny
 
-    # Fetch from Zerion NFT page
-    zerion_url = "https://app.zerion.io/0x7aba1f81034d418a4ded1613626ca7573fd85153/nfts"
+    from config import Config
+    from eth_account import Account
+
+    body = {}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    if not Config.POLYGON_RPC_URL:
+        return JSONResponse({"status": "error", "message": "POLYGON_RPC_URL not set"}, status_code=503)
+    if not Config.POLYMARKET_PRIVATE_KEY:
+        return JSONResponse({"status": "error", "message": "POLYMARKET_PRIVATE_KEY not set"}, status_code=503)
+
+    account = Account.from_key(Config.POLYMARKET_PRIVATE_KEY)
+    from_wallet = account.address
+
+    w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(Config.POLYGON_RPC_URL))
+    if not await w3.is_connected():
+        return JSONResponse({"status": "error", "message": "Could not connect to Polygon RPC"}, status_code=503)
+
+    CONDITIONAL_TOKENS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+    CONDITIONAL_ABI = [
+        {
+            "inputs": [
+                {"internalType": "address", "name": "account", "type": "address"},
+                {"internalType": "uint256", "name": "id", "type": "uint256"},
+            ],
+            "name": "balanceOf",
+            "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+            "stateMutability": "view",
+            "type": "function",
+        },
+    ]
+
+    conditional = w3.eth.contract(address=w3.to_checksum_address(CONDITIONAL_TOKENS), abi=CONDITIONAL_ABI)
+
+    def _hex_topic_addr(addr: str) -> str:
+        a = addr.lower().replace("0x", "")
+        return "0x" + ("0" * 24) + a
+
+    lookback_blocks = int((body or {}).get("lookback_blocks", 2_000_000) or 2_000_000)
 
     try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get(zerion_url)
-            r.raise_for_status()
-            html_content = r.text
-    except Exception as e:
-        return JSONResponse({"status": "error", "message": f"Failed to fetch Zerion page: {e}"}, status_code=502)
+        latest = await w3.eth.block_number
+    except Exception:
+        latest = await w3.eth.get_block_number()
 
-    # Parse HTML to extract token IDs for ConditionalTokens contract
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(html_content, 'html.parser')
+    start = max(0, int(latest) - int(lookback_blocks))
+    end = int(latest)
 
-    orphaned_tokens = []
-    conditional_tokens_contract = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045".lower()
+    wallet_topic = _hex_topic_addr(from_wallet)
+    sig_single = w3.keccak(text="TransferSingle(address,address,address,uint256,uint256)").hex()
+    sig_batch = w3.keccak(text="TransferBatch(address,address,address,uint256[],uint256[])").hex()
 
-    # Look for NFT cards or data attributes containing token info
-    # Zerion typically embeds NFT data in script tags or data attributes
-    scripts = soup.find_all('script')
-    for script in scripts:
-        if script.string and 'conditionaltokens' in script.string.lower():
-            # Extract token IDs from script content
-            import re
-            token_matches = re.findall(r'"tokenId"\s*:\s*"([^"]+)"', script.string)
-            contract_matches = re.findall(r'"contractAddress"\s*:\s*"([^"]+)"', script.string)
+    async def fetch_logs(sig: str, topics: list[Optional[str]]):
+        try:
+            return await w3.eth.get_logs(
+                {
+                    "fromBlock": start,
+                    "toBlock": end,
+                    "address": w3.to_checksum_address(CONDITIONAL_TOKENS),
+                    "topics": topics,
+                }
+            )
+        except Exception:
+            return []
 
-            for i, token_id in enumerate(token_matches):
-                if i < len(contract_matches) and contract_matches[i].lower() == conditional_tokens_contract:
-                    try:
-                        # Convert to int and add if valid
-                        token_int = int(token_id, 16) if token_id.startswith('0x') else int(token_id)
-                        orphaned_tokens.append(str(token_int))
-                    except ValueError:
-                        continue
+    logs = []
+    logs += await fetch_logs(sig_single, [sig_single, None, None, wallet_topic])
+    logs += await fetch_logs(sig_single, [sig_single, None, wallet_topic, None])
+    logs += await fetch_logs(sig_batch, [sig_batch, None, None, wallet_topic])
+    logs += await fetch_logs(sig_batch, [sig_batch, None, wallet_topic, None])
 
-    # Also check for data attributes on NFT elements
-    nft_elements = soup.find_all(attrs={'data-contract': True})
-    for elem in nft_elements:
-        contract = elem.get('data-contract', '').lower()
-        token_id = elem.get('data-token-id', '')
-        if contract == conditional_tokens_contract and token_id:
-            try:
-                token_int = int(token_id, 16) if token_id.startswith('0x') else int(token_id)
-                orphaned_tokens.append(str(token_int))
-            except ValueError:
-                continue
+    token_ids: set[int] = set()
+    for lg in logs:
+        try:
+            t0 = (lg.get("topics") or [])[0]
+            if isinstance(t0, (bytes, bytearray)):
+                t0 = "0x" + bytes(t0).hex()
 
-    # Deduplicate
+            data_hex = lg.get("data") or "0x"
+            if isinstance(data_hex, (bytes, bytearray)):
+                data = bytes(data_hex)
+            else:
+                data = bytes.fromhex(str(data_hex).replace("0x", ""))
+
+            if str(t0).lower() == str(sig_single).lower():
+                if len(data) >= 64:
+                    token_ids.add(int.from_bytes(data[0:32], "big"))
+            elif str(t0).lower() == str(sig_batch).lower():
+                try:
+                    from eth_abi import decode
+
+                    ids, _values = decode(["uint256[]", "uint256[]"], data)
+                    for tid in ids:
+                        token_ids.add(int(tid))
+                except Exception:
+                    continue
+        except Exception:
+            continue
+
+    orphaned_tokens: list[str] = []
+    for tid in token_ids:
+        try:
+            bal_raw = await conditional.functions.balanceOf(from_wallet, int(tid)).call()
+            if bal_raw and int(bal_raw) > 0:
+                orphaned_tokens.append(str(int(tid)))
+        except Exception:
+            continue
+
     orphaned_tokens = list(set(orphaned_tokens))
 
     return {
         "status": "ok",
         "orphaned_tokens": orphaned_tokens,
         "count": len(orphaned_tokens),
-        "source": zerion_url,
+        "source": "onchain_logs",
+        "lookback_blocks": int(lookback_blocks),
+        "from_block": int(start),
+        "to_block": int(end),
     }
 
 
