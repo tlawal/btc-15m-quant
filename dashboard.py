@@ -625,8 +625,8 @@ async def sweep_dust(request: Request):
             cs = 200_000
 
         wallet_topic = _hex_topic_addr(from_wallet)
-        sig_single = w3.keccak(text="TransferSingle(address,address,address,uint256,uint256)").hex()
-        sig_batch = w3.keccak(text="TransferBatch(address,address,address,uint256[],uint256[])").hex()
+        sig_single = "0x" + w3.keccak(text="TransferSingle(address,address,address,uint256,uint256)").hex().replace("0x", "")
+        sig_batch = "0x" + w3.keccak(text="TransferBatch(address,address,address,uint256[],uint256[])").hex().replace("0x", "")
 
         token_ids: set[int] = set()
 
@@ -922,8 +922,8 @@ async def fetch_orphaned_tokens(request: Request):
     }
 
     wallet_topic = _hex_topic_addr(from_wallet)
-    sig_single = w3.keccak(text="TransferSingle(address,address,address,uint256,uint256)").hex()
-    sig_batch = w3.keccak(text="TransferBatch(address,address,address,uint256[],uint256[])").hex()
+    sig_single = "0x" + w3.keccak(text="TransferSingle(address,address,address,uint256,uint256)").hex().replace("0x", "")
+    sig_batch = "0x" + w3.keccak(text="TransferBatch(address,address,address,uint256[],uint256[])").hex().replace("0x", "")
 
     async def fetch_logs_chunked(sig: str, topics: list[Optional[str]]):
         out_logs = []
