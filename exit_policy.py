@@ -212,8 +212,8 @@ def evaluate_exit(
                 log.info("TP3: unrealized=%.1f%% >= %.1f%% — selling remaining", unrealized_pct * 100, Config.TP3_PCT * 100)
                 return _exit("TP3", partial_pct=1.0, use_maker=use_maker)
             if not tp2_hit and unrealized_pct >= Config.TP2_PCT:
-                log.info("TP2: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP2_PCT * 100)
-                return _exit("TP2", partial_pct=0.333, use_maker=use_maker)
+                log.info("TP2: unrealized=%.1f%% >= %.1f%% — selling 50%%", unrealized_pct * 100, Config.TP2_PCT * 100)
+                return _exit("TP2", partial_pct=0.5, use_maker=use_maker)
             if not tp1_hit and unrealized_pct >= Config.TP1_PCT:
                 if tp1_allowed:
                     log.info("TP1: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP1_PCT * 100)
@@ -226,6 +226,20 @@ def evaluate_exit(
                 )
         else:
             # Full exit at TP1 threshold (fallback when partial disabled)
+            if not tp3_hit and unrealized_pct >= Config.TP3_PCT:
+                log.info(
+                    "TP3: unrealized=%.1f%% >= %.1f%% — full exit (partial disabled)",
+                    unrealized_pct * 100,
+                    Config.TP3_PCT * 100,
+                )
+                return _exit("TP3", partial_pct=1.0, use_maker=use_maker)
+            if not tp2_hit and unrealized_pct >= Config.TP2_PCT:
+                log.info(
+                    "TP2: unrealized=%.1f%% >= %.1f%% — selling 50%% (partial even when partial disabled)",
+                    unrealized_pct * 100,
+                    Config.TP2_PCT * 100,
+                )
+                return _exit("TP2", partial_pct=0.5, use_maker=use_maker)
             if unrealized_pct >= Config.TP1_PCT:
                 if tp1_allowed:
                     log.info(

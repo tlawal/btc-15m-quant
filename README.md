@@ -50,6 +50,11 @@ utils.py             — Logging, Telegram alerts, formatting
 ### Exit Engine (`exit_policy.py`)
 Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior override) and **soft exits** (suppressed by trailing posterior guard while model is still confident).
 
+**Tiered take-profits (percentage from entry):**
+- **TP1 (+5%)** — conviction-gated: skipped when `posterior >= TP1_POSTERIOR_CEIL`.
+- **TP2 (+15%)** — unconditional: sells **50%** regardless of posterior.
+- **TP3 (+20%)** — unconditional: exits **100%** regardless of posterior.
+
 **Hard circuit breakers — always fire regardless of model state:**
 
 **Soft exits (60s minimum hold gate):**
@@ -127,6 +132,13 @@ The dashboard includes an **exit-only** “Manual Exit” panel that lets you ma
 Security:
 - These endpoints are **admin-token protected** to prevent anyone on the internet from forcing your exits.
 - Set `DASHBOARD_ADMIN_TOKEN` on the server, then paste the token into the dashboard panel (stored locally in your browser).
+
+Approval note (Polymarket conditional tokens):
+- Sells require ERC-1155 approval of Polymarket ConditionalTokens to the Exchange contract.
+- If you see `conditional_allowance_missing`, you likely need to approve via `setApprovalForAll` and have a small amount of MATIC for gas.
+- Polygon mainnet addresses (from `py_clob_client` contract config):
+  - ConditionalTokens (ERC-1155): `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045`
+  - Exchange / operator: `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E`
 
 ---
 
@@ -217,41 +229,15 @@ curl -X POST https://<your-app>.up.railway.app/api/db/reset
 
 ---
 
-## Profit-Taking Recommendations
+## Profit-Taking
 
-Based on academic research and quantitative trading best practices, we recommend implementing dynamic profit-taking exits to lock in gains while minimizing regret. Profit-taking is understudied compared to stop-losses, but evidence suggests it improves Sharpe ratios by reducing tail risk from holding to expiration (e.g., in binary options where theta decay erodes value).
+Profit-taking is handled in `exit_policy.py` via tiered take-profits measured as % return from entry price.
 
-### Key Academic Citations
+- **TP1 (+5%)**: conviction-gated via `TP1_POSTERIOR_CEIL`.
+- **TP2 (+15%)**: unconditional partial — sells **50%**.
+- **TP3 (+20%)**: unconditional full exit.
 
-1. **Brock, W., Lakonishok, J., & LeBaron, B. (1992). "Simple Technical Trading Rules and the Stochastic Properties of Stock Returns." *Journal of Finance*, 47(5), 1731–1764.**  
-   - Findings: Technical rules (e.g., moving averages, RSI) generate abnormal returns, with optimal holding periods of 1–6 months. Implies profit-taking at predefined levels (e.g., 5–25%) outperforms holding indefinitely. Supports dynamic exits based on signal strength and time decay.
-
-2. **Jegadeesh, N., & Titman, S. (1993). "Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency." *Journal of Finance*, 48(1), 65–91.**  
-   - Findings: Momentum strategies profit from holding winners (up to 12 months) but underperform if not exited at peaks. Recommends profit-taking at 10–25% gains to capture momentum while avoiding reversals. Time-based scaling: exit earlier in volatile regimes.
-
-3. **Kyle, A. S. (1985). "Continuous Auctions and Insider Trading." *Econometrica*, 53(6), 1315–1335.**  
-   - Findings: Informed traders exploit adverse selection; liquidity providers suffer losses. Supports microstructure-aware exits: take profits (5–10%) in toxic flow (high VPIN) to avoid slippage from informed selling. Microstructure signals (e.g., OFI, CVD) predict reversals better than price alone.
-
-4. **Chan, L. K. C., Jegadeesh, N., & Lakonishok, J. (1996). "Momentum Strategies." *Journal of Finance*, 51(5), 1681–1713.**  
-   - Findings: Optimal momentum horizons vary by signal quality; strong signals hold longer (up to 12 months), weak signals exit at 5–10% gains. Time decay and volatility amplify regret in late-stage holds.
-
-### Recommended Dynamic Profit-Taking Levels
-
-Implement in `exit_policy.py` as a new condition: `TAKE_PROFIT_DYNAMIC` (posterior-gated, suppressed by trailing guard).
-
-- **25% PNL Exit**: For strong signals (`posterior >= 0.90`, `abs_score >= 6.0`), early window (< 7.5 min). Rationale: Captures momentum peaks per Jegadeesh & Titman (1993); low regret risk in high-confidence trades. Use FOK limit sell near bid to avoid slippage.
-
-- **10% PNL Exit**: For moderate signals (`posterior >= 0.75`, `abs_score >= 3.0`), mid-window (7.5–10 min). Rationale: Balances holding for theta vs. locking gains per Brock et al. (1992); suitable when microstructure is neutral (VPIN < 0.70). Exit via market sell if liquidity is good.
-
-- **5% PNL Exit**: For weak signals (`posterior >= 0.60`, `abs_score >= 1.5`), late window (> 10 min) or high microstructure risk (VPIN >= 0.85, deep OFI reversal). Rationale: Prevents adverse selection per Kyle (1985); time decay erodes value near expiry. Prefer limit/FOK in toxic conditions to minimize slippage.
-
-**Implementation Notes**:
-- Always posterior-gate: Suppress if `posterior > entry_posterior - 0.02` (trailing guard).
-- Microstructure Scaling: Reduce threshold by 50% in toxic flow (e.g., 5% → 2.5%) to prioritize exit.
-- Time Scaling: Tighten thresholds near expiry (e.g., 25% → 10% at < 2 min).
-- Backtest Regret: Log counterfactuals (e.g., "if held, would have won 50%"); optimize via optimizer.py.
-
-This framework improves risk-adjusted returns by 10–20% in quant studies (e.g., extensions of Brock et al., 1992).
+This design avoids clipping extremely high-conviction trades too early (TP1 gate), while still guaranteeing you lock in profit at TP2 and fully de-risk at TP3.
 
 ---
 
