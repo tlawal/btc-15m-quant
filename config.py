@@ -51,7 +51,7 @@ class Config:
     REQUIRED_EDGE_HIGH         = 0.025
     # Balance-adaptive edge: when wallet is small, use lower edge requirement
     # This prevents the bot from being perpetually blocked at low capital.
-    LOW_BALANCE_THRESHOLD_USD  = 20.0   # apply lower edge when balance < this
+    LOW_BALANCE_THRESHOLD_USD  = 30.0   # apply lower edge when balance < this
     REQUIRED_EDGE_LOW_BALANCE  = 0.007  # relaxed edge requirement at low balance (was 0.020 — too high for sub-$20)
     # Fallback ATR used when local ATR computation is unavailable.
     DEFAULT_ATR                = 150.0
