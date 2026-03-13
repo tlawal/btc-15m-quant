@@ -131,6 +131,23 @@ class Engine:
         if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
             log.warning("MANUAL UI EXIT: no active position — cannot place limit exit")
             return {"status": "error", "message": "No active position"}
+
+        requested_size = float(pos.size)
+        available_size = None
+        sell_size = requested_size
+        try:
+            live_positions = await self.pm.get_positions()
+            for p in live_positions or []:
+                if str((p or {}).get("asset")) == str(pos.token_id):
+                    available_size = float((p or {}).get("size") or 0.0)
+                    break
+            if available_size is not None and available_size > 0:
+                sell_size = min(sell_size, available_size)
+            # Safety buffer + round down to avoid overselling due to decimals.
+            sell_size = max(0.0, sell_size - 0.001)
+            sell_size = math.floor(sell_size * 10000.0) / 10000.0
+        except Exception as e:
+            log.warning(f"MANUAL UI EXIT: failed to fetch live position size; using state size. err={e}")
         # If there's an existing pending order, cancel it first before placing new one
         if pos.is_pending and pos.order_id:
             log.warning(f"MANUAL UI EXIT: cancelling existing pending order {pos.order_id} before placing new limit exit")
@@ -141,17 +158,38 @@ class Engine:
             pos.is_pending = False
             pos.order_id = None
         px = max(0.01, min(0.99, round(float(price), 2)))
-        oid = await self.pm.limit_sell(str(pos.token_id), px, float(pos.size), order_type=order_type)
+        oid = await self.pm.limit_sell(str(pos.token_id), px, float(sell_size), order_type=order_type)
         if not oid:
             log.warning("MANUAL UI EXIT: limit sell order placement failed")
-            return {"status": "error", "message": "Order placement failed on CLOB"}
+            return {
+                "status": "error",
+                "message": "Order placement failed on CLOB",
+                "requested_size": requested_size,
+                "available_size": available_size,
+                "sell_size_used": sell_size,
+            }
         pos.exit_reason = "MANUAL_LIMIT_EXIT"
         pos.intended_exit_price = px
         pos.order_id = oid
         pos.is_pending = True
         pos.placed_at_ts = int(time.time())
-        log.warning(f"MANUAL UI EXIT TRIGGERED: limit exit placed — side={pos.side} price={px:.3f} size={pos.size} type={order_type} oid={oid}")
-        return {"status": "ok", "message": f"Limit exit placed at {px:.3f} ({order_type})"}
+        log.warning(
+            "MANUAL UI EXIT TRIGGERED: limit exit placed — side=%s price=%.3f size=%.4f (requested=%.4f available=%s) type=%s oid=%s",
+            pos.side,
+            float(px),
+            float(sell_size),
+            float(requested_size),
+            str(available_size),
+            str(order_type),
+            str(oid),
+        )
+        return {
+            "status": "ok",
+            "message": f"Limit exit placed at {px:.3f} ({order_type})",
+            "requested_size": requested_size,
+            "available_size": available_size,
+            "sell_size_used": sell_size,
+        }
 
     async def _manual_exit_replace(self, *, price: float):
         pos = self.state.held_position
@@ -161,18 +199,62 @@ class Engine:
         if not pos.order_id:
             log.warning("MANUAL UI EXIT: no existing order_id to replace")
             return {"status": "error", "message": "No existing order to replace"}
+
+        requested_size = float(pos.size)
+        available_size = None
+        sell_size = requested_size
+        try:
+            live_positions = await self.pm.get_positions()
+            for p in live_positions or []:
+                if str((p or {}).get("asset")) == str(pos.token_id):
+                    available_size = float((p or {}).get("size") or 0.0)
+                    break
+            if available_size is not None and available_size > 0:
+                sell_size = min(sell_size, available_size)
+            sell_size = max(0.0, sell_size - 0.001)
+            sell_size = math.floor(sell_size * 10000.0) / 10000.0
+        except Exception as e:
+            log.warning(f"MANUAL UI EXIT: failed to fetch live position size for replace; using state size. err={e}")
+
         px = max(0.01, min(0.99, round(float(price), 2)))
-        new_oid = await self.pm.replace_order(old_order_id=str(pos.order_id), token_id=str(pos.token_id), new_price=px, size=float(pos.size), side="SELL", order_type="GTC")
+        new_oid = await self.pm.replace_order(
+            old_order_id=str(pos.order_id),
+            token_id=str(pos.token_id),
+            new_price=px,
+            size=float(sell_size),
+            side="SELL",
+            order_type="GTC",
+        )
         if not new_oid:
             log.warning("MANUAL UI EXIT: replace failed")
-            return {"status": "error", "message": "Order replace failed on CLOB"}
+            return {
+                "status": "error",
+                "message": "Order replace failed on CLOB",
+                "requested_size": requested_size,
+                "available_size": available_size,
+                "sell_size_used": sell_size,
+            }
         pos.exit_reason = "MANUAL_LIMIT_EXIT"
         pos.intended_exit_price = px
         pos.order_id = new_oid
         pos.is_pending = True
         pos.placed_at_ts = int(time.time())
-        log.warning(f"MANUAL UI EXIT TRIGGERED: order replaced — side={pos.side} price={px:.3f} size={pos.size} oid={new_oid}")
-        return {"status": "ok", "message": f"Exit order replaced at {px:.3f}"}
+        log.warning(
+            "MANUAL UI EXIT TRIGGERED: order replaced — side=%s price=%.3f size=%.4f (requested=%.4f available=%s) oid=%s",
+            pos.side,
+            float(px),
+            float(sell_size),
+            float(requested_size),
+            str(available_size),
+            str(new_oid),
+        )
+        return {
+            "status": "ok",
+            "message": f"Exit order replaced at {px:.3f}",
+            "requested_size": requested_size,
+            "available_size": available_size,
+            "sell_size_used": sell_size,
+        }
 
     async def _manual_exit_cancel(self):
         pos = self.state.held_position
@@ -199,6 +281,22 @@ class Engine:
         if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
             log.warning("MANUAL UI EXIT: no active position — cannot force-exit")
             return {"status": "error", "message": "No active position"}
+
+        requested_size = float(pos.size)
+        available_size = None
+        sell_size = requested_size
+        try:
+            live_positions = await self.pm.get_positions()
+            for p in live_positions or []:
+                if str((p or {}).get("asset")) == str(pos.token_id):
+                    available_size = float((p or {}).get("size") or 0.0)
+                    break
+            if available_size is not None and available_size > 0:
+                sell_size = min(sell_size, available_size)
+            sell_size = max(0.0, sell_size - 0.001)
+            sell_size = math.floor(sell_size * 10000.0) / 10000.0
+        except Exception as e:
+            log.warning(f"MANUAL UI EXIT: failed to fetch live position size for market exit; using state size. err={e}")
         # If there's a pending order, cancel it first — user wants immediate exit
         if pos.is_pending and pos.order_id:
             log.warning(f"MANUAL UI EXIT: cancelling existing pending order {pos.order_id} before force-exit")
@@ -208,17 +306,36 @@ class Engine:
                 log.warning(f"MANUAL UI EXIT: cancel of existing order failed: {e} — proceeding with market sell anyway")
             pos.is_pending = False
             pos.order_id = None
-        oid = await self.pm.market_sell(str(pos.token_id), float(pos.size))
+        oid = await self.pm.market_sell(str(pos.token_id), float(sell_size))
         if not oid:
             log.warning("MANUAL UI EXIT: market sell order placement failed")
-            return {"status": "error", "message": "Market sell failed on CLOB"}
+            return {
+                "status": "error",
+                "message": "Market sell failed on CLOB",
+                "requested_size": requested_size,
+                "available_size": available_size,
+                "sell_size_used": sell_size,
+            }
         pos.exit_reason = "MANUAL_EXIT_NOW"
         pos.intended_exit_price = None
         pos.order_id = oid
         pos.is_pending = True
         pos.placed_at_ts = int(time.time())
-        log.warning(f"MANUAL UI EXIT TRIGGERED: force-closing position — side={pos.side} size={pos.size} oid={oid}")
-        return {"status": "ok", "message": f"Market sell placed for {pos.size} shares"}
+        log.warning(
+            "MANUAL UI EXIT TRIGGERED: force-closing position — side=%s size=%.4f (requested=%.4f available=%s) oid=%s",
+            pos.side,
+            float(sell_size),
+            float(requested_size),
+            str(available_size),
+            str(oid),
+        )
+        return {
+            "status": "ok",
+            "message": f"Market sell placed for {sell_size} shares",
+            "requested_size": requested_size,
+            "available_size": available_size,
+            "sell_size_used": sell_size,
+        }
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
