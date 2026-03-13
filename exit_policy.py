@@ -1,13 +1,74 @@
 """
 Exit evaluation logic and policies.
 Extracted from logic.py during Phase 3 refactor.
+
+Production-grade exit architecture with 6 layered mechanisms:
+  1. Tiered take-profits (percentage-based, with late-entry override)
+  2. Volatility-adapted stop-loss (ATR-normalized drawdown)
+  3. Spread-aware exiting (Avellaneda-Stoikov maker-preference)
+  4. Probability-convergence exits (bid >= posterior => take the money)
+  5. Structural model reversal (posterior collapse from entry)
+  6. Exponential time-decay (sensitivity multiplier in final 2 min)
 """
 
+import math
 import logging
 from typing import Optional
+
 from config import Config
 
 log = logging.getLogger(__name__)
+
+
+# ── Exit result helper ───────────────────────────────────────────────────────
+
+def _exit(reason: str, *, partial_pct: float = 1.0, use_maker: bool = False) -> dict:
+    """Build a structured exit result.
+
+    Args:
+        reason:      Human-readable exit tag (e.g. "HARD_STOP", "TP1").
+        partial_pct: Fraction of position to sell (1.0 = full, 0.333 = one-third).
+        use_maker:   If True, caller should place maker limit instead of crossing spread.
+    """
+    return {"reason": reason, "partial_pct": partial_pct, "use_maker": use_maker}
+
+
+def _check_spread_aware(
+    bid_price: Optional[float],
+    ask_price: Optional[float],
+    minutes_remaining: float,
+) -> bool:
+    """Determine whether the exit should use a maker limit (True) or cross the spread.
+
+    Avellaneda-Stoikov principle: if spread is wide and there is time, prefer
+    capturing spread via a maker order rather than paying it via a taker order.
+    """
+    if bid_price is None or ask_price is None or bid_price <= 0:
+        return False
+    spread_pct = (ask_price - bid_price) / bid_price
+    seconds_remaining = minutes_remaining * 60.0
+    if spread_pct > Config.SPREAD_AGGRESSIVE_THRESH and seconds_remaining > Config.SPREAD_EXPIRY_OVERRIDE_SEC:
+        return True
+    return False
+
+
+def _time_decay_multiplier(minutes_remaining: float) -> float:
+    """Exponential sensitivity multiplier for the final TIME_DECAY_WINDOW_MIN minutes.
+
+    Returns 1.0 outside the window.  Inside, returns an increasing multiplier
+    that makes adverse OFI / distance thresholds tighter (easier to trigger exits).
+
+    At exactly 0 minutes remaining the multiplier equals TIME_DECAY_EXP_BASE.
+    """
+    if minutes_remaining >= Config.TIME_DECAY_WINDOW_MIN:
+        return 1.0
+    # fraction: 0.0 at window edge → 1.0 at expiry
+    frac = (Config.TIME_DECAY_WINDOW_MIN - minutes_remaining) / max(Config.TIME_DECAY_WINDOW_MIN, 1e-9)
+    frac = max(0.0, min(1.0, frac))
+    return Config.TIME_DECAY_EXP_BASE ** frac
+
+
+# ── Main evaluator ────────────────────────────────────────────────────────────
 
 def evaluate_exit(
     *,
@@ -32,182 +93,266 @@ def evaluate_exit(
     hold_seconds:     float = 999.0,
     entry_min_rem:    Optional[float] = None,
     yes_mid:          float = 0.5,
-) -> Optional[str]:
-    """
-    Returns exit reason string or None.
-    Handles momentum reversal, probability decay, and time-decay exits.
+    # ── New params for production exits ──
+    bid_price:        Optional[float] = None,
+    ask_price:        Optional[float] = None,
+    tp1_hit:          bool = False,
+    tp2_hit:          bool = False,
+    tp3_hit:          bool = False,
+) -> Optional[dict]:
+    """Evaluate whether to exit the current position.
+
+    Returns a dict ``{"reason": str, "partial_pct": float, "use_maker": bool}``
+    or ``None`` if the position should be held.
     """
     if current_price is None or entry_price <= 0:
         return None
 
     unrealized_pct = (current_price - entry_price) / entry_price
 
-    # Use a safe entry_posterior fallback: if not recorded, treat as 0.5 (neutral).
-    # This prevents the trailing guard from being silently skipped on reloaded positions.
+    # Safe fallbacks for posteriors
     _entry_post = entry_posterior if entry_posterior is not None else 0.5
     _peak_post  = peak_posterior if peak_posterior is not None else (_entry_post if _entry_post is not None else 0.5)
 
-    # ── HARD CIRCUIT BREAKERS (bypass ALL posterior gating) ───────────────────
+    # Pre-compute effective ATR ratio for volatility-adapted stops
+    eff_atr = atr14 if (atr14 is not None and atr14 > 0) else Config.VOL_STOP_ATR_BASELINE
+    atr_ratio = eff_atr / max(Config.VOL_STOP_ATR_BASELINE, 1e-6)
+
+    # Pre-compute spread-awareness flag for non-emergency exits
+    use_maker = _check_spread_aware(bid_price, ask_price, minutes_remaining)
+
+    # Pre-compute time-decay multiplier for microstructure exits
+    td_mult = _time_decay_multiplier(minutes_remaining)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 1: HARD CIRCUIT BREAKERS — bypass ALL posterior gating
     # These fire unconditionally regardless of what the Bayesian model says.
-    # Lesson: the trailing posterior guard caused a -65% loss by holding while
-    # the model lagged BTC's real price action. Hard stops must always take priority.
+    # ══════════════════════════════════════════════════════════════════════════
 
-    # 0a. Absolute max loss per trade — unconditional at -25%.
-    # Binary positions CAN recover from -15% but rarely from -25%+. Cut ruthlessly.
-    if unrealized_pct < -Config.HARD_STOP_PCT:
+    # 1a. VOLATILITY-ADAPTED HARD STOP (Req #2)
+    # Instead of a static -25%, scale the base drawdown by BTC ATR.
+    # If ATR is 1.5x baseline, the allowable drawdown widens proportionally.
+    # Example: base -15%, ATR ratio 1.5 → allowable = -22.5%.
+    vol_stop_pct = min(
+        Config.VOL_STOP_BASE_PCT * max(1.0, atr_ratio),
+        Config.VOL_STOP_MAX_PCT,
+    )
+    if unrealized_pct < -vol_stop_pct:
         log.warning(
-            f"HARD_STOP: unrealized={unrealized_pct*100:.1f}% breached -{Config.HARD_STOP_PCT*100:.0f}% "
-            f"— exiting unconditionally (posterior={posterior:.3f if posterior is not None else 'N/A'} ignored)"
+            "VOL_HARD_STOP: unrealized=%.1f%% breached -%.1f%% "
+            "(atr=%.1f, ratio=%.2f, base=%.0f%%, widened=%.1f%%) — exiting unconditionally",
+            unrealized_pct * 100, vol_stop_pct * 100,
+            eff_atr, atr_ratio,
+            Config.VOL_STOP_BASE_PCT * 100, vol_stop_pct * 100,
         )
-        return "HARD_STOP"
+        return _exit("VOL_HARD_STOP")  # emergency — ignore spread
 
-    # 0b. Late-window hard stop: near expiry, any loss beyond small threshold.
-    # At <1 min remaining, the binary is repricing fast — the model is stale.
-    # Tighter threshold for late losers: exit at -10% if < 1 min remain.
+    # 1b. Late-window hard stop: near expiry, any loss beyond small threshold.
     # Skip for late-entered positions to allow holding to expiry.
     if minutes_remaining < Config.FORCED_LATE_EXIT_MIN_REM and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
         if entry_min_rem is not None and entry_min_rem < 5:
-            log.info(f"FORCED_LATE_EXIT_SKIPPED: late entry (entry_min_rem={entry_min_rem:.1f}) — holding to expiry")
-            pass  # skip forced exit for late entries
+            log.info(
+                "FORCED_LATE_EXIT_SKIPPED: late entry (entry_min_rem=%.1f) — holding to expiry",
+                entry_min_rem,
+            )
         else:
-            return "FORCED_LATE_EXIT"
+            return _exit("FORCED_LATE_EXIT")  # emergency — ignore spread
 
-    # 0c. Outside preferred hours: aggressive profit-taking
+    # 1c. Outside preferred hours: aggressive profit-taking
     if not Config.is_preferred_trading_time() and unrealized_pct >= Config.OUTSIDE_HOURS_TAKE_PROFIT_PCT:
-        return "TAKE_SMALL_PROFIT_OUTSIDE"
+        return _exit("TAKE_SMALL_PROFIT_OUTSIDE", use_maker=use_maker)
 
-    # 0e. Adverse microstructure reversal (Hawkes OFI for adverse selection)
-    # No posterior override: near expiry, microstructure can dominate model state.
+    # 1d. Adverse microstructure reversal (Hawkes OFI)
+    # Apply time-decay multiplier: lower threshold near expiry.
     if minutes_remaining <= 1.0 and unrealized_pct < 0:
-        ofi_threshold = Config.EXIT_DEEP_OFI_REV_THRESH
+        ofi_threshold = Config.EXIT_DEEP_OFI_REV_THRESH / td_mult  # tighter near expiry
         if (held_side == "YES" and deep_ofi < -ofi_threshold) or (held_side == "NO" and deep_ofi > ofi_threshold):
             log.warning(
-                f"FORCED_ADVERSE_OFI: deep_ofi={deep_ofi:.1f} threshold={ofi_threshold} "
-                f"(unrealized={unrealized_pct*100:.1f}%) — adverse selection via OFI reversal"
+                "FORCED_ADVERSE_OFI: deep_ofi=%.1f threshold=%.3f td_mult=%.2f "
+                "(unrealized=%.1f%%) — adverse selection via OFI reversal",
+                deep_ofi, ofi_threshold, td_mult, unrealized_pct * 100,
             )
-            return "FORCED_ADVERSE_OFI"
+            return _exit("FORCED_ADVERSE_OFI")  # emergency — ignore spread
 
-    # 0f. Distance-based forced exit near expiry (replaces posterior-based Forced Late Exit)
-    # If price distance from strike is >5 under 1 minute, hold for potential recovery.
-    # Otherwise, force exit losing positions to avoid catastrophic losses.
+    # 1e. Distance-based forced exit near expiry
     if minutes_remaining <= 1.0 and distance is not None and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
         if abs(distance) <= 5.0:
             log.warning(
-                f"FORCED_DISTANCE_LATE: distance={abs(distance):.1f} <= 5, unrealized={unrealized_pct*100:.1f}% — forcing exit near expiry"
+                "FORCED_DISTANCE_LATE: distance=%.1f <= 5, unrealized=%.1f%% — forcing exit near expiry",
+                abs(distance), unrealized_pct * 100,
             )
-            return "FORCED_DISTANCE_LATE"
+            return _exit("FORCED_DISTANCE_LATE")
         else:
             log.info(
-                f"DISTANCE_HELD: distance={abs(distance):.1f} > 5, unrealized={unrealized_pct*100:.1f}% — holding for expiry"
+                "DISTANCE_HELD: distance=%.1f > 5, unrealized=%.1f%% — holding for expiry",
+                abs(distance), unrealized_pct * 100,
             )
 
-    # 1. Forced drawdown — posterior-gated up to -20%, unconditional beyond.
-    # The posterior gate prevents cutting on normal BTC noise when model still believes.
-    # But if posterior has also dropped, it's a genuine adverse move — cut it.
-    # NOTE: HARD_STOP_PCT (-25%) above already catches anything truly catastrophic.
-    if unrealized_pct < -Config.MAX_DRAWDOWN_PCT:
-        # 0.95+ conviction exemption: if model is near-certain and market is far from strike near expiry,
-        # ignore order book mid-price dips (which can trigger false drawdown at low liquidity).
-        if posterior is not None and posterior > 0.95 and minutes_remaining < 2.0 and distance is not None and abs(distance) > 50.0:
+    # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 2: TIERED TAKE-PROFITS (Req #1)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # Late-entry override: entry >= $0.95 → single tight TP at +2%
+    if entry_price >= Config.TP_LATE_ENTRY_THRESH:
+        tp_target = Config.TP_LATE_ENTRY_PCT
+        if unrealized_pct >= tp_target:
             log.info(
-                f"DRAWDOWN_EXEMPT: posterior={posterior:.3f} > 0.95, distance={abs(distance):.1f} > 50, rem={minutes_remaining:.1f} "
-                f"— ignoring drawdown exit near expiry"
+                "TP_LATE_ENTRY: entry=%.3f >= %.2f, unrealized=%.1f%% >= %.1f%% — exiting",
+                entry_price, Config.TP_LATE_ENTRY_THRESH,
+                unrealized_pct * 100, tp_target * 100,
             )
-            pass
+            return _exit("TP_LATE_ENTRY", use_maker=use_maker)
+    else:
+        # Normal tiered take-profits
+        if Config.TP_PARTIAL_ENABLED:
+            # Partial exits: 1/3 at each tier
+            if not tp3_hit and unrealized_pct >= Config.TP3_PCT:
+                log.info("TP3: unrealized=%.1f%% >= %.1f%% — selling remaining", unrealized_pct * 100, Config.TP3_PCT * 100)
+                return _exit("TP3", partial_pct=1.0, use_maker=use_maker)
+            if not tp2_hit and unrealized_pct >= Config.TP2_PCT:
+                log.info("TP2: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP2_PCT * 100)
+                return _exit("TP2", partial_pct=0.333, use_maker=use_maker)
+            if not tp1_hit and unrealized_pct >= Config.TP1_PCT:
+                log.info("TP1: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP1_PCT * 100)
+                return _exit("TP1", partial_pct=0.333, use_maker=use_maker)
+        else:
+            # Full exit at TP1 threshold (fallback when partial disabled)
+            if unrealized_pct >= Config.TP1_PCT:
+                log.info(
+                    "TP_FULL: unrealized=%.1f%% >= %.1f%% — full exit (partial disabled)",
+                    unrealized_pct * 100, Config.TP1_PCT * 100,
+                )
+                return _exit("TP_FULL", use_maker=use_maker)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 3: PROBABILITY-CONVERGENCE EXIT (Req #4)
+    # Market bid >= model posterior => market is paying our expected value early.
+    # ══════════════════════════════════════════════════════════════════════════
+
+    if Config.PROB_CONVERGENCE_ENABLED and posterior is not None and bid_price is not None:
+        if bid_price >= posterior and unrealized_pct > 0:
+            log.info(
+                "PROB_CONVERGENCE: bid=%.3f >= posterior=%.3f, unrealized=%.1f%% — taking early EV",
+                bid_price, posterior, unrealized_pct * 100,
+            )
+            return _exit("PROB_CONVERGENCE", use_maker=use_maker)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 4: STRUCTURAL MODEL REVERSAL (Req #5)
+    # Posterior collapsed from entry — more reliable than price-based stops
+    # on wide-spread 15m binaries.
+    # ══════════════════════════════════════════════════════════════════════════
+
+    if posterior is not None and _entry_post is not None:
+        posterior_drop = _entry_post - posterior
+        if posterior_drop >= Config.MODEL_REVERSAL_DROP_PCT:
+            log.warning(
+                "MODEL_REVERSAL: posterior=%.3f dropped %.1fpp from entry=%.3f (threshold=%.0fpp) — exiting",
+                posterior, posterior_drop * 100, _entry_post, Config.MODEL_REVERSAL_DROP_PCT * 100,
+            )
+            return _exit("MODEL_REVERSAL", use_maker=use_maker)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 5: EXISTING POSTERIOR-GATED EXITS (with ATR-adapted drawdown)
+    # ══════════════════════════════════════════════════════════════════════════
+
+    # 5a. Forced drawdown — volatility-adapted, posterior-gated
+    # Use ATR-scaled drawdown instead of the old static MAX_DRAWDOWN_PCT.
+    adapted_drawdown = min(
+        Config.MAX_DRAWDOWN_PCT * max(1.0, atr_ratio),
+        Config.VOL_STOP_MAX_PCT,
+    )
+    if unrealized_pct < -adapted_drawdown:
+        # 0.95+ conviction exemption near expiry with large distance
+        if (posterior is not None and posterior > 0.95 and minutes_remaining < 2.0
+                and distance is not None and abs(distance) > 50.0):
+            log.info(
+                "DRAWDOWN_EXEMPT: posterior=%.3f > 0.95, distance=%.1f > 50, rem=%.1f "
+                "— ignoring drawdown exit near expiry",
+                posterior, abs(distance), minutes_remaining,
+            )
         else:
             if unrealized_pct < -0.20:
-                return "FORCED_DRAWDOWN"   # unconditional beyond 20% (belt+suspenders)
-            # Gate with posterior: only hold if model is still convinced (< 5pp drop from entry)
+                return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
+            # Gate with posterior: only hold if model still convinced
             if posterior is None or posterior <= _entry_post - 0.05:
-                return "FORCED_DRAWDOWN"
+                return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
             log.info(
-                f"DRAWDOWN_HELD: unrealized={unrealized_pct*100:.1f}% but posterior={posterior:.3f}"
-                f" still near entry={_entry_post:.3f} — holding"
+                "DRAWDOWN_HELD: unrealized=%.1f%% but posterior=%.3f"
+                " still near entry=%.3f — holding",
+                unrealized_pct * 100, posterior, _entry_post,
             )
 
-    # 1b. Explicit adverse selection / book flip.
-    # If the book flips meaningfully against our side for multiple cycles, exit.
+    # 5b. Explicit adverse selection / book flip.
     _book_flip_cycles = getattr(Config, "BOOK_FLIP_CONFIRM_CYCLES", None)
     _book_flip_imb = getattr(Config, "BOOK_FLIP_IMB_THRESH", None)
     if _book_flip_cycles is not None and _book_flip_imb is not None:
         if book_flip_count >= _book_flip_cycles and abs(obi) >= _book_flip_imb:
             if held_side == "YES" and obi < 0:
-                return "BOOK_FLIP"
+                return _exit("BOOK_FLIP", use_maker=use_maker)
             if held_side == "NO" and obi > 0:
-                return "BOOK_FLIP"
+                return _exit("BOOK_FLIP", use_maker=use_maker)
 
-    # ── TRAILING POSTERIOR GUARD (suppresses soft exits 2-8 only) ─────────────
-    # Holds the position while the Bayesian model still believes in the trade.
-    # Only runs after hard breakers above — it CANNOT override HARD_STOP or FORCED_LATE_EXIT.
-    # Tolerance scales with profitability — hold winners tighter, give modest losers room.
-    # When losing >10%, tighten tolerance: the model is increasingly suspect vs market price.
-    # High confidence override: if posterior > 0.95, hold unless it drops significantly (>10pp).
+    # ── TRAILING POSTERIOR GUARD (suppresses soft exits below) ────────────────
     if posterior is not None and unrealized_pct >= 0:
         if posterior > 0.95:
-             # Near-certain: very loose tolerance (0.10) to avoid being shaken out by noise.
-             _tol = 0.10
+            _tol = 0.10
         elif unrealized_pct > 0.05:
-            _tol = 0.02   # winning >5%: tight hold
+            _tol = 0.02
         elif unrealized_pct > 0:
-            _tol = 0.03   # small win
+            _tol = 0.03
+        else:
+            _tol = 0.05
 
         if posterior > _entry_post - _tol:
-            return None   # model still believes — hold for soft exit conditions
+            return None   # model still believes — hold
 
-    # 1c. Volatility-adjusted trailing (ATR-aware) using peak posterior.
-    # Only arm once in profit and after minimal holding time to avoid whipsaw.
+    # 5c. Volatility-adjusted trailing (ATR-aware) using peak posterior.
     if (
         posterior is not None
         and hold_seconds >= Config.TRAIL_MIN_HOLD_SEC
         and unrealized_pct >= Config.TRAIL_ARM_MIN_PROFIT_PCT
         and _peak_post is not None
     ):
-        eff_atr = atr14 if (atr14 is not None and atr14 > 0) else Config.TRAIL_ATR_REF
-        atr_scale = max(0.0, min(2.0, eff_atr / max(Config.TRAIL_ATR_REF, 1e-6)))
-        allow_drop = Config.TRAIL_BASE_POST_DROP + Config.TRAIL_ATR_SCALE * (atr_scale - 1.0)
+        trail_atr_scale = max(0.0, min(2.0, eff_atr / max(Config.TRAIL_ATR_REF, 1e-6)))
+        allow_drop = Config.TRAIL_BASE_POST_DROP + Config.TRAIL_ATR_SCALE * (trail_atr_scale - 1.0)
         allow_drop = max(Config.TRAIL_MIN_POST_DROP, min(Config.TRAIL_MAX_POST_DROP, allow_drop))
         if posterior <= _peak_post - allow_drop:
-            return "TRAIL_POSTERIOR"
+            return _exit("TRAIL_POSTERIOR", use_maker=use_maker)
 
-    # 2. Forced profit lock (near expiry, strong profit)
+    # 5d. Forced profit lock (near expiry, strong profit)
     if minutes_remaining <= Config.FORCED_PROFIT_LOCK_MIN_REM:
         if unrealized_pct > Config.FORCED_PROFIT_PCT:
-            return "FORCED_PROFIT_LOCK"
+            return _exit("FORCED_PROFIT_LOCK", use_maker=use_maker)
 
-    # 4. Take profit
+    # 5e. Absolute price take-profit
     if current_price >= Config.TAKE_PROFIT_PRICE:
-        return "TAKE_PROFIT"
+        return _exit("TAKE_PROFIT", use_maker=use_maker)
 
-    # 4a. Take profit at 10% from entry
-    if unrealized_pct >= 0.10:
-        log.info(f"TAKE_PROFIT_10PCT: unrealized={unrealized_pct*100:.1f}% >= 10% from entry")
-        return "TAKE_PROFIT_10PCT"
+    # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 6: TIME-DECAY-ENHANCED MICROSTRUCTURE EXITS (Req #6)
+    # In the final 2 minutes, exponential multiplier makes adverse OFI/distance
+    # thresholds tighter — less adverse flow triggers protective exits.
+    # ══════════════════════════════════════════════════════════════════════════
 
-    # 4b. Take small profit: lock in 3% gain quickly
-    if unrealized_pct > 0.03:
-        log.info(f"TAKE_SMALL_PROFIT: unrealized={unrealized_pct*100:.1f}% > 3%")
-        return "TAKE_SMALL_PROFIT"
-
-    # 4b. Dynamic profit-taking based on signal strength, time, and microstructure
-    # Posterior-gated (trailing guard above suppresses if model still believes)
+    # Dynamic profit-taking based on signal strength, time, and microstructure
     abs_score = abs(signed_score)
-    entry_abs_score = abs(entry_score)
     profit_threshold = None
 
-    # Strong signals: 25% in early window
+    # Strong signals
     if (abs_score >= Config.TAKE_PROFIT_STRONG_SCORE and
         posterior is not None and posterior >= Config.TAKE_PROFIT_STRONG_POSTERIOR and
         minutes_remaining <= Config.TAKE_PROFIT_STRONG_MAX_MIN):
         profit_threshold = Config.TAKE_PROFIT_STRONG_PCT
 
-    # Moderate signals: 10% in mid-window
+    # Moderate signals
     elif (abs_score >= Config.TAKE_PROFIT_MODERATE_SCORE and
           posterior is not None and posterior >= Config.TAKE_PROFIT_MODERATE_POSTERIOR and
           minutes_remaining > Config.TAKE_PROFIT_STRONG_MAX_MIN and
           minutes_remaining <= Config.TAKE_PROFIT_MODERATE_MAX_MIN):
         profit_threshold = Config.TAKE_PROFIT_MODERATE_PCT
 
-    # Weak signals: 5% in late window or toxic microstructure
+    # Weak signals
     elif (abs_score >= Config.TAKE_PROFIT_WEAK_SCORE and
           posterior is not None and posterior >= Config.TAKE_PROFIT_WEAK_POSTERIOR and
           (minutes_remaining > Config.TAKE_PROFIT_MODERATE_MAX_MIN or
@@ -225,33 +370,33 @@ def evaluate_exit(
 
         if unrealized_pct > profit_threshold:
             log.info(
-                f"TAKE_PROFIT_DYNAMIC: unrealized={unrealized_pct*100:.1f}% > {profit_threshold*100:.1f}% "
-                f"(score={abs_score:.1f}, posterior={posterior:.3f if posterior else 'N/A'}, "
-                f"min_rem={minutes_remaining:.1f}, vpin={vpin:.3f})"
+                "TAKE_PROFIT_DYNAMIC: unrealized=%.1f%% > %.1f%% "
+                "(score=%.1f, posterior=%s, min_rem=%.1f, vpin=%.3f)",
+                unrealized_pct * 100, profit_threshold * 100,
+                abs_score,
+                f"{posterior:.3f}" if posterior else "N/A",
+                minutes_remaining, vpin,
             )
-            return "TAKE_PROFIT_DYNAMIC"
+            return _exit("TAKE_PROFIT_DYNAMIC", use_maker=use_maker)
 
-    # Minimum hold gate: conditions 5-8 require at least 60s in position.
-    # Avoids whipsaw exits on EMA lag and first-candle noise immediately post-fill.
+    # Minimum hold gate: conditions below require at least 60s in position.
     if hold_seconds < 60.0:
         return None
 
-    # 5. Alpha decay (score reversed significantly vs entry)
+    # 6a. Alpha decay (score reversed significantly vs entry)
     score_delta = signed_score - entry_score
     if held_side == "YES" and score_delta < -Config.STOP_LOSS_DELTA:
-        return "ALPHA_DECAY"
+        return _exit("ALPHA_DECAY", use_maker=use_maker)
     if held_side == "NO" and score_delta > Config.STOP_LOSS_DELTA:
-        return "ALPHA_DECAY"
+        return _exit("ALPHA_DECAY", use_maker=use_maker)
 
-    # 6. Momentum reversal — CVD flipped against position
+    # 6b. Momentum reversal — CVD flipped against position
     if held_side == "YES" and cvd_delta < -0.5 and unrealized_pct < 0 and minutes_remaining < 8.0:
-        return "MOMENTUM_REVERSAL"
+        return _exit("MOMENTUM_REVERSAL", use_maker=use_maker)
     if held_side == "NO" and cvd_delta > 0.5 and unrealized_pct < 0 and minutes_remaining < 8.0:
-        return "MOMENTUM_REVERSAL"
+        return _exit("MOMENTUM_REVERSAL", use_maker=use_maker)
 
-    # 6b. Microstructure confirmation exit: reverse CVD velocity and deep OFI.
-    # Trigger only when position is not clearly winning — this is primarily adverse-selection defense.
-    # Consolidated with adverse OFI: includes near-expiry losing positions with high posterior.
+    # 6c. Microstructure confirmation exit with time-decay-scaled thresholds (Req #6)
     microstructure_trigger = False
     if unrealized_pct < 0.01 and minutes_remaining < 10.0:
         microstructure_trigger = True
@@ -259,29 +404,37 @@ def evaluate_exit(
         microstructure_trigger = True
 
     if microstructure_trigger:
-        ofi_rev = abs(deep_ofi) > 0 and ((held_side == "YES" and deep_ofi < -Config.EXIT_DEEP_OFI_REV_THRESH) or (held_side == "NO" and deep_ofi > Config.EXIT_DEEP_OFI_REV_THRESH))
-        cvd_vel_rev = abs(cvd_velocity) > 0 and ((held_side == "YES" and cvd_velocity < -Config.EXIT_CVD_VEL_REV_THRESH) or (held_side == "NO" and cvd_velocity > Config.EXIT_CVD_VEL_REV_THRESH))
-        if ofi_rev or cvd_vel_rev:  # Consolidated: trigger on either OFI or CVD reversal
-            return "MICRO_REVERSAL"
+        # Apply time-decay multiplier: divide thresholds by td_mult to make them tighter
+        _ofi_thresh = Config.EXIT_DEEP_OFI_REV_THRESH / td_mult
+        _cvd_thresh = Config.EXIT_CVD_VEL_REV_THRESH / td_mult
 
-    # 7. Probability decay — posterior declining while losing AND cvd reverses
+        ofi_rev = abs(deep_ofi) > 0 and (
+            (held_side == "YES" and deep_ofi < -_ofi_thresh) or
+            (held_side == "NO" and deep_ofi > _ofi_thresh)
+        )
+        cvd_vel_rev = abs(cvd_velocity) > 0 and (
+            (held_side == "YES" and cvd_velocity < -_cvd_thresh) or
+            (held_side == "NO" and cvd_velocity > _cvd_thresh)
+        )
+        if ofi_rev or cvd_vel_rev:
+            return _exit("MICRO_REVERSAL", use_maker=use_maker)
+
+    # 6d. Probability decay — posterior declining while losing AND cvd reverses
     if posterior is not None and prev_posterior is not None:
         post_decline = prev_posterior - posterior
         cvd_reversal = (held_side == "YES" and cvd_delta < -0.5) or (held_side == "NO" and cvd_delta > 0.5)
         if post_decline > 0.08 and cvd_reversal:
-            return "PROBABILITY_DECAY"
+            return _exit("PROBABILITY_DECAY", use_maker=use_maker)
 
-    # 8. Time-decay exit — only exit LOSING positions very near expiry.
-    # Tightened to <2min: at 2-3min remaining a losing binary can still recover;
-    # exiting at 0.78 forfeits the chance to settle at $1.00 if the posterior is high.
+    # 6e. Time-decay exit — only exit LOSING positions very near expiry.
     if minutes_remaining < 2.0 and unrealized_pct < -0.02:
-        # Final posterior check: if model is still >60% confident, hold to settlement
+        # Final posterior check: if model is still >60% confident, hold
         if posterior is not None and posterior > 0.60:
             log.info(
-                f"TIME_DECAY_HELD: {minutes_remaining:.1f}min rem, "
-                f"unrealized={unrealized_pct*100:.1f}%, posterior={posterior:.3f} — holding for settlement"
+                "TIME_DECAY_HELD: %.1fmin rem, unrealized=%.1f%%, posterior=%.3f — holding for settlement",
+                minutes_remaining, unrealized_pct * 100, posterior,
             )
             return None
-        return "TIME_DECAY"
+        return _exit("TIME_DECAY", use_maker=use_maker)
 
     return None

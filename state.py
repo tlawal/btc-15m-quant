@@ -47,6 +47,10 @@ class HeldPosition:
     market_expiry: Optional[int]    = None   # expiry ts of the market this position is on
     entry_posterior: Optional[float] = None  # posterior at entry for trailing
     tx_hash: Optional[str]          = None   # transaction hash for link
+    # Tiered take-profit tracking (persists across cycles)
+    tp1_hit: bool                   = False  # TP1 (5%) already triggered
+    tp2_hit: bool                   = False  # TP2 (12%) already triggered
+    tp3_hit: bool                   = False  # TP3 (20%) already triggered
 
 
 @dataclass

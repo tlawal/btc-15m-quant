@@ -110,6 +110,34 @@ class Config:
     TRAIL_ARM_MIN_PROFIT_PCT   = 0.01     # only arm trailing after at least +1% unrealized
     TRAIL_MIN_HOLD_SEC         = 30.0     # minimum hold before trailing can trigger
 
+    # ── Tiered Take-Profit (percentage from entry) ─────────────────────────
+    TP1_PCT                    = 0.05     # +5% → sell 1/3 (or full if partial disabled)
+    TP2_PCT                    = 0.12     # +12% → sell 1/3
+    TP3_PCT                    = 0.20     # +20% → sell remaining
+    TP_LATE_ENTRY_THRESH       = 0.95     # entry >= $0.95 triggers single TP
+    TP_LATE_ENTRY_PCT          = 0.02     # +2% single TP for late entries
+    TP_PARTIAL_ENABLED         = False    # flip to True when ready for 1/3 scaling
+
+    # ── Volatility-Adapted Stop-Loss (ATR-normalized) ────────────────────
+    VOL_STOP_BASE_PCT          = 0.15     # base max drawdown
+    VOL_STOP_ATR_BASELINE      = 150.0    # daily average baseline BTC ATR ($)
+    VOL_STOP_MAX_PCT           = 0.30     # absolute cap on widened drawdown
+
+    # ── Spread-Aware Exiting ─────────────────────────────────────────────
+    SPREAD_AGGRESSIVE_THRESH   = 0.10     # spread >10% = don't cross aggressively
+    SPREAD_EXPIRY_OVERRIDE_SEC = 60       # unless <60s to expiry
+    SPREAD_MAKER_TICK          = 0.01     # place limit at best_bid + tick
+
+    # ── Probability-Convergence Exit ─────────────────────────────────────
+    PROB_CONVERGENCE_ENABLED   = True     # exit when bid >= posterior
+
+    # ── Structural Model Reversal ────────────────────────────────────────
+    MODEL_REVERSAL_DROP_PCT    = 0.15     # exit if posterior drops 15pp from entry
+
+    # ── Exponential Time-Decay Multiplier ────────────────────────────────
+    TIME_DECAY_WINDOW_MIN      = 2.0      # activate in final 2 minutes
+    TIME_DECAY_EXP_BASE        = 3.0      # exponential base for sensitivity scaling
+
     # Microstructure confirmation exits
     EXIT_CVD_VEL_REV_THRESH    = 0.50     # reverse CVD velocity threshold (units: from cvd_ws slope)
     EXIT_DEEP_OFI_REV_THRESH   = 0.20     # reverse normalized deep OFI threshold

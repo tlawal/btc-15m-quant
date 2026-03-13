@@ -1697,7 +1697,10 @@ class Engine:
             setattr(pos, "book_flip_count", 0)
 
         hold_secs = float(int(time.time()) - (pos.placed_at_ts or int(time.time())))
-        reason = evaluate_exit(
+        # Resolve bid/ask for spread-aware exits
+        _exit_bid = (ob.yes_bid if pos.side == "YES" else ob.no_bid) or current_px or entry_px
+        _exit_ask = (ob.yes_ask if pos.side == "YES" else ob.no_ask) or current_px or entry_px
+        exit_result = evaluate_exit(
             held_side         = pos.side,
             entry_price       = entry_px,
             current_price     = current_px,
@@ -1719,10 +1722,20 @@ class Engine:
             hold_seconds      = hold_secs,
             entry_min_rem     = getattr(pos, "entry_min_rem", None),
             yes_mid           = getattr(sig, "yes_mid", 0.5),
+            bid_price         = _exit_bid,
+            ask_price         = _exit_ask,
+            tp1_hit           = getattr(pos, "tp1_hit", False),
+            tp2_hit           = getattr(pos, "tp2_hit", False),
+            tp3_hit           = getattr(pos, "tp3_hit", False),
         )
+        # Unpack structured exit result (dict or None)
+        if not exit_result:
+            return False
+        reason      = exit_result["reason"]
+        partial_pct = exit_result.get("partial_pct", 1.0)
+        use_maker   = exit_result.get("use_maker", False)
+
         if reason == "FORCED_LATE_EXIT" and getattr(pos, "entry_min_rem", None) is not None:
-            reason = None
-        if not reason:
             return False
 
         # Phase A: log exit attempt for counterfactual analysis
@@ -1743,6 +1756,9 @@ class Engine:
             )
         except Exception as _ex_log_err:
             log.warning(f"exit log error: {_ex_log_err}")
+
+        # Compute sell size (partial or full)
+        sell_size = pos.size if partial_pct >= 1.0 else max(1, int(pos.size * partial_pct))
 
         # Paper-trade mode: apply exits locally without touching Polymarket.
         if Config.PAPER_TRADE_ENABLED:
@@ -1766,10 +1782,10 @@ class Engine:
                 await self.state_mgr.record_closed_trade(
                     ts=int(time.time()),
                     market_slug=self.state.last_market_slug or "unknown",
-                    size=pos.size,
+                    size=sell_size,
                     entry_price=entry_px,
                     exit_price=current_px,
-                    pnl_usd=(current_px - entry_px) * pos.size if entry_px > 0 else 0.0,
+                    pnl_usd=(current_px - entry_px) * sell_size if entry_px > 0 else 0.0,
                     outcome_win=1 if outcome == "WIN" else 0,
                     regime=getattr(self.state, "entry_regime", None),
                     features=getattr(self.state, "entry_features", None),
@@ -1785,10 +1801,24 @@ class Engine:
             else:
                 self.state.total_losses += 1
 
-            self.state.total_pnl_usd += (current_px - entry_px) * pos.size if entry_px > 0 else 0.0
-            self.state.held_position = HeldPosition()
+            self.state.total_pnl_usd += (current_px - entry_px) * sell_size if entry_px > 0 else 0.0
+
+            # Update TP tier state and handle partial vs full exits
+            if reason in ("TP1", "TP2", "TP3", "TP_FULL", "TP_LATE_ENTRY") and partial_pct < 1.0:
+                if reason == "TP1":
+                    pos.tp1_hit = True
+                elif reason == "TP2":
+                    pos.tp2_hit = True
+                elif reason == "TP3":
+                    pos.tp3_hit = True
+                pos.size = max(0, pos.size - sell_size)
+                if pos.size <= 0:
+                    self.state.held_position = HeldPosition()
+            else:
+                self.state.held_position = HeldPosition()
+
             self._last_exit_reason = reason
-            log.info(f"PAPER EXIT: {pos.side} reason={reason} pnl={pnl_pct*100:.2f}%")
+            log.info(f"PAPER EXIT: {pos.side} reason={reason} pnl={pnl_pct*100:.2f}% sell_size={sell_size}")
             return True
 
         # Cancel open limit orders first
@@ -1796,30 +1826,47 @@ class Engine:
             for oid in await self.pm.get_open_orders(self.state.last_condition_id):
                 await self.pm.cancel_order(oid)
 
-        # Execute exit — use bid price for FOK exits (ensures fill on thin books)
-        # For GTC exits, mid is acceptable as a limit price
-        exit_bid = (ob.yes_bid if pos.side == "YES" else ob.no_bid) or current_px or entry_px
+        # Execute exit — spread-aware order placement
+        exit_bid = _exit_bid
         exit_px_gtc = current_px or entry_px
         # Clamp to Polymarket valid price range [0.01, 0.99]
         exit_bid = max(0.01, min(0.99, exit_bid))
         exit_px_gtc = max(0.01, min(0.99, exit_px_gtc))
-        _fok_reasons = ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT", "HARD_STOP")
+
+        # Emergency reasons use FOK at bid for guaranteed fill
+        _fok_reasons = ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT", "VOL_HARD_STOP",
+                        "FORCED_ADVERSE_OFI", "FORCED_DISTANCE_LATE")
         if reason in _fok_reasons:
-            order_id = await self.pm.limit_sell(pos.token_id, exit_bid, pos.size, order_type="FOK")
+            order_id = await self.pm.limit_sell(pos.token_id, exit_bid, sell_size, order_type="FOK")
+            exit_px = exit_bid
+        elif use_maker:
+            # Spread-aware: place maker limit at best_bid + tick to capture spread
+            maker_px = max(0.01, min(0.99, exit_bid + Config.SPREAD_MAKER_TICK))
+            order_id = await self.pm.limit_sell(pos.token_id, maker_px, sell_size, order_type="GTC")
+            exit_px = maker_px
+            log.info(f"SPREAD_AWARE_EXIT: maker limit at {maker_px:.2f} (bid={exit_bid:.2f}, spread tick={Config.SPREAD_MAKER_TICK})")
         else:
-            order_id = await self.pm.limit_sell(pos.token_id, exit_px_gtc, pos.size, order_type="GTC")
-        exit_px = exit_bid if reason in _fok_reasons else exit_px_gtc
+            order_id = await self.pm.limit_sell(pos.token_id, exit_px_gtc, sell_size, order_type="GTC")
+            exit_px = exit_px_gtc
 
         if not order_id:
             log.error(f"Exit order failed ({reason})")
             return False
+
+        # Update TP tier flags for partial exits
+        if reason == "TP1":
+            pos.tp1_hit = True
+        elif reason == "TP2":
+            pos.tp2_hit = True
+        elif reason == "TP3":
+            pos.tp3_hit = True
 
         # Phase 3: Wait for _reconcile_pending_order to confirm fill
         pos.is_pending = True
         pos.order_id = order_id
         pos.exit_reason = reason
         pos.intended_exit_price = exit_px
-        log.info(f"Exit order placed ({order_id}) for {reason} — waiting for fill")
+        log.info(f"Exit order placed ({order_id}) for {reason} — sell_size={sell_size} use_maker={use_maker} — waiting for fill")
         return True
 
 
