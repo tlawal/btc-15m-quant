@@ -72,25 +72,42 @@ class Engine:
 
         self._manual_cmd_q: asyncio.Queue = asyncio.Queue()
 
+    # ── Dashboard manual exit — direct execution (no queue delay) ────────
     async def enqueue_manual_exit_limit(self, *, price: float, order_type: str = "GTC") -> dict:
-        await self._manual_cmd_q.put({"op": "exit_limit", "price": float(price), "order_type": str(order_type)})
-        return {"ok": True}
+        """Called directly from dashboard API — executes immediately."""
+        try:
+            result = await self._manual_exit_limit(price=float(price), order_type=str(order_type))
+            return result or {"status": "ok", "message": "Limit exit placed"}
+        except Exception as e:
+            log.error(f"enqueue_manual_exit_limit failed: {e}")
+            return {"status": "error", "message": str(e)}
 
     async def enqueue_manual_exit_replace(self, *, price: float) -> dict:
-        await self._manual_cmd_q.put({"op": "exit_replace", "price": float(price)})
-        return {"ok": True}
+        try:
+            result = await self._manual_exit_replace(price=float(price))
+            return result or {"status": "ok", "message": "Exit order replaced"}
+        except Exception as e:
+            log.error(f"enqueue_manual_exit_replace failed: {e}")
+            return {"status": "error", "message": str(e)}
 
     async def enqueue_manual_exit_cancel(self) -> dict:
-        await self._manual_cmd_q.put({"op": "exit_cancel"})
-        return {"ok": True}
+        try:
+            result = await self._manual_exit_cancel()
+            return result or {"status": "ok", "message": "Exit order cancelled"}
+        except Exception as e:
+            log.error(f"enqueue_manual_exit_cancel failed: {e}")
+            return {"status": "error", "message": str(e)}
 
     async def enqueue_manual_exit_now(self) -> dict:
-        await self._manual_cmd_q.put({"op": "exit_now"})
-        return {"ok": True}
+        try:
+            result = await self._manual_exit_now()
+            return result or {"status": "ok", "message": "Market sell placed"}
+        except Exception as e:
+            log.error(f"enqueue_manual_exit_now failed: {e}")
+            return {"status": "error", "message": str(e)}
 
     async def _process_manual_commands(self):
-        # Process all queued manual commands quickly at the start of a cycle.
-        # Only supports exit-only management of the current held_position.
+        # Process any queued manual commands (fallback path).
         while True:
             try:
                 cmd = self._manual_cmd_q.get_nowait()
@@ -112,80 +129,96 @@ class Engine:
     async def _manual_exit_limit(self, *, price: float, order_type: str = "GTC"):
         pos = self.state.held_position
         if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
-            log.warning("manual_exit_limit: no active position")
-            return
-        if pos.is_pending:
-            log.warning("manual_exit_limit: position has pending order; try cancel/replace after fill")
-            return
+            log.warning("MANUAL UI EXIT: no active position — cannot place limit exit")
+            return {"status": "error", "message": "No active position"}
+        # If there's an existing pending order, cancel it first before placing new one
+        if pos.is_pending and pos.order_id:
+            log.warning(f"MANUAL UI EXIT: cancelling existing pending order {pos.order_id} before placing new limit exit")
+            try:
+                await self.pm.cancel_order(str(pos.order_id))
+            except Exception as e:
+                log.warning(f"MANUAL UI EXIT: cancel of existing order failed: {e} — proceeding anyway")
+            pos.is_pending = False
+            pos.order_id = None
         px = max(0.01, min(0.99, round(float(price), 2)))
         oid = await self.pm.limit_sell(str(pos.token_id), px, float(pos.size), order_type=order_type)
         if not oid:
-            log.warning("manual_exit_limit: order placement failed")
-            return
+            log.warning("MANUAL UI EXIT: limit sell order placement failed")
+            return {"status": "error", "message": "Order placement failed on CLOB"}
         pos.exit_reason = "MANUAL_LIMIT_EXIT"
         pos.intended_exit_price = px
         pos.order_id = oid
         pos.is_pending = True
         pos.placed_at_ts = int(time.time())
-        log.warning(f"MANUAL_EXIT_LIMIT_PLACED: side={pos.side} price={px:.3f} size={pos.size} oid={oid}")
+        log.warning(f"MANUAL UI EXIT TRIGGERED: limit exit placed — side={pos.side} price={px:.3f} size={pos.size} type={order_type} oid={oid}")
+        return {"status": "ok", "message": f"Limit exit placed at {px:.3f} ({order_type})"}
 
     async def _manual_exit_replace(self, *, price: float):
         pos = self.state.held_position
         if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
-            log.warning("manual_exit_replace: no active position")
-            return
+            log.warning("MANUAL UI EXIT: no active position — cannot replace")
+            return {"status": "error", "message": "No active position"}
         if not pos.order_id:
-            log.warning("manual_exit_replace: no existing order_id to replace")
-            return
+            log.warning("MANUAL UI EXIT: no existing order_id to replace")
+            return {"status": "error", "message": "No existing order to replace"}
         px = max(0.01, min(0.99, round(float(price), 2)))
         new_oid = await self.pm.replace_order(old_order_id=str(pos.order_id), token_id=str(pos.token_id), new_price=px, size=float(pos.size), side="SELL", order_type="GTC")
         if not new_oid:
-            log.warning("manual_exit_replace: replace failed")
-            return
+            log.warning("MANUAL UI EXIT: replace failed")
+            return {"status": "error", "message": "Order replace failed on CLOB"}
         pos.exit_reason = "MANUAL_LIMIT_EXIT"
         pos.intended_exit_price = px
         pos.order_id = new_oid
         pos.is_pending = True
         pos.placed_at_ts = int(time.time())
-        log.warning(f"MANUAL_EXIT_REPLACED: side={pos.side} price={px:.3f} size={pos.size} oid={new_oid}")
+        log.warning(f"MANUAL UI EXIT TRIGGERED: order replaced — side={pos.side} price={px:.3f} size={pos.size} oid={new_oid}")
+        return {"status": "ok", "message": f"Exit order replaced at {px:.3f}"}
 
     async def _manual_exit_cancel(self):
         pos = self.state.held_position
         if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
-            log.warning("manual_exit_cancel: no active position")
-            return
+            log.warning("MANUAL UI EXIT: no active position — cannot cancel")
+            return {"status": "error", "message": "No active position"}
         if not pos.order_id:
-            log.warning("manual_exit_cancel: no order_id to cancel")
-            return
+            log.warning("MANUAL UI EXIT: no order_id to cancel")
+            return {"status": "error", "message": "No existing order to cancel"}
         try:
             await self.pm.cancel_order(str(pos.order_id))
         except Exception as e:
-            log.warning(f"manual_exit_cancel: cancel failed: {e}")
-            return
+            log.warning(f"MANUAL UI EXIT: cancel failed: {e}")
+            return {"status": "error", "message": f"Cancel failed: {e}"}
         pos.is_pending = False
         pos.exit_reason = None
         pos.intended_exit_price = None
         pos.order_id = None
-        log.warning("MANUAL_EXIT_CANCELED")
+        log.warning("MANUAL UI EXIT TRIGGERED: exit order cancelled")
+        return {"status": "ok", "message": "Exit order cancelled"}
 
     async def _manual_exit_now(self):
         pos = self.state.held_position
         if not pos.side or not pos.token_id or not pos.size or pos.size <= 0:
-            log.warning("manual_exit_now: no active position")
-            return
-        if pos.is_pending:
-            log.warning("manual_exit_now: position has pending order")
-            return
+            log.warning("MANUAL UI EXIT: no active position — cannot force-exit")
+            return {"status": "error", "message": "No active position"}
+        # If there's a pending order, cancel it first — user wants immediate exit
+        if pos.is_pending and pos.order_id:
+            log.warning(f"MANUAL UI EXIT: cancelling existing pending order {pos.order_id} before force-exit")
+            try:
+                await self.pm.cancel_order(str(pos.order_id))
+            except Exception as e:
+                log.warning(f"MANUAL UI EXIT: cancel of existing order failed: {e} — proceeding with market sell anyway")
+            pos.is_pending = False
+            pos.order_id = None
         oid = await self.pm.market_sell(str(pos.token_id), float(pos.size))
         if not oid:
-            log.warning("manual_exit_now: order placement failed")
-            return
+            log.warning("MANUAL UI EXIT: market sell order placement failed")
+            return {"status": "error", "message": "Market sell failed on CLOB"}
         pos.exit_reason = "MANUAL_EXIT_NOW"
         pos.intended_exit_price = None
         pos.order_id = oid
         pos.is_pending = True
         pos.placed_at_ts = int(time.time())
-        log.warning(f"MANUAL_EXIT_NOW_PLACED: side={pos.side} size={pos.size} oid={oid}")
+        log.warning(f"MANUAL UI EXIT TRIGGERED: force-closing position — side={pos.side} size={pos.size} oid={oid}")
+        return {"status": "ok", "message": f"Market sell placed for {pos.size} shares"}
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

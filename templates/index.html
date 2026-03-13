@@ -1555,20 +1555,30 @@ async function postManual(path, body) {
         alert('Missing Admin Token (set DASHBOARD_ADMIN_TOKEN on server and paste it here).');
         return;
     }
-    const res = await fetch(path, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'X-Admin-Token': token,
-        },
-        body: body ? JSON.stringify(body) : '{}',
-    });
-    const data = await res.json().catch(()=>({}));
-    if (!res.ok) {
-        alert((data && data.message) ? data.message : ('Request failed: ' + res.status));
-        return;
+    try {
+        const res = await fetch(path, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Admin-Token': token,
+            },
+            body: body ? JSON.stringify(body) : '{}',
+        });
+        const data = await res.json().catch(()=>({}));
+        if (!res.ok) {
+            alert('❌ ' + ((data && data.message) ? data.message : ('Request failed: ' + res.status)));
+            return;
+        }
+        // Show success feedback
+        if (data && data.message) {
+            alert('✅ ' + data.message);
+        }
+        // Refresh UI to reflect changes
+        updateUI();
+        return data;
+    } catch(e) {
+        alert('❌ Network error: ' + e);
     }
-    return data;
 }
 
 async function manualExitPlace() {

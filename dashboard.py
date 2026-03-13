@@ -343,8 +343,10 @@ async def manual_exit_limit(request: Request):
         order_type = str((data or {}).get("order_type") or "GTC").upper()
         if order_type not in ("GTC", "FOK", "IOC"):
             order_type = "GTC"
-        await engine.enqueue_manual_exit_limit(price=price, order_type=order_type)
-        return {"status": "ok"}
+        result = await engine.enqueue_manual_exit_limit(price=price, order_type=order_type)
+        if result.get("status") == "error":
+            return JSONResponse(result, status_code=400)
+        return result
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
 
@@ -359,8 +361,10 @@ async def manual_exit_replace(request: Request):
     try:
         data = await request.json()
         price = float((data or {}).get("price"))
-        await engine.enqueue_manual_exit_replace(price=price)
-        return {"status": "ok"}
+        result = await engine.enqueue_manual_exit_replace(price=price)
+        if result.get("status") == "error":
+            return JSONResponse(result, status_code=400)
+        return result
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
 
@@ -373,8 +377,10 @@ async def manual_exit_cancel(request: Request):
     if not engine:
         return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
     try:
-        await engine.enqueue_manual_exit_cancel()
-        return {"status": "ok"}
+        result = await engine.enqueue_manual_exit_cancel()
+        if result.get("status") == "error":
+            return JSONResponse(result, status_code=400)
+        return result
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
 
@@ -387,8 +393,10 @@ async def manual_exit_now(request: Request):
     if not engine:
         return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
     try:
-        await engine.enqueue_manual_exit_now()
-        return {"status": "ok"}
+        result = await engine.enqueue_manual_exit_now()
+        if result.get("status") == "error":
+            return JSONResponse(result, status_code=400)
+        return result
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
 
