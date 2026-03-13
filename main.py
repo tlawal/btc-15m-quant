@@ -135,6 +135,7 @@ class Engine:
         requested_size = float(pos.size)
         available_size = None
         sell_size = requested_size
+        full_close = False
         try:
             live_positions = await self.pm.get_positions()
             for p in live_positions or []:
@@ -143,8 +144,14 @@ class Engine:
                     break
             if available_size is not None and available_size > 0:
                 sell_size = min(sell_size, available_size)
-            # Safety buffer + round down to avoid overselling due to decimals.
-            sell_size = max(0.0, sell_size - 0.001)
+            # Full-close sizing: if user is effectively closing, sell the full available size
+            # (rounded down), without a safety buffer that can create leftovers.
+            if available_size is not None and requested_size >= (available_size - 0.001):
+                full_close = True
+                sell_size = available_size
+            if not full_close:
+                # Safety buffer + round down to avoid overselling due to decimals.
+                sell_size = max(0.0, sell_size - 0.001)
             sell_size = math.floor(sell_size * 10000.0) / 10000.0
         except Exception as e:
             log.warning(f"MANUAL UI EXIT: failed to fetch live position size; using state size. err={e}")
@@ -168,6 +175,9 @@ class Engine:
                 "available_size": available_size,
                 "sell_size_used": sell_size,
             }
+        # IMPORTANT: set position size to the intended exit size so reconciliation can
+        # correctly close the position when matched >= pos.size.
+        pos.size = float(sell_size)
         pos.exit_reason = "MANUAL_LIMIT_EXIT"
         pos.intended_exit_price = px
         pos.order_id = oid
@@ -203,6 +213,7 @@ class Engine:
         requested_size = float(pos.size)
         available_size = None
         sell_size = requested_size
+        full_close = False
         try:
             live_positions = await self.pm.get_positions()
             for p in live_positions or []:
@@ -211,7 +222,11 @@ class Engine:
                     break
             if available_size is not None and available_size > 0:
                 sell_size = min(sell_size, available_size)
-            sell_size = max(0.0, sell_size - 0.001)
+            if available_size is not None and requested_size >= (available_size - 0.001):
+                full_close = True
+                sell_size = available_size
+            if not full_close:
+                sell_size = max(0.0, sell_size - 0.001)
             sell_size = math.floor(sell_size * 10000.0) / 10000.0
         except Exception as e:
             log.warning(f"MANUAL UI EXIT: failed to fetch live position size for replace; using state size. err={e}")
@@ -234,6 +249,7 @@ class Engine:
                 "available_size": available_size,
                 "sell_size_used": sell_size,
             }
+        pos.size = float(sell_size)
         pos.exit_reason = "MANUAL_LIMIT_EXIT"
         pos.intended_exit_price = px
         pos.order_id = new_oid
@@ -285,6 +301,7 @@ class Engine:
         requested_size = float(pos.size)
         available_size = None
         sell_size = requested_size
+        full_close = False
         try:
             live_positions = await self.pm.get_positions()
             for p in live_positions or []:
@@ -293,7 +310,11 @@ class Engine:
                     break
             if available_size is not None and available_size > 0:
                 sell_size = min(sell_size, available_size)
-            sell_size = max(0.0, sell_size - 0.001)
+            if available_size is not None and requested_size >= (available_size - 0.001):
+                full_close = True
+                sell_size = available_size
+            if not full_close:
+                sell_size = max(0.0, sell_size - 0.001)
             sell_size = math.floor(sell_size * 10000.0) / 10000.0
         except Exception as e:
             log.warning(f"MANUAL UI EXIT: failed to fetch live position size for market exit; using state size. err={e}")
@@ -316,6 +337,7 @@ class Engine:
                 "available_size": available_size,
                 "sell_size_used": sell_size,
             }
+        pos.size = float(sell_size)
         pos.exit_reason = "MANUAL_EXIT_NOW"
         pos.intended_exit_price = None
         pos.order_id = oid
@@ -763,6 +785,23 @@ class Engine:
                     current_px = ob.yes_mid
                 elif str(pos.token_id) == str(market_info.no_token_id):
                     current_px = ob.no_mid
+                else:
+                    # Cross-window / orphan holdings: price from positions API (already fetched this cycle)
+                    for p in positions or []:
+                        if str((p or {}).get("asset")) == str(pos.token_id):
+                            _cur = (p or {}).get("curPrice")
+                            if _cur is None:
+                                try:
+                                    _cv = float((p or {}).get("currentValue") or 0.0)
+                                    _sz = float((p or {}).get("size") or 0.0)
+                                    _cur = (_cv / _sz) if _sz > 0 else None
+                                except Exception:
+                                    _cur = None
+                            try:
+                                current_px = float(_cur) if _cur is not None else None
+                            except Exception:
+                                current_px = None
+                            break
                 entry_px = pos.avg_entry_price or pos.entry_price
                 self.state.pos_current_price = current_px
                 if current_px is not None and entry_px is not None and entry_px > 0:
