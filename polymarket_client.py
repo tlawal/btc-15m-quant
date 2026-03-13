@@ -288,6 +288,93 @@ class PolymarketClient:
         log.error("Allowance still insufficient after update: %.4f < %.4f", allowance2, float(min_required_usd or 0.0))
         return False
 
+    async def _ensure_conditional_allowance(self, token_id: str, min_required_shares: float = 1.0) -> bool:
+        """Ensure the wallet has sufficient conditional-token allowance on-chain for SELLs.
+
+        Polymarket CLOB differentiates collateral (USDC) approvals from conditional-token approvals.
+        For SELL orders, the SDK may require conditional-token allowance/approval even when
+        collateral allowance is fine.
+
+        Returns True if allowance appears sufficient, else False.
+        """
+        if not self.can_trade:
+            self._warn_no_creds_once("_ensure_conditional_allowance")
+            return False
+        if not token_id:
+            log.error("_ensure_conditional_allowance: missing token_id")
+            return False
+
+        def _parse_allowance(result: dict) -> Optional[float]:
+            if not isinstance(result, dict):
+                return None
+            allowance_raw = result.get("allowance")
+            if allowance_raw is None:
+                allowances_dict = result.get("allowances")
+                if isinstance(allowances_dict, dict) and allowances_dict:
+                    allowance_raw = next(iter(allowances_dict.values()), None)
+            if allowance_raw is None:
+                allowance_raw = result.get("approved") or result.get("spend")
+            try:
+                return float(allowance_raw)
+            except (TypeError, ValueError):
+                return None
+
+        async def _fetch_allowance() -> Optional[float]:
+            try:
+                loop = asyncio.get_event_loop()
+                params = BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL, token_id=str(token_id))
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: self.client.get_balance_allowance(params)),
+                    timeout=5.0,
+                )
+                return _parse_allowance(result)
+            except asyncio.TimeoutError:
+                log.error("Conditional allowance check timed out (5s)")
+                return None
+            except Exception as e:
+                log.error("Conditional allowance check failed: %s", e)
+                return None
+
+        allowance = await _fetch_allowance()
+        if allowance is None:
+            return False
+        if allowance >= float(min_required_shares or 0.0):
+            return True
+
+        try:
+            loop = asyncio.get_event_loop()
+            params = BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL, token_id=str(token_id))
+            await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: self.client.update_balance_allowance(params)),
+                timeout=10.0,
+            )
+        except asyncio.TimeoutError:
+            log.error("Conditional allowance update timed out (10s)")
+            return False
+        except Exception as e:
+            log.error("Conditional allowance update failed: %s", e)
+            return False
+
+        allowance2 = await _fetch_allowance()
+        if allowance2 is None:
+            return False
+        if allowance2 >= float(min_required_shares or 0.0):
+            log.info(
+                "Conditional allowance updated for token_id=%s: %.4f -> %.4f",
+                str(token_id),
+                allowance,
+                allowance2,
+            )
+            return True
+
+        log.error(
+            "Conditional allowance still insufficient after update for token_id=%s: %.4f < %.4f",
+            str(token_id),
+            allowance2,
+            float(min_required_shares or 0.0),
+        )
+        return False
+
     def _get_auth_headers_best_effort(self) -> dict:
         """Best-effort extraction of auth headers for direct REST calls.
 
@@ -1242,10 +1329,10 @@ class PolymarketClient:
         if not self.can_trade:
             self._warn_no_creds_once("market_sell")
             return None
-        ok = await self._ensure_onchain_allowance(min_required_usd=Config.MIN_TRADE_USD)
+        ok = await self._ensure_conditional_allowance(token_id=token_id, min_required_shares=float(size or 0.0))
         if not ok:
-            log.error("Order blocked: allowance check failed for configured USDC address.")
-            raise PolyApiException(error_msg="allowance_missing")
+            log.error("Order blocked: conditional token allowance check failed for token_id=%s", str(token_id))
+            raise PolyApiException(error_msg="conditional_allowance_missing")
         try:
             args = MarketOrderArgs(
                 token_id = token_id,
@@ -1271,10 +1358,10 @@ class PolymarketClient:
         if not self.can_trade:
             self._warn_no_creds_once("limit_sell")
             return None
-        ok = await self._ensure_onchain_allowance(min_required_usd=Config.MIN_TRADE_USD)
+        ok = await self._ensure_conditional_allowance(token_id=token_id, min_required_shares=float(size or 0.0))
         if not ok:
-            log.error("Order blocked: allowance check failed for configured USDC address.")
-            raise PolyApiException(error_msg="allowance_missing")
+            log.error("Order blocked: conditional token allowance check failed for token_id=%s", str(token_id))
+            raise PolyApiException(error_msg="conditional_allowance_missing")
         try:
             clean_price = round(price, 2)
             clean_size = int(size) if size > 1 else round(size, 2)
