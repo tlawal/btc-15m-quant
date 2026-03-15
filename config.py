@@ -257,7 +257,7 @@ class Config:
     # Preferred trading times
     PREFERRED_START_HOUR_ET    = 6   # 6 AM ET
     PREFERRED_END_HOUR_ET      = 18  # 6 PM ET
-    PREFERRED_WEEKDAYS_ONLY    = True
+    PREFERRED_WEEKDAYS_ONLY    = False  # If True, restrict to Monday-Friday
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @classmethod
