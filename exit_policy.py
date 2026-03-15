@@ -254,6 +254,15 @@ def evaluate_exit(
             )
             return _exit("PROB_CONVERGENCE", use_maker=use_maker)
 
+    # 3b. Near-certain profit lock — bid ≥ $0.98 means market is virtually decided;
+    # lock in the win rather than risk a last-minute reversal for $0.01-0.02 upside.
+    if bid_price is not None and bid_price >= 0.98 and unrealized_pct > 0:
+        log.info(
+            "NEAR_CERTAIN_LOCK: bid=%.3f >= $0.98, unrealized=%.1f%% — locking profit",
+            bid_price, unrealized_pct * 100,
+        )
+        return _exit("NEAR_CERTAIN_LOCK", use_maker=use_maker)
+
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 4: STRUCTURAL MODEL REVERSAL (Req #5)
     # Posterior collapsed from entry — more reliable than price-based stops
