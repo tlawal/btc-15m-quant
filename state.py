@@ -360,6 +360,7 @@ class StateManager:
             "last_posterior_down":    state.last_posterior_down,
             "prev_cycle_score":       state.prev_cycle_score,
             "prev_cycle_price":       state.prev_cycle_price,
+            "session_start_balance":  state.session_start_balance,
             "performance_metrics":    state.performance_metrics,
             "last_review_date":       state.last_review_date,
             "entry_features":         state.entry_features,
