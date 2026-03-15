@@ -128,8 +128,8 @@ class EngineState:
     prev_ask_px: Optional[float]          = None
     prev_bid_sz: Optional[float]          = None
     prev_ask_sz: Optional[float]          = None
-    last_hl_fetch_ts: int                 = 0
-    prev_hl_mid: Optional[float]          = None
+    last_hl_fetch_ts: int                 = 0      # legacy name; now stores Binance book fetch ts
+    prev_hl_mid: Optional[float]          = None   # legacy name; now stores Binance mid price
     prev_ofi_recent: Optional[float]      = None
     ofi_15m_by_window: Dict[str, float]   = field(default_factory=dict)
     zero_ofi_cycles: int                  = 0

@@ -2,7 +2,7 @@
 Data feeds:
   - Binance REST: klines (5m/1m), 15m candle open (for strike), aggTrades (real CVD)
   - Coinbase REST: 15m candle open (strike fallback #2 — FIX #2)
-  - Hyperliquid REST: deep 20-level L2 order book (OFI, VPIN, microprice)
+  - Binance REST: deep L2 order book (OFI, VPIN, microprice)
   - WebSocket: Binance aggTrades stream for live CVD delta
 """
 
@@ -553,7 +553,7 @@ class DataFeeds:
         return best_cvd, bin_cvd, cb_cvd
 
     # ── Binance L2 order book ─────────────────────────────────────────────────
-    # Replacing Hyperliquid with Binance as the primary source for microstructure.
+    # Binance L2 order book — primary source for microstructure.
 
     async def get_binance_book(
         self,

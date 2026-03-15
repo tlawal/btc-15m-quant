@@ -274,12 +274,11 @@ def fmt_engine_block(
         f"ScoreDelta: {res.score_delta or 'N/A'}\n"
         f"PriceDelta: {res.price_delta or 'N/A'}\n"
         f"Balance: USDC={balance:.2f}\n"
-        f"TP: price={Config.TAKE_PROFIT_PRICE} timeRiskLow=0.85 maxLoss={Config.FORCED_LATE_LOSS_PCT}\n"
+        f"TP: abs={Config.TAKE_PROFIT_PRICE} TP1={Config.TP1_PCT*100:.0f}% TP2={Config.TP2_PCT*100:.0f}% TP3={Config.TP3_PCT*100:.0f}% maxLoss={Config.FORCED_LATE_LOSS_PCT}\n"
         f"{micro_line}\n"
         f"Sizing: {res.sizing or 0} (Min Notional: {Config.MIN_TRADE_USD}).\n"
         f"Decision: {decision} | Exec={str(exec_bool).lower()} | Mode={mode} | Exit={exit_reason}\n"
         f"SkipGates: {gates}\n"
-        f"REDEEM_READY_PREVIEW: 0\n"
         f"RUNTIME: {runtime_ms}ms\n"
     )
 

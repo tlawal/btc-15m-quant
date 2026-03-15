@@ -314,7 +314,7 @@ python main.py --reset
 | `MAX_DRAWDOWN_PCT` | 0.12 | Soft posterior-gated drawdown threshold |
 | `FORCED_LATE_LOSS_PCT` | 0.10 | Late-exit loss threshold (< 5 min remaining) |
 | `FORCED_PROFIT_PCT` | 0.25 | Profit-lock threshold near expiry |
-| `TAKE_PROFIT_PRICE` | 0.99 | Take profit offer price |
+| `TAKE_PROFIT_PRICE` | 0.99 | Absolute price take-profit (exit when binary >= $0.99) |
 | `STOP_LOSS_DELTA` | 7.0 | Score reversal required for ALPHA_DECAY exit |
 | `SLIPPAGE_BUFFER_PCT` | 0.008 | Execution haircut on sizing (80bps) |
 | `LATE_CONVICTION_POSTERIOR` | 0.80 | Min posterior for late-window sniping |

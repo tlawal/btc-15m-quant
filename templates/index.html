@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#07090E">
     <title>BTC-15m Quant | Live Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -20,13 +23,52 @@
             --blue: #38bdf8;
             --amber: #f59e0b;
             --purple: #a78bfa;
+            --banner-bg: linear-gradient(90deg,rgba(13,18,28,0.98) 0%,rgba(20,28,45,0.98) 100%);
+            --panel-head-bg: rgba(20,28,45,0.9);
+            --input-bg: rgba(0,0,0,0.3);
+            --scrollbar-thumb: #1e293b;
+            --pop-bg: rgba(8,13,24,0.98);
+            --pop-border: rgba(255,255,255,0.13);
         }
+        body.light {
+            --bg: #f1f5f9;
+            --panel: rgba(255,255,255,0.92);
+            --border: rgba(0,0,0,0.08);
+            --text: #475569;
+            --text-bright: #0f172a;
+            --banner-bg: linear-gradient(90deg,rgba(241,245,249,0.98) 0%,rgba(226,232,240,0.98) 100%);
+            --panel-head-bg: rgba(226,232,240,0.9);
+            --input-bg: rgba(0,0,0,0.06);
+            --scrollbar-thumb: #cbd5e1;
+            --pop-bg: rgba(255,255,255,0.98);
+            --pop-border: rgba(0,0,0,0.12);
+        }
+        body.light .text-white { color: #0f172a !important; }
+        body.light .text-slate-300 { color: #334155 !important; }
+        body.light .text-slate-200 { color: #475569 !important; }
+        body.light .text-slate-500 { color: #64748b !important; }
+        body.light .text-slate-400 { color: #64748b !important; }
+        body.light .text-slate-600 { color: #475569 !important; }
+        body.light .bg-black\/20 { background: rgba(0,0,0,0.05) !important; }
+        body.light .bg-black\/30 { background: rgba(0,0,0,0.06) !important; }
+        body.light .border-slate-700 { border-color: rgba(0,0,0,0.1) !important; }
+        body.light #status-badge { background: rgba(34,197,94,0.08); }
+        body.light .mpop { background: var(--pop-bg); border-color: var(--pop-border); box-shadow: 0 16px 48px rgba(0,0,0,0.15); }
+        body.light .mpop-title { color: #0f172a; }
+        body.light .mpop-what { color: #475569; }
+        body.light .mpop-thresh { background: rgba(0,0,0,0.04); }
+        body.light .mpop-thresh b { color: #334155; }
+        body.light .mpop-tip { color: #64748b; border-top-color: rgba(0,0,0,0.06); }
+        body.light .gate-pill { background:rgba(251,146,60,0.08); }
+        body.light .info-icon { border-color:#94a3b8; color:#64748b; }
+        body.light .info-icon:hover { border-color:#475569; color:#334155; }
+        body.light ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); }
         body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); margin:0; padding:0; }
         .mono { font-family:'JetBrains Mono',monospace; }
 
         /* ── Top Banner ── */
         #top-banner {
-            background: linear-gradient(90deg,rgba(13,18,28,0.98) 0%,rgba(20,28,45,0.98) 100%);
+            background: var(--banner-bg);
             border-bottom: 1px solid var(--border);
             padding: 0 1.5rem;
             height: 56px;
@@ -56,7 +98,7 @@
             overflow: hidden;
         }
         .panel-head {
-            background: rgba(20,28,45,0.9);
+            background: var(--panel-head-bg);
             border-bottom: 1px solid var(--border);
             padding: 9px 14px;
             font-size: 0.7rem;
@@ -140,8 +182,8 @@
         .mpop {
             display:none; position:fixed; z-index:9999;
             width:260px;
-            background:rgba(8,13,24,0.98);
-            border:1px solid rgba(255,255,255,0.13);
+            background:var(--pop-bg);
+            border:1px solid var(--pop-border);
             border-radius:10px;
             padding:12px 14px;
             font-size:0.68rem; line-height:1.55;
@@ -213,7 +255,20 @@
         /* Scrollbar */
         ::-webkit-scrollbar { width:4px; height:4px; }
         ::-webkit-scrollbar-track { background:transparent; }
-        ::-webkit-scrollbar-thumb { background:#1e293b; border-radius:4px; }
+        ::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); border-radius:4px; }
+
+        /* ── Mobile improvements ── */
+        @media (max-width:768px) {
+            #top-banner { height:auto; min-height:48px; flex-wrap:wrap; padding:6px 10px; gap:6px; }
+            .banner-cell { min-width:70px; }
+            .banner-val { font-size:0.82rem; }
+            .banner-label { font-size:0.45rem; }
+            .sep { display:none; }
+        }
+        @media (max-width:480px) {
+            .banner-cell { min-width:55px; }
+            .banner-val { font-size:0.72rem; }
+        }
     </style>
 </head>
 <body>
@@ -258,13 +313,16 @@
         </div>
     </div>
 
-    <!-- Right: Status + PnL -->
+    <!-- Right: Status + PnL + Theme -->
     <div class="flex items-center gap-4">
         <div class="text-right hidden md:block">
             <div class="banner-label">Cum PnL</div>
             <div class="banner-val" id="cum-pnl">--</div>
         </div>
         <div id="status-badge" class="text-[0.65rem] font-bold uppercase tracking-wide px-3 py-1 rounded border border-green-500/30 bg-green-500/10 text-green-400">HEALTHY</div>
+        <button id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text);font-size:1rem;line-height:1;transition:border-color 0.2s">
+            <span id="theme-icon">☀️</span>
+        </button>
     </div>
 </div>
 
@@ -282,7 +340,7 @@
             </div>
             <div class="panel-body space-y-3">
                 <!-- 2×3 tile grid -->
-                <div class="grid grid-cols-3 gap-2" id="sig-tiles">
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="sig-tiles">
 
                     <!-- OFI -->
                     <div class="sig-tile tile-neutral" id="tile-ofi" data-max="2">
@@ -478,11 +536,11 @@
                         <div class="mono text-sm font-bold" id="new-pm-wr">--</div>
                     </div>
                     <div class="bg-black/20 rounded-lg py-2">
-                        <div class="text-[0.55rem] text-slate-500 uppercase cursor-pointer" onclick="togglePopover('pop-profit-factor')">Prof. Factor <i class="fas fa-info-circle text-xs text-slate-400"></i></div>
+                        <div class="text-[0.55rem] text-slate-500 uppercase">Prof. Factor <span class="info-icon" data-pop="pop-profit-factor" style="vertical-align:top;margin-left:2px">i</span></div>
                         <div class="mono text-sm font-bold" id="new-pm-pf">--</div>
                     </div>
                     <div class="bg-black/20 rounded-lg py-2">
-                        <div class="text-[0.55rem] text-slate-500 uppercase cursor-pointer" onclick="togglePopover('pop-sharpe')">Sharpe <i class="fas fa-info-circle text-xs text-slate-400"></i></div>
+                        <div class="text-[0.55rem] text-slate-500 uppercase">Sharpe <span class="info-icon" data-pop="pop-sharpe" style="vertical-align:top;margin-left:2px">i</span></div>
                         <div class="mono text-sm font-bold" id="new-pm-sharpe">--</div>
                     </div>
                     <div class="bg-black/20 rounded-lg py-2">
@@ -786,6 +844,39 @@
 
                 <!-- Transaction Link -->
                 <div id="pos-tx-link" class="mt-2"></div>
+
+                <!-- Manual Entry Controls -->
+                <div id="manual-entry-panel" class="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3" style="display:none">
+                    <div class="text-[0.6rem] text-slate-400 uppercase tracking-wide mb-2">Manual Entry (Buy)</div>
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+                        <div>
+                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Side</div>
+                            <select id="entry-side" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200">
+                                <option value="YES">YES (UP)</option>
+                                <option value="NO">NO (DOWN)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Price</div>
+                            <input id="entry-price" type="number" step="0.01" min="0.01" max="0.99" placeholder="0.50" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200" />
+                        </div>
+                        <div>
+                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Size (USD)</div>
+                            <input id="entry-size" type="number" step="0.01" min="1" max="100" placeholder="5.75" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200" />
+                        </div>
+                        <div>
+                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Order Type</div>
+                            <select id="entry-otype" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200">
+                                <option value="GTC">GTC</option>
+                                <option value="FOK">FOK</option>
+                            </select>
+                        </div>
+                        <div>
+                            <button id="btn-entry-buy" onclick="manualEntry()" class="w-full rounded bg-green-500/20 border border-green-500/40 text-green-200 text-xs px-2 py-1.5 hover:bg-green-500/30 font-bold">BUY</button>
+                        </div>
+                    </div>
+                    <div id="entry-msg" class="mt-1 text-[0.6rem]"></div>
+                </div>
 
                 <!-- Manual Exit Controls (exit-only) -->
                 <div id="manual-exit-panel" class="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3" style="display:none">
@@ -1312,6 +1403,14 @@ function updateUI() {
         }
         $('pos-tx-link').innerHTML = txHtml;
 
+        // Manual entry panel (visible when flat)
+        const entryPanel = $('manual-entry-panel');
+        if (entryPanel) {
+            entryPanel.style.display = '';
+            entryPanel.style.opacity = (posSide === 'FLAT') ? '1' : '0.45';
+            if ($('btn-entry-buy')) $('btn-entry-buy').disabled = (posSide !== 'FLAT');
+        }
+
         // Manual exit panel
         const manualPanel = $('manual-exit-panel');
         if (manualPanel) {
@@ -1472,6 +1571,24 @@ function toggleAccordion(id) {
     document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closePop(); });
 })();
 
+// ── Theme toggle ──────────────────────────────────────────────────────
+function toggleTheme() {
+    document.body.classList.toggle('light');
+    const isLight = document.body.classList.contains('light');
+    localStorage.setItem('btcq-theme', isLight ? 'light' : 'dark');
+    document.getElementById('theme-icon').textContent = isLight ? '🌙' : '☀️';
+    // Re-render Plotly charts with matching background
+    if (typeof updatePlotlyCharts === 'function') updatePlotlyCharts();
+}
+// Restore saved theme
+(function() {
+    const saved = localStorage.getItem('btcq-theme');
+    if (saved === 'light') {
+        document.body.classList.add('light');
+        document.getElementById('theme-icon').textContent = '🌙';
+    }
+})();
+
 // ── Kill switch ────────────────────────────────────────────────────────
 function activateKillSwitch() {
     const pwd=prompt('Enter KILL SWITCH password to halt trading:');
@@ -1496,11 +1613,15 @@ async function updatePlotlyCharts() {
         const cvd  =data.map(d=>d.cvd);
         const ofi  =data.map(d=>d.ofi);
 
+        const isLight = document.body.classList.contains('light');
+        const gridC = isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.04)';
+        const zeroC = isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.1)';
+        const tickC = isLight ? '#64748b' : '#475569';
         const layout={
             paper_bgcolor:'transparent',plot_bgcolor:'transparent',
             margin:{t:8,b:36,l:40,r:40},
-            xaxis:{tickfont:{color:'#475569',size:8,family:'JetBrains Mono'},gridcolor:'rgba(255,255,255,0.04)',nticks:8},
-            yaxis:{title:{text:'Score',font:{color:'#38bdf8',size:8}},tickfont:{color:'#475569',size:8},gridcolor:'rgba(255,255,255,0.04)',zeroline:true,zerolinecolor:'rgba(255,255,255,0.1)'},
+            xaxis:{tickfont:{color:tickC,size:8,family:'JetBrains Mono'},gridcolor:gridC,nticks:8},
+            yaxis:{title:{text:'Score',font:{color:'#38bdf8',size:8}},tickfont:{color:tickC,size:8},gridcolor:gridC,zeroline:true,zerolinecolor:zeroC},
             yaxis2:{title:{text:'P(UP)',font:{color:'#a78bfa',size:8}},tickfont:{color:'#475569',size:8},overlaying:'y',side:'right',range:[0,1]},
             legend:{font:{color:'#64748b',size:8},bgcolor:'transparent',orientation:'h',x:0,y:-0.25},
             font:{family:'JetBrains Mono'}
@@ -1536,11 +1657,13 @@ function updateRadarChart(metrics, sig) {
             type:'scatterpolar',r:values,theta:labels,fill:'toself',
             line:{color:'#38bdf8',width:1.5},fillcolor:'rgba(56,189,248,0.1)'
         }];
+        const isL = document.body.classList.contains('light');
+        const rGridC = isL ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.06)';
         const radarLayout={
             paper_bgcolor:'transparent',plot_bgcolor:'transparent',
             polar:{bgcolor:'transparent',
-                radialaxis:{visible:true,range:[0,1],gridcolor:'rgba(255,255,255,0.06)',tickfont:{color:'#334155',size:7}},
-                angularaxis:{tickfont:{color:'#64748b',size:8,family:'JetBrains Mono'},gridcolor:'rgba(255,255,255,0.06)'}
+                radialaxis:{visible:true,range:[0,1],gridcolor:rGridC,tickfont:{color:isL?'#64748b':'#334155',size:7}},
+                angularaxis:{tickfont:{color:'#64748b',size:8,family:'JetBrains Mono'},gridcolor:rGridC}
             },
             margin:{t:20,b:20,l:50,r:50},showlegend:false
         };
@@ -1739,6 +1862,24 @@ async function condSend() {
     if (out) out.textContent = res ? JSON.stringify(res, null, 2) : 'Error.';
 }
 
+async function manualEntry() {
+    const side = ($('entry-side')?.value)||'YES';
+    const px = parseFloat(($('entry-price')?.value)||'');
+    const sz = parseFloat(($('entry-size')?.value)||'');
+    const ot = ($('entry-otype')?.value)||'GTC';
+    const msg = $('entry-msg');
+    if (!isFinite(px) || px <= 0 || px >= 1) { alert('Enter a valid price (0.01–0.99)'); return; }
+    if (!isFinite(sz) || sz < 1) { alert('Enter a valid size (min $1)'); return; }
+    const ok = confirm('Manual BUY: ' + side + ' @ $' + px.toFixed(2) + ' for $' + sz.toFixed(2) + ' (' + ot + '). Confirm?');
+    if (!ok) return;
+    if (msg) { msg.textContent = 'Placing order...'; msg.className = 'mt-1 text-amber-400 text-[0.6rem]'; }
+    const data = await postManual('/api/manual/entry', { side: side, price: px, size_usd: sz, order_type: ot });
+    if (msg && data) {
+        msg.textContent = data.message || 'Order placed';
+        msg.className = 'mt-1 text-green-400 text-[0.6rem]';
+    }
+}
+
 async function manualExitPlace() {
     const px = parseFloat(($('exit-price')?.value)||'');
     if (!isFinite(px) || px <= 0) { alert('Enter a valid exit price (0.01–0.99)'); return; }
@@ -1797,18 +1938,5 @@ async function resumeTrading() {
     }
 }
 </script>
-<div id="pop-profit-factor" class="mpop">
-    <div class="mpop-title">Profit Factor</div>
-    <div class="mpop-what">What is it?<br>Gross profit divided by gross loss over all trades.</div>
-    <div class="mpop-thresh">Thresholds<br>>1.0: Profitable<br><1.0: Losing</div>
-    <div class="mpop-tip">Tip<br>Higher values indicate better risk-adjusted profitability.</div>
-</div>
-
-<div id="pop-sharpe" class="mpop">
-    <div class="mpop-title">Sharpe Ratio</div>
-    <div class="mpop-what">What is it?<br>Average return per unit of volatility (standard deviation).</div>
-    <div class="mpop-thresh">Thresholds<br>>0: Positive risk-adjusted returns<br><0: Negative</div>
-    <div class="mpop-tip">Tip<br>Higher Sharpe indicates better returns for the risk taken.</div>
-</div>
 </body>
 </html>

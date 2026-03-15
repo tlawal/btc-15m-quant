@@ -1,6 +1,6 @@
 """
 Indicator fetching and computation (locally).
-No more TAAPI. All indicators are computed from Binance klines.
+All indicators are computed locally from Binance klines.
 """
 
 import logging

@@ -1333,6 +1333,35 @@ async def manual_exit_now(request: Request):
         return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
 
 
+@app.post("/api/manual/entry")
+async def manual_entry(request: Request):
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    if not engine:
+        return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
+    try:
+        data = await request.json()
+        side = str((data or {}).get("side", "")).upper()
+        if side not in ("YES", "NO"):
+            return JSONResponse({"status": "error", "message": "Side must be YES or NO"}, status_code=400)
+        price = float((data or {}).get("price", 0))
+        size_usd = float((data or {}).get("size_usd", 0))
+        order_type = str((data or {}).get("order_type", "GTC")).upper()
+        if order_type not in ("GTC", "FOK"):
+            order_type = "GTC"
+        if price <= 0 or price >= 1:
+            return JSONResponse({"status": "error", "message": "Price must be between 0.01 and 0.99"}, status_code=400)
+        if size_usd < 1:
+            return JSONResponse({"status": "error", "message": "Size must be >= $1"}, status_code=400)
+        result = await engine.enqueue_manual_entry(side=side, price=price, size_usd=size_usd, order_type=order_type)
+        if result.get("status") == "error":
+            return JSONResponse(result, status_code=400)
+        return result
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
+
+
 @app.get("/debug/templates")
 async def debug_templates():
     info = {

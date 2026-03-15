@@ -106,6 +106,57 @@ class Engine:
             log.error(f"enqueue_manual_exit_now failed: {e}")
             return {"status": "error", "message": str(e)}
 
+    async def enqueue_manual_entry(self, *, side: str, price: float, size_usd: float, order_type: str = "GTC") -> dict:
+        """Manual entry from dashboard — bypasses signal gates but respects risk limits."""
+        try:
+            pos = self.state.held_position
+            if pos.side:
+                return {"status": "error", "message": f"Already holding {pos.side} position — exit first"}
+            # Basic risk check
+            balance = await self.pm.get_wallet_usdc_balance() or 0.0
+            if size_usd > balance:
+                return {"status": "error", "message": f"Insufficient balance: ${balance:.2f} < ${size_usd:.2f}"}
+            if size_usd > Config.MAX_EXPOSURE_USD:
+                return {"status": "error", "message": f"Exceeds max exposure ${Config.MAX_EXPOSURE_USD}"}
+            # Discover current market
+            now = int(time.time())
+            win_start = now - (now % Config.WINDOW_SEC)
+            mkt = await self.pm.discover_market(
+                win_start,
+                cached_slug=self.state.last_market_slug,
+                cached_expiry=self.state.last_market_expiry,
+                cached_condition_id=self.state.last_condition_id,
+            )
+            if not mkt:
+                return {"status": "error", "message": "Could not discover current market"}
+            token_id = mkt.yes_token_id if side == "YES" else mkt.no_token_id
+            shares = int(size_usd / price)
+            if shares < 1:
+                return {"status": "error", "message": "Size too small for price"}
+            log.info(f"MANUAL_ENTRY: side={side} price={price} shares={shares} size_usd={size_usd} order_type={order_type}")
+            if order_type == "FOK":
+                order_id = await self.pm.market_buy(token_id=token_id, amount_usd=size_usd)
+            else:
+                order_id = await self.pm.limit_buy(token_id=token_id, price=price, size=size_usd)
+            if not order_id:
+                return {"status": "error", "message": "Order placement failed"}
+            # Update held position
+            pos.side = side
+            pos.token_id = token_id
+            pos.entry_price = price
+            pos.avg_entry_price = price
+            pos.size = float(shares)
+            pos.size_usd = size_usd
+            pos.condition_id = mkt.condition_id
+            pos.order_id = order_id
+            pos.is_pending = True
+            pos.market_expiry = mkt.expiry_ts
+            await self._save_state()
+            return {"status": "ok", "message": f"Manual {side} buy placed: {shares} shares @ ${price:.2f} (order {str(order_id)[:10]}...)"}
+        except Exception as e:
+            log.error(f"enqueue_manual_entry failed: {e}")
+            return {"status": "error", "message": str(e)}
+
     async def _process_manual_commands(self):
         # Process any queued manual commands (fallback path).
         while True:

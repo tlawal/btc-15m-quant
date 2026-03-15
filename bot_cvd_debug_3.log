@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/larry/code/btc-15m-quant/main.py", line 22, in <module>
-    from data_feeds import DataFeeds
-  File "/Users/larry/code/btc-15m-quant/data_feeds.py", line 157
-    )
-    ^
-SyntaxError: unmatched ')'
