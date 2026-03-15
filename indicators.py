@@ -171,6 +171,21 @@ def normal_cdf(x: float) -> float:
     y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * math.exp(-abs_x * abs_x)
     return 0.5 * (1 + sign * y)
 
+def student_t_cdf(x: float, df: int = 6) -> float:
+    """Student-t CDF with heavier tails than Gaussian. df=6 fits BTC returns.
+
+    Not currently wired into the posterior pipeline — available for activation
+    after calibration data confirms Gaussian overconfidence at tail z-scores.
+    """
+    try:
+        from scipy.stats import t as t_dist
+        return float(t_dist.cdf(x, df))
+    except ImportError:
+        # Fallback: for moderate df and typical z-scores, approximate via
+        # scaled normal CDF with wider tails
+        scale = math.sqrt(df / (df - 2)) if df > 2 else 1.5
+        return normal_cdf(x / scale)
+
 def logit(p: float) -> float:
     p = max(1e-9, min(1 - 1e-9, p))
     return math.log(p / (1 - p))

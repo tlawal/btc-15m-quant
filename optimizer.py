@@ -10,6 +10,88 @@ from sklearn.ensemble import RandomForestClassifier
 
 log = logging.getLogger("optimizer")
 
+
+# ── Platt Scaling Calibrator ─────────────────────────────────────────────────
+
+class PlattScaler:
+    """Sigmoid calibration for raw posteriors (Platt 1999).
+
+    P(y=1|f) = 1 / (1 + exp(A*f + B))
+
+    Requires MIN_SAMPLES (posterior, binary_outcome) pairs to fit.
+    Until sufficient data, transform() returns identity.
+    """
+    MIN_SAMPLES = 500
+
+    def __init__(self):
+        self.a = 0.0
+        self.b = 0.0
+        self.is_fitted = False
+        self.n_samples = 0
+
+    def fit(self, posteriors: list, outcomes: list) -> bool:
+        """Fit Platt parameters. Returns True if successful."""
+        if len(posteriors) < self.MIN_SAMPLES:
+            log.info(f"PlattScaler: insufficient data ({len(posteriors)}/{self.MIN_SAMPLES}) — using identity")
+            return False
+        try:
+            import numpy as np
+            from sklearn.linear_model import LogisticRegression
+            X = np.array(posteriors, dtype=float).reshape(-1, 1)
+            y = np.array(outcomes, dtype=int)
+            lr = LogisticRegression(max_iter=1000)
+            lr.fit(X, y)
+            self.a = float(lr.coef_[0][0])
+            self.b = float(lr.intercept_[0])
+            self.is_fitted = True
+            self.n_samples = len(posteriors)
+            log.info(f"PlattScaler fitted: a={self.a:.4f} b={self.b:.4f} n={self.n_samples}")
+            return True
+        except Exception as e:
+            log.warning(f"PlattScaler fit failed: {e}")
+            return False
+
+    def transform(self, posterior: float) -> float:
+        """Calibrate a raw posterior. Identity if not fitted."""
+        if not self.is_fitted:
+            return posterior
+        try:
+            import math
+            return 1.0 / (1.0 + math.exp(-(self.a * posterior + self.b)))
+        except (OverflowError, ValueError):
+            return posterior
+
+    @staticmethod
+    def brier_score(posteriors: list, outcomes: list) -> float:
+        """Brier score: mean squared error between predicted probability and outcome.
+        Lower is better. Range [0, 1]. Perfect calibration = 0.
+        """
+        if not posteriors:
+            return 1.0
+        return sum((p - o) ** 2 for p, o in zip(posteriors, outcomes)) / len(posteriors)
+
+    def save(self, path: str):
+        try:
+            with open(path, "w") as f:
+                json.dump({"a": self.a, "b": self.b, "is_fitted": self.is_fitted, "n_samples": self.n_samples}, f)
+        except Exception as e:
+            log.warning(f"PlattScaler save error: {e}")
+
+    def load(self, path: str):
+        try:
+            if os.path.exists(path):
+                with open(path, "r") as f:
+                    d = json.load(f)
+                self.a = d.get("a", 0.0)
+                self.b = d.get("b", 0.0)
+                self.is_fitted = d.get("is_fitted", False)
+                self.n_samples = d.get("n_samples", 0)
+                if self.is_fitted:
+                    log.info(f"PlattScaler loaded: a={self.a:.4f} b={self.b:.4f} n={self.n_samples}")
+        except Exception as e:
+            log.warning(f"PlattScaler load error: {e}")
+
+
 class SignalOptimizer:
     def __init__(self, state):
         self.state = state
@@ -23,6 +105,11 @@ class SignalOptimizer:
         self.features_path = "/data/trade_features.jsonl" if os.path.exists("/data") else "trade_features.jsonl"
         self.model_path = "/data/optimizer_model.joblib" if os.path.exists("/data") else "optimizer_model.joblib"
         self.exit_log_path = "/data/exit_outcomes.jsonl" if os.path.exists("/data") else "exit_outcomes.jsonl"
+        self.calibration_log_path = "/data/calibration_log.jsonl" if os.path.exists("/data") else "calibration_log.jsonl"
+        self.platt = PlattScaler()
+        self.platt.load(
+            "/data/platt_scaler.json" if os.path.exists("/data") else "platt_scaler.json"
+        )
 
     # ── Phase A: Exit outcome logging ─────────────────────────────────────────
 
@@ -253,6 +340,104 @@ class SignalOptimizer:
             log.warning(f"get_signal_accuracies error: {e}")
             return {}
         return {k: round(sum(v) / len(v), 4) for k, v in buckets.items() if len(v) >= 5}
+
+    # ── Phase B: Calibration logging ─────────────────────────────────────────
+
+    def log_calibration_point(
+        self,
+        *,
+        posterior: float,
+        market_price: float,
+        strike: float,
+        btc_price: float,
+        window_id: int,
+        timestamp: int = 0,
+    ):
+        """Append a (posterior, market_price, context) record for future Platt training."""
+        record = {
+            "ts": timestamp or int(time.time()),
+            "window_id": window_id,
+            "posterior": round(posterior, 6),
+            "market_price": round(market_price, 4),
+            "strike": round(strike, 2),
+            "btc_price": round(btc_price, 2),
+            "outcome": None,  # filled at window roll
+            "distance_from_strike": None,
+            "resolution_confidence": None,
+        }
+        try:
+            with open(self.calibration_log_path, "a") as f:
+                f.write(json.dumps(record) + "\n")
+        except Exception as e:
+            log.warning(f"log_calibration_point write error: {e}")
+
+    def fill_calibration_outcome(self, window_id: int, btc_close: float, strike: float):
+        """
+        After window resolution, fill outcome + resolution_confidence for all
+        calibration records matching window_id that still have outcome=None.
+
+        outcome: 1 if btc_close > strike (UP won), else 0.
+        resolution_confidence: 'low' if |btc_close - strike| < $20, else 'high'.
+        """
+        if not os.path.exists(self.calibration_log_path):
+            return
+        try:
+            records = []
+            updated = 0
+            with open(self.calibration_log_path, "r") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        r = json.loads(line)
+                    except Exception:
+                        continue
+                    if r.get("window_id") == window_id and r.get("outcome") is None:
+                        r["outcome"] = 1 if btc_close > strike else 0
+                        dist = abs(btc_close - strike)
+                        r["distance_from_strike"] = round(dist, 2)
+                        r["resolution_confidence"] = "low" if dist < 20 else "high"
+                        updated += 1
+                    records.append(r)
+            if updated:
+                # Trim to last 50,000 records
+                if len(records) > 50000:
+                    records = records[-50000:]
+                with open(self.calibration_log_path, "w") as f:
+                    for r in records:
+                        f.write(json.dumps(r) + "\n")
+                log.info(f"fill_calibration_outcome: updated {updated} records for window_id={window_id}, btc_close={btc_close:.2f}")
+        except Exception as e:
+            log.warning(f"fill_calibration_outcome error: {e}")
+
+    def try_fit_platt(self):
+        """Attempt to fit PlattScaler from calibration log. Called periodically."""
+        if not os.path.exists(self.calibration_log_path):
+            return False
+        try:
+            posteriors, outcomes = [], []
+            with open(self.calibration_log_path, "r") as f:
+                for line in f:
+                    try:
+                        r = json.loads(line.strip())
+                    except Exception:
+                        continue
+                    if r.get("outcome") is None:
+                        continue
+                    if r.get("resolution_confidence") == "low":
+                        continue  # exclude close calls
+                    posteriors.append(r["posterior"])
+                    outcomes.append(r["outcome"])
+            if self.platt.fit(posteriors, outcomes):
+                path = "/data/platt_scaler.json" if os.path.exists("/data") else "platt_scaler.json"
+                self.platt.save(path)
+                brier = PlattScaler.brier_score(posteriors, outcomes)
+                log.info(f"PlattScaler trained: n={len(posteriors)}, brier={brier:.4f}")
+                return True
+        except Exception as e:
+            log.warning(f"try_fit_platt error: {e}")
+        return False
 
     def get_disabled_signals(self) -> list:
         """Return signal names with <45% accuracy over 20+ samples in last 7 days."""

@@ -114,6 +114,9 @@ class SignalResult:
     required_edge:        float  = 0.035
     min_score:            float  = 4.0
 
+    # Volatility surface (logging-only, not applied to stops yet)
+    vol_surface_adj:      Optional[float] = None
+
     # Skip gates
     skip_gates:           list   = field(default_factory=list)
     monster_signal:       bool   = False
@@ -193,6 +196,50 @@ class SignalResult:
         }
         # Filter out Nones
         return {k: v for k, v in d.items() if v is not None}
+
+def _compute_vol_surface(yes_mid: float, atr14: float, minutes_remaining: float) -> float:
+    """Implied volatility surface adjustment (logging-only).
+
+    Combines market-implied vol (from yes_mid distance to 0.50) with
+    realized vol (ATR) and time-to-expiry to produce a multiplier.
+    Higher values = more volatile / wider stops appropriate.
+
+    Returns clamped [0.5, 2.0]. NOT applied to stop widths yet —
+    logged on SignalResult.vol_surface_adj for validation.
+    """
+    if atr14 is None or atr14 <= 0 or yes_mid is None:
+        return 1.0
+
+    # Market-implied component: how far yes_mid is from 0.50
+    # Near 0.50 = uncertain = higher vol; near 0/1 = resolved = lower vol
+    market_uncertainty = 1.0 - 2.0 * abs(yes_mid - 0.50)  # [0, 1]
+
+    # Time component: less time = higher urgency = higher vol surface
+    time_factor = max(0.5, min(2.0, 15.0 / max(1.0, minutes_remaining)))
+
+    # ATR component: normalize to a baseline (~$200 for BTC)
+    atr_factor = atr14 / 200.0
+
+    vol_adj = market_uncertainty * time_factor * atr_factor
+    return max(0.5, min(2.0, vol_adj))
+
+
+def compute_early_minute_momentum(*, klines_1m=None, window_start_ts=None):
+    """STUB: Early-minute BTC momentum signal.
+
+    Concept: Use BTC price momentum in the first 1-2 minutes of a 15m window
+    to predict direction for the remainder. If BTC moves strongly in one direction
+    immediately after window open, momentum tends to persist for the rest of the
+    window (microstructure anticipation / opening price discovery).
+
+    NOT IMPLEMENTED — returns None. Will require:
+    - 1m klines specifically from the current window's first 2 minutes
+    - Comparison of close[t=1min] vs open[t=0] as a % of ATR
+    - Threshold calibration from historical data
+    - Integration as a signal modifier (boost conviction when early momentum agrees)
+    """
+    return None
+
 
 def compute_signals(
     *,
@@ -379,11 +426,11 @@ def compute_signals(
             res.posterior_fair_down = 1.0 - res.posterior_fair_up
 
     # Bayesian update: blend fair value with market prior in logit space.
-    # Signal weight 0.7 (was 0.5) — our model should dominate over market noise.
+    # Signal weight 0.5 — balanced blend; let calibration data inform future adjustments.
     if res.posterior_fair_up is not None and yes_mid is not None:
         mkt_prior = clamp(yes_mid, 0.01, 0.99)
         signal_lo = logit(res.posterior_fair_up)
-        po        = logit(mkt_prior) + 0.7 * signal_lo
+        po        = logit(mkt_prior) + 0.5 * signal_lo
         up        = clamp(inv_logit(po), 1e-6, 1 - 1e-6)
         res.posterior_final_up   = up
         res.posterior_final_down = 1.0 - up
@@ -433,62 +480,58 @@ def compute_signals(
     # Compute individual scores for logging / feature dict.
     # Final accumulation into `signed` happens via group-max below.
 
-    # EMA crossover ±2
-    if indic.ema9 is not None and indic.ema20 is not None:
-        res.ema_score = 2.0 if indic.ema9 > indic.ema20 else -2.0
+    # EMA crossover — continuous, ATR-normalized [-2, 2]
+    if indic.ema9 is not None and indic.ema20 is not None and atr14 and atr14 > 0:
+        ema_gap = indic.ema9 - indic.ema20
+        res.ema_score = clamp(ema_gap / (atr14 * 0.002), -2.0, 2.0)
 
-    # VWAP ±1
-    if indic.vwma15 is not None:
-        res.vwap_score = 1.0 if btc_price > indic.vwma15 else -1.0
+    # VWAP deviation — continuous, ATR-normalized [-1, 1]
+    if indic.vwma15 is not None and atr14 and atr14 > 0:
+        vwap_dev = btc_price - indic.vwma15
+        res.vwap_score = clamp(vwap_dev / (atr14 * 0.5), -1.0, 1.0)
 
-    # RSI
+    # RSI — continuous, centered at 50, ratio-based [-2, 2]
     if indic.rsi14 is not None:
-        if indic.rsi14 > 70:
-            res.rsi_score = 1.0
-        elif indic.rsi14 < 30:
-            res.rsi_score = -1.0
+        res.rsi_score = clamp((50.0 - indic.rsi14) / 25.0, -2.0, 2.0)
 
-    # ATR amplifier ±1 (feeds into trend group via atr_score — kept on res for logging)
-    if atr14 and atr14 > 120.0:
-        if res.ema_score > 0:
-            res.atr_score = 1.0
-        elif res.ema_score < 0:
-            res.atr_score = -1.0
+    # ATR amplifier — scales with ATR magnitude, not binary
+    if atr14 and atr14 > 0:
+        atr_factor = clamp((atr14 - 120.0) / 80.0, 0.0, 1.0)  # ramps 120→200
+        if res.ema_score != 0:
+            res.atr_score = atr_factor * (1.0 if res.ema_score > 0 else -1.0)
 
-    # MACD histogram
-    if indic.macd_hist is not None:
-        if indic.macd_hist > 0:
-            res.macd_score = 1.0
-        elif indic.macd_hist < 0:
-            res.macd_score = -1.0
+    # MACD histogram — continuous, ATR-normalized [-1, 1]
+    if indic.macd_hist is not None and atr14 and atr14 > 0:
+        res.macd_score = clamp(indic.macd_hist / (atr14 * 0.01), -1.0, 1.0)
 
-    # Stochastic
+    # Stochastic — continuous, centered at 50 [-1.5, 1.5]
     if indic.stoch_k is not None:
-        if indic.stoch_k > 80:
-            res.stoch_score = 1.0
-        elif indic.stoch_k < 20:
-            res.stoch_score = -1.0
-        # Crossover bonus
+        res.stoch_score = clamp((50.0 - indic.stoch_k) / 30.0, -1.0, 1.0)
+        # Crossover bonus when oversold/overbought agrees with trend
         if indic.stoch_k < 20 and res.ema_score < 0:
-            res.stoch_score -= 0.5
+            res.stoch_score = clamp(res.stoch_score - 0.5, -1.5, 1.5)
         elif indic.stoch_k > 80 and res.ema_score > 0:
-            res.stoch_score += 0.5
+            res.stoch_score = clamp(res.stoch_score + 0.5, -1.5, 1.5)
 
-    # MFI divergence (feeds momentum_group via mfi_score)
+    # MFI divergence — strength-scaled by magnitude of MFI change [-2, 2]
     if indic.mfi14 is not None and state.prev_mfi is not None and state.prev_price is not None:
+        mfi_change = abs(indic.mfi14 - state.prev_mfi)
+        div_strength = clamp(mfi_change / 20.0, 0.1, 1.0)
         if btc_price > state.prev_price and indic.mfi14 < state.prev_mfi:
-            res.mfi_score = -2.0   # bearish divergence
+            res.mfi_score = -2.0 * div_strength   # bearish divergence
         elif btc_price < state.prev_price and indic.mfi14 > state.prev_mfi:
-            res.mfi_score = 2.0    # bullish divergence
+            res.mfi_score = 2.0 * div_strength    # bullish divergence
 
-    # Multi-period OBV divergence
+    # Multi-period OBV divergence — slope-magnitude scaled [-2.5, 2.5]
     if indic.obv_slope is not None and indic.price_slope is not None:
         p_sl = indic.price_slope
         o_sl = indic.obv_slope
-        if p_sl > 0 and o_sl < 0:
-            res.obv_score = -2.5    # bearish divergence
-        elif p_sl < 0 and o_sl > 0:
-            res.obv_score = 2.5     # bullish divergence
+        if p_sl > 0 and o_sl < 0:          # bearish divergence
+            strength = clamp(abs(o_sl) / (abs(p_sl) + 1e-9), 0.2, 1.0)
+            res.obv_score = -2.5 * strength
+        elif p_sl < 0 and o_sl > 0:        # bullish divergence
+            strength = clamp(abs(o_sl) / (abs(p_sl) + 1e-9), 0.2, 1.0)
+            res.obv_score = 2.5 * strength
         elif (p_sl > 0 and o_sl > 0) or (p_sl < 0 and o_sl < 0):
             res.obv_score = 0.5 * (1.0 if p_sl > 0 else -1.0)  # confirmation
 
@@ -508,39 +551,21 @@ def compute_signals(
         imbalance_score = state.last_imbalance_score
         flow_accel      = state.last_flow_accel_score
     else:
-        # Volume-weighted CVD scoring
+        # Volume-weighted CVD scoring — continuous [-2, 2]
         if cvd_total_vol > 0 and cvd_delta != 0:
             vol_ratio = cvd_total_vol / max(prev_cvd_total_vol, 1e-6) if prev_cvd_total_vol > 0 else 1.0
             vol_multiplier = clamp(vol_ratio, 0.5, 2.0)
-            if cvd_delta > 0:
-                cvd_score = 1.0 * vol_multiplier
-            else:
-                cvd_score = -1.0 * vol_multiplier
+            cvd_score = clamp(cvd_delta * vol_multiplier, -2.0, 2.0)
         else:
             cvd_score = 0.0
 
-        # OFI (Phase 2 Normalized)
+        # OFI — continuous, depth-normalized [-2, 2]
         depth_vol = bid_depth20 + ask_depth20
         norm_ofi = deep_ofi / depth_vol if depth_vol > 0 else 0.0
-        
-        if norm_ofi > 0.4:
-            ofi_score = 2.0
-        elif norm_ofi < -0.4:
-            ofi_score = -2.0
-        elif norm_ofi > 0.15:
-            ofi_score = 1.0
-        elif norm_ofi < -0.15:
-            ofi_score = -1.0
-        else:
-            ofi_score = 0.0
+        ofi_score = clamp(norm_ofi * 5.0, -2.0, 2.0)
 
-        # Depth imbalance
-        if deep_imbalance > 0.60:
-            imbalance_score = 1.0
-        elif deep_imbalance < 0.40:
-            imbalance_score = -1.0
-        else:
-            imbalance_score = 0.0
+        # Depth imbalance — continuous, centered at 0.5 [-1, 1]
+        imbalance_score = clamp((deep_imbalance - 0.5) * 10.0, -1.0, 1.0)
 
         # Flow acceleration
         prev_ofi = state.prev_ofi_recent or 0.0
@@ -556,65 +581,35 @@ def compute_signals(
     res.imbalance_score  = imbalance_score
     res.flow_accel_score = flow_accel
 
-    # ── Phase 3: TOB imbalance (level-1, separate from 20-level depth) ────────
-    tob_score = 0.0
-    if tob_imbalance > 0.65:
-        tob_score = 1.5
-    elif tob_imbalance < 0.35:
-        tob_score = -1.5
-    elif tob_imbalance > 0.55:
-        tob_score = 0.5
-    elif tob_imbalance < 0.45:
-        tob_score = -0.5
+    # ── TOB imbalance — continuous, centered at 0.5 [-1.5, 1.5] ──────────────
+    tob_score = clamp((tob_imbalance - 0.5) * 5.0, -1.5, 1.5)
     res.tob_score = tob_score
 
-    # ── Phase 3: CVD velocity (linear regression slope, units: BTC/sec) ─────
-    cvd_vel_score = 0.0
-    if abs(cvd_velocity) > 0.5:        # strong velocity
-        cvd_vel_score = 2.0 if cvd_velocity > 0 else -2.0
-    elif abs(cvd_velocity) > 0.15:     # moderate velocity
-        cvd_vel_score = 1.0 if cvd_velocity > 0 else -1.0
+    # ── CVD velocity — continuous [-2, 2] ──────────────────────────────────────
+    cvd_vel_score = clamp(cvd_velocity * 4.0, -2.0, 2.0)
     res.cvd_velocity_score = cvd_vel_score
 
-    # ── Phase 3: Polymarket trade flow signal ──────────────────────────────────
-    pm_flow_score = 0.0
-    if abs(pm_net_flow) > 50:        # strong directional flow
-        pm_flow_score = 1.5 if pm_net_flow > 0 else -1.5
-    elif abs(pm_net_flow) > 20:      # moderate flow
-        pm_flow_score = 0.7 if pm_net_flow > 0 else -0.7
+    # ── Polymarket trade flow — continuous [-1.5, 1.5] ─────────────────────────
+    pm_flow_score = clamp(pm_net_flow / 33.0, -1.5, 1.5)
     res.pm_flow_score = pm_flow_score
 
     # (Micro scores are accumulated via group-max in the final signed= block below)
 
-    # ── Tier 1: Whale Flow ────────────────────────────────────────────────────
-    whale_flow_score = 0.0
-    if abs(whale_flow) >= 500:       # $500+ in large fills — very strong signal
-        whale_flow_score = 3.0 if whale_flow > 0 else -3.0
-    elif abs(whale_flow) >= 150:     # $150+ — strong signal
-        whale_flow_score = 2.0 if whale_flow > 0 else -2.0
-    elif abs(whale_flow) >= 50:      # $50+ — moderate signal
-        whale_flow_score = 1.0 if whale_flow > 0 else -1.0
+    # ── Whale flow — continuous [-3, 3] with late-window boost ─────────────────
+    whale_flow_score = clamp(whale_flow / 167.0, -3.0, 3.0)
     # Boost whale signal when within last 5 minutes (informed money more predictive near expiry)
     if minutes_remaining < 5.0 and whale_flow_score != 0.0:
-        whale_flow_score *= 1.5
+        whale_flow_score = clamp(whale_flow_score * 1.5, -3.0, 3.0)
     res.whale_flow_score = whale_flow_score
 
-    # ── Tier 1: Volatility Surface Spread Skew ────────────────────────────────
+    # ── Spread skew — continuous log-ratio [-2, 2] ─────────────────────────────
     spread_skew_score = 0.0
     yes_spread = (yes_ask - yes_bid) if yes_ask and yes_bid else None
     no_spread  = (no_ask  - no_bid)  if no_ask  and no_bid  else None
     if yes_spread and no_spread and yes_spread > 0 and no_spread > 0:
         skew_ratio = no_spread / yes_spread
-        # Wide NO spread = NO side uncertain = market leans UP
-        if skew_ratio >= 2.5:
-            spread_skew_score = 2.0
-        elif skew_ratio >= 1.5:
-            spread_skew_score = 1.0
-        # Wide YES spread = YES side uncertain = market leans DOWN
-        elif skew_ratio <= 0.4:
-            spread_skew_score = -2.0
-        elif skew_ratio <= 0.67:
-            spread_skew_score = -1.0
+        # log ratio: wide NO spread (high ratio) = market leans UP = positive score
+        spread_skew_score = clamp(math.log(max(skew_ratio, 0.01)) * 1.5, -2.0, 2.0)
     res.spread_skew_score = spread_skew_score
 
     # ── Tier 1: Multi-Window Momentum ─────────────────────────────────────────
@@ -646,37 +641,22 @@ def compute_signals(
         liq_cascade_score = 1.5
     res.liq_cascade_score = liq_cascade_score
 
-    # ── Tier 2: Funding Rate Delta ────────────────────────────────────────────
+    # ── Funding rate delta — continuous [-2, 2] ────────────────────────────────
     funding_delta_score = 0.0
     if funding_rate is not None and funding_rate_prev is not None:
         delta = funding_rate - funding_rate_prev
-        # Sudden spike in funding → overleveraged longs about to be squeezed → bearish
-        if delta > 0.0004:           # +0.04% jump in 1h
-            funding_delta_score = -2.0
-        elif delta > 0.0002:
-            funding_delta_score = -1.0
-        # Funding collapsing → shorts being squeezed → bullish
-        elif delta < -0.0004:
-            funding_delta_score = 2.0
-        elif delta < -0.0002:
-            funding_delta_score = 1.0
+        # Negative: spike in funding = overleveraged longs = bearish
+        funding_delta_score = clamp(-delta / 0.0002, -2.0, 2.0)
     res.funding_delta_score = funding_delta_score
 
     # ── Phase 2: NEW SIGNAL COMPONENTS ────────────────────────────────────────
 
-    # Oracle Lag Detection
-    oracle_lag_score = 0.0
-    if oracle_px and oracle_px > 0 and btc_price > 0:
+    # Oracle Lag — removed (unreliable, Polymarket oracle divergence too noisy)
+    res.oracle_lag_score = 0.0
+    if oracle_px and oracle_px > 0:
         res.oracle_px = oracle_px
         if oracle_update_ts:
             res.oracle_update_age = now_ts - oracle_update_ts
-            
-        divergence_pct = (btc_price - oracle_px) / oracle_px
-        if divergence_pct > 0.0015:  # +0.15%
-            oracle_lag_score = 2.0
-        elif divergence_pct < -0.0015:
-            oracle_lag_score = -2.0
-    res.oracle_lag_score = oracle_lag_score
 
     # Spread Pressure
     res.spread_pressure_score = 0.0
@@ -694,67 +674,32 @@ def compute_signals(
         push_dir = 1.0 if imbalance_score > 0 else (-1.0 if imbalance_score < 0 else 0)
         res.spread_pressure_score = spread_compression * push_dir
 
-    # Perpetual Funding Rate Divergence
+    # Funding rate — removed as standalone (redundant with funding_delta in flow group)
     res.funding_rate_score = 0.0
     if funding_rate is not None:
         res.funding_rate = funding_rate
-        if funding_rate > 0.0003: # High positive -> bearish
-            res.funding_rate_score = -1.5
-        elif funding_rate > 0.00015:
-            res.funding_rate_score = -0.5
-        elif funding_rate < -0.0003: # High negative -> bullish
-            res.funding_rate_score = 1.5
-        elif funding_rate < -0.00015:
-            res.funding_rate_score = 0.5
-            
-    # (funding_rate_score accumulated in group block below)
 
-    # Liquidity Vacuum Detection
+    # Liquidity vacuum — continuous depth ratio [-2, 2]
     liq_vacuum_score = 0.0
     if bid_depth20 > 0 and ask_depth20 > 0:
-        ask_bid_ratio = ask_depth20 / bid_depth20
-        bid_ask_ratio = bid_depth20 / ask_depth20
-        if ask_bid_ratio < 0.30:        # thin asks → likely upward push
-            liq_vacuum_score = 2.0
-        elif ask_bid_ratio < 0.50:
-            liq_vacuum_score = 1.0
-        elif bid_ask_ratio < 0.30:       # thin bids → likely downward push
-            liq_vacuum_score = -2.0
-        elif bid_ask_ratio < 0.50:
-            liq_vacuum_score = -1.0
+        total_depth = bid_depth20 + ask_depth20
+        liq_vacuum_score = clamp((bid_depth20 - ask_depth20) / total_depth * 4.0, -2.0, 2.0)
     res.liq_vacuum_score = liq_vacuum_score
 
-    # Bollinger Band Position
+    # Bollinger Band position — continuous, centered at 0.5 [-1, 1]
     bb_position_score = 0.0
     if (indic.bb_upper is not None and indic.bb_lower is not None
             and indic.bb_upper != indic.bb_lower):
         bb_pos = (btc_price - indic.bb_lower) / (indic.bb_upper - indic.bb_lower)
         bb_pos = clamp(bb_pos, 0.0, 1.0)
-        if bb_pos > 0.85:
-            bb_position_score = 1.0
-        elif bb_pos < 0.15:
-            bb_position_score = -1.0
-        elif bb_pos > 0.70:
-            bb_position_score = 0.5
-        elif bb_pos < 0.30:
-            bb_position_score = -0.5
+        bb_position_score = clamp((bb_pos - 0.5) * 3.0, -1.0, 1.0)
     res.bb_position_score = bb_position_score
 
-    # Cross-Exchange CVD Confirmation
-    # NOTE: The disagreement penalty requires 'signed' which is computed in the
-    # group-max block below. Agreement bonus is set here; penalty applied post-hoc.
-    cross_exch_score = 0.0
-    if cross_cvd_agree:
-        cross_exch_score = 0.5 * (1.0 if cvd_delta > 0 else (-1.0 if cvd_delta < 0 else 0.0))
-    # else: penalty applied after 'signed' is defined (see post-group block below)
-    res.cross_exch_score = cross_exch_score
+    # Cross-Exchange CVD — removed (±0.5 too small to matter, adds noise)
+    res.cross_exch_score = 0.0
 
-    # Accumulated OFI Score
-    accum_ofi_score = 0.0
-    if abs(accumulated_ofi) > Config.OFI_15M:
-        accum_ofi_score = 2.0 if accumulated_ofi > 0 else -2.0
-    elif abs(accumulated_ofi) > Config.OFI_STRONG:
-        accum_ofi_score = 1.0 if accumulated_ofi > 0 else -1.0
+    # Accumulated OFI — continuous [-2, 2]
+    accum_ofi_score = clamp(accumulated_ofi / Config.OFI_15M, -2.0, 2.0) if Config.OFI_15M > 0 else 0.0
     res.accum_ofi_score = accum_ofi_score
 
     # Prediction Market Mispricing Detection
@@ -795,41 +740,27 @@ def compute_signals(
         filtered = [v for v in vals if v is not None]
         return max(filtered, key=abs) if filtered else 0.0
 
-    trend_group    = _signed_max(res.ema_score, res.vwap_score, res.macd_score, res.mtf_momentum_score)
-    momentum_group = _signed_max(res.rsi_score, res.stoch_score, res.mfi_score)
-    flow_group     = _signed_max(res.cvd_score, res.ofi_score, res.flow_accel_score, res.accum_ofi_score)
-    micro_group    = _signed_max(res.imbalance_score, res.spread_pressure_score, res.liq_vacuum_score)
-    new_sig_group  = _signed_max(
-        res.whale_flow_score,
-        res.spread_skew_score,
-        res.window_momentum_score,
-        res.liq_cascade_score,
-        res.funding_delta_score,
-    )
-    # Standalone / modifier signals added separately (they ARE additive by design)
+    # ── 4-group layout (absorbs former standalones + new_sig into proper groups)
+    trend_group    = _signed_max(res.ema_score, res.vwap_score, res.macd_score,
+                                 res.bb_position_score, res.mtf_momentum_score)
+    momentum_group = _signed_max(res.rsi_score, res.stoch_score, res.mfi_score,
+                                 res.obv_score, res.adx_stoch_boost)
+    flow_group     = _signed_max(res.cvd_score, res.ofi_score, res.accum_ofi_score,
+                                 res.whale_flow_score, res.funding_delta_score)
+    micro_group    = _signed_max(res.imbalance_score, res.spread_pressure_score,
+                                 res.liq_vacuum_score, res.spread_skew_score,
+                                 res.liq_cascade_score)
+    # Standalone timing modifiers (additive by design — micro timing, not directional)
     signed = (
-        trend_group + momentum_group + flow_group + micro_group + new_sig_group
-        + res.obv_score          # standalone divergence indicator
-        + res.adx_stoch_boost    # compound trend×momentum modifier
-        + res.oracle_lag_score   # oracle divergence
-        + res.funding_rate_score # absolute funding level
-        + res.bb_position_score  # BB position
-        + res.cross_exch_score   # cross-exchange confirmation
+        trend_group + momentum_group + flow_group + micro_group
         + tob_score * 0.6 + cvd_vel_score * 0.8 + pm_flow_score * 0.5
     )
     log.debug(
         f"Score groups: trend={trend_group:.2f} mom={momentum_group:.2f} "
-        f"flow={flow_group:.2f} micro={micro_group:.2f} new={new_sig_group:.2f} "
-        f"obv={res.obv_score:.2f} adx_boost={res.adx_stoch_boost:.2f} → {signed:.2f}"
+        f"flow={flow_group:.2f} micro={micro_group:.2f} → {signed:.2f}"
     )
 
     # ── Post-group modifiers ──────────────────────────────────────────────────
-    # Cross-exchange disagreement penalty (deferred from above — requires 'signed')
-    if not cross_cvd_agree:
-        cross_penalty = -0.3 * (1.0 if signed > 0 else (-1.0 if signed < 0 else 0.0))
-        res.cross_exch_score = cross_penalty
-        signed += cross_penalty
-
     # Stale micro penalty
     if is_stale_micro and abs(signed) < 5.0:
         signed *= 0.8
@@ -1230,6 +1161,9 @@ def compute_signals(
         res.min_score,
         minutes_remaining,
     )
+
+    # ── Volatility surface (logging-only) ──────────────────────────────────
+    res.vol_surface_adj = _compute_vol_surface(yes_mid, atr14, minutes_remaining)
 
     p_up_str = f"{res.posterior_final_up:.4f}" if res.posterior_final_up else "N/A"
     e_str = f"{res.target_edge:.4f}" if res.target_edge else "N/A"

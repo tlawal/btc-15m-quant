@@ -95,7 +95,7 @@ class Config:
     # ── Exit parameters ───────────────────────────────────────────────────────
     TAKE_PROFIT_PRICE          = 0.99
     SLIPPAGE_BUFFER_PCT        = 0.008    # Phase 6: 80bps execution buffer
-    MAX_DRAWDOWN_PCT           = 0.08    # Tightened from 0.12 — trigger FORCED_DRAWDOWN earlier
+    MAX_DRAWDOWN_PCT           = 0.15    # Widened: let winners run, TRAIL_PRICE_STOP handles profit protection
     HARD_STOP_PCT              = 0.25    # HARD unconditional circuit breaker — no posterior gate.
                                           # Trailing guard held a -65% loss when posterior lagged price.
                                           # At -25% the position is unrecoverable on a 15m binary; cut always.
@@ -115,7 +115,7 @@ class Config:
     TRAIL_ATR_SCALE            = 0.06     # additional allowed drop at high ATR (scaled by atr/ref)
     TRAIL_MIN_POST_DROP        = 0.02     # floor (tightest) trailing width
     TRAIL_MAX_POST_DROP        = 0.12     # cap (widest) trailing width
-    TRAIL_ARM_MIN_PROFIT_PCT   = 0.01     # only arm trailing after at least +1% unrealized
+    TRAIL_ARM_MIN_PROFIT_PCT   = 0.015    # only arm trailing after at least +1.5% unrealized
     TRAIL_MIN_HOLD_SEC         = 30.0     # minimum hold before trailing can trigger
 
     # ── Tiered Take-Profit (percentage from entry) ─────────────────────────
@@ -124,7 +124,7 @@ class Config:
     TP3_PCT                    = 0.20     # +20% → sell remaining
     TP_LATE_ENTRY_THRESH       = 0.95     # entry >= $0.95 triggers single TP
     TP_LATE_ENTRY_PCT          = 0.02     # +2% single TP for late entries
-    TP_PARTIAL_ENABLED         = False    # flip to True when ready for 1/3 scaling
+    TP_PARTIAL_ENABLED         = True     # 1/3 partial scaling at TP1/TP2/TP3
     TP1_POSTERIOR_CEIL         = 0.93
 
     # ── Volatility-Adapted Stop-Loss (ATR-normalized) ────────────────────
@@ -166,7 +166,7 @@ class Config:
     STREAK_HALVE               = True     # halve size after 2 consecutive losses
     MIN_TRADE_USD              = 5.75    # Polymarket CLOB minimum is ~$5
     MAX_TRADES_PER_WINDOW      = 5
-    STREAK_HALT_AT             = 2        # halt trading after N consecutive losses
+    STREAK_HALT_AT             = 3        # halt trading after N consecutive losses
 
     # Dynamic Kelly scaling based on belief volatility (sigma_b)
     KELLY_MULT_MIN             = 0.50
@@ -180,6 +180,7 @@ class Config:
     # ── Hard capital protections ──────────────────────────────────────────────
     MAX_TRADE_USD              = 50.0     # absolute max per single trade
     MAX_TRADES_PER_HOUR        = 14        # hourly trade limit
+    MAX_DAILY_TRADES           = 20        # absolute daily trade limit (reset midnight UTC)
     DAILY_LOSS_LIMIT_USD       = 12.0     # stop if daily realized loss exceeds this
     DAILY_LOSS_LIMIT_PCT       = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "0.15") or 0.15)
 

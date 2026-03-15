@@ -70,7 +70,9 @@ def compute_position_size(
     # Recalibrate Kelly using live performance if available
     # Modified Kelly: f* = p - (1-p)/b
     # If we have live profit_factor, use it as 'b'
-    b = profit_factor if profit_factor and profit_factor > 0 else (1.0 - entry_price) / entry_price if entry_price > 0 else 1.0
+    # Binary outcome: payout is $1.00, so odds offered = (1 - price) / price
+    # profit_factor is misleading for binary markets — always use binary odds
+    b = (1.0 - entry_price) / entry_price if entry_price > 0 else 1.0
     p = win_rate if win_rate and win_rate > 0 else posterior
     
     q = 1.0 - p

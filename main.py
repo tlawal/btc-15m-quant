@@ -1151,64 +1151,11 @@ class Engine:
         self.state.prev_obv    = indic.obv
         self.state.prev_ofi_recent = book.deep_ofi
 
-        # ── Mid-Window Reversal / Stop-Loss Tracking (Data API) ─────────────
+        # ── Position API sync (for dashboard) ──────────────────────────────────
         open_positions = await self.pm.get_open_positions()
         self.state.open_positions_api = open_positions
-        triggered_exits = await self.pm.monitor_and_exit_open_positions(open_positions, sig, btc_price, indic.atr14, state=self.state)
-        
-        for ex in triggered_exits:
-            # ex contains: market_slug, reason, order_id, size, entry_price, exit_price, pnl_usd, condition_id
-            log.info(f"MID-WINDOW EXIT EXECUTED: {ex['reason']} on {ex['market_slug']} | PnL: ${ex['pnl_usd']:.2f}")
-            
-            # Record in DB
-            await self.state_mgr.record_closed_trade(
-                ts=int(time.time()),
-                market_slug=ex['market_slug'],
-                size=ex['size'],
-                entry_price=ex['entry_price'],
-                exit_price=ex['exit_price'],
-                pnl_usd=ex['pnl_usd'],
-                outcome_win=1 if ex['pnl_usd'] > 0 else 0,
-                regime=sig.regime,
-                features=sig.to_feature_dict(),
-                kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
-            )
-            
-            # Update EngineState — match on held_position's condition_id OR last_condition_id
-            pos_cid = self.state.held_position.condition_id
-            matches_held = pos_cid and str(pos_cid) == str(ex['condition_id'])
-            matches_last = str(self.state.last_condition_id) == str(ex['condition_id'])
-            if self.state.held_position.side and (matches_held or matches_last):
-                self.state.held_position = HeldPosition()
-                self.state.total_trades += 1
-                if ex['pnl_usd'] > 0:
-                    self.state.total_wins += 1
-                    self.state.loss_streak = 0
-                    self.state.session_start_balance = balance  # reset drawdown baseline on win
-                else:
-                    self.state.total_losses += 1
-                    self.state.loss_streak += 1
-                self.state.total_pnl_usd += ex['pnl_usd']
-
-            # ALWAYS update trade_history regardless of condition_id match
-            # (prevents trades stuck as "OPEN" forever after window roll)
-            for tr in reversed(self.state.trade_history):
-                if tr.outcome == "OPEN":
-                    tr.exit_price = ex['exit_price']
-                    tr.pnl        = ex['pnl_usd'] / (ex['entry_price'] * ex['size']) if ex['entry_price'] * ex['size'] > 0 else 0.0
-                    tr.outcome    = "WIN" if ex['pnl_usd'] > 0 else "LOSS"
-                    break
-            
-            # Feed optimizer — monitor exits were previously invisible to the RF learner
-            if self._last_sig:
-                outcome_str = "WIN" if ex['pnl_usd'] > 0 else "LOSS"
-                self.optimizer.log_trade(self._last_sig, outcome_str)
-                pnl_pct = ex['pnl_usd'] / (ex['entry_price'] * ex['size']) if ex['entry_price'] * ex['size'] > 0 else 0.0
-                self.optimizer.record_trade_pnl(pnl_pct)
-
-            # Recalculate metrics
-            asyncio.create_task(self.state_mgr.calculate_performance_metrics())
-
+        # NOTE: monitor_and_exit_open_positions removed — all exits consolidated
+        # through exit_policy.evaluate_exit() via _handle_exits below.
 
         # ── Exit handling ─────────────────────────────────────────────────────
         # Phase 3: pass CVD and posteriors for new exit types
@@ -1371,6 +1318,20 @@ class Engine:
             "balance":            balance,
             "btc_price":          btc_price,
         })
+
+        # ── Calibration point logging (every cycle) ────────────────────────────
+        if sig.posterior_final_up is not None and self.state.locked_strike_price:
+            try:
+                self.optimizer.log_calibration_point(
+                    posterior=sig.posterior_final_up,
+                    market_price=ob.yes_mid or 0.5,
+                    strike=self.state.locked_strike_price,
+                    btc_price=btc_price,
+                    window_id=win_start,
+                    timestamp=now_ts,
+                )
+            except Exception as _cal_err:
+                log.debug(f"calibration log error: {_cal_err}")
 
         # ── Outcome logging for previous window ───────────────────────────────
         if win_rolled:
@@ -1921,6 +1882,11 @@ class Engine:
             if prev_peak is None or curr_post > prev_peak:
                 setattr(pos, "peak_posterior", curr_post)
 
+        # Track peak price for TRAIL_PRICE_STOP
+        if current_px is not None:
+            if pos.peak_price is None or current_px > pos.peak_price:
+                pos.peak_price = current_px
+
         # Track adverse-selection / book-flip persistence
         # A "flip" is meaningful if OBI crosses sign against the held side with enough magnitude.
         # Config may not define book-flip params if this exit is disabled.
@@ -1967,6 +1933,7 @@ class Engine:
             tp1_hit           = getattr(pos, "tp1_hit", False),
             tp2_hit           = getattr(pos, "tp2_hit", False),
             tp3_hit           = getattr(pos, "tp3_hit", False),
+            peak_price        = pos.peak_price,
         )
         # Unpack structured exit result (dict or None)
         if not exit_result:
@@ -2216,6 +2183,12 @@ class Engine:
             _entry_skipped("max_trades_per_window")
             return
 
+        # ── Stale kline data gate ──────────────────────────────────────────────
+        if self.feeds.is_kline_stale(30):
+            log.warning("STALE_KLINE: last kline fetch > 30s ago — blocking entry")
+            _entry_skipped("stale_kline_data")
+            return
+
         # ── Phase 3: Time-to-Expiry Gate ────────────────────────────────────────
         if min_rem < 2.0 and not sig.monster_signal:
             log.debug(f"Entry blocked: Time to expiry ({min_rem:.1f}m) < 2.0m")
@@ -2232,6 +2205,16 @@ class Engine:
         if len(recent_trades) >= getattr(Config, "MAX_TRADES_PER_HOUR", 14):
             log.warning(f"Hourly trade limit reached ({len(recent_trades)}/hour) — no new entries")
             _entry_skipped("max_trades_per_hour", recent_trades=len(recent_trades))
+            return
+
+        # ── Daily trade counter (absolute, reset at midnight UTC) ──────────────
+        today_day = now_sec // 86400
+        if self.state.daily_trade_reset_day != today_day:
+            self.state.daily_trade_count = 0
+            self.state.daily_trade_reset_day = today_day
+        if self.state.daily_trade_count >= Config.MAX_DAILY_TRADES:
+            log.warning(f"MAX_DAILY_TRADES reached ({self.state.daily_trade_count}/{Config.MAX_DAILY_TRADES}) — no new entries")
+            _entry_skipped("max_daily_trades", count=self.state.daily_trade_count)
             return
 
         # Daily loss limit: sum realized losses from today's trades
@@ -2510,6 +2493,7 @@ class Engine:
         self.state.entry_features = sig.to_feature_dict()
         self.state.entry_regime = sig.regime
         self.state.trades_this_window += 1
+        self.state.daily_trade_count += 1
 
         log.info(f"Order placed: {order_id} — waiting for fill confirmation.")
 
@@ -2592,6 +2576,12 @@ class Engine:
                     if len(self.state.window_outcomes) > 10:  # keep last 10
                         self.state.window_outcomes = self.state.window_outcomes[-10:]
                     log.info(f"Window outcome: BTC {cand:.2f} vs strike {strike:.2f} → {direction}")
+
+                    # Fill calibration outcome for this window's records
+                    try:
+                        self.optimizer.fill_calibration_outcome(win_start, cand, strike)
+                    except Exception as _co_err:
+                        log.debug(f"fill_calibration_outcome error: {_co_err}")
 
                 outcome_data = {
                     "window_start": win_start,

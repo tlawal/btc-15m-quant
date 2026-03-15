@@ -99,6 +99,7 @@ def evaluate_exit(
     tp1_hit:          bool = False,
     tp2_hit:          bool = False,
     tp3_hit:          bool = False,
+    peak_price:       Optional[float] = None,
 ) -> Optional[dict]:
     """Evaluate whether to exit the current position.
 
@@ -162,31 +163,18 @@ def evaluate_exit(
     if not Config.is_preferred_trading_time() and unrealized_pct >= Config.OUTSIDE_HOURS_TAKE_PROFIT_PCT:
         return _exit("TAKE_SMALL_PROFIT_OUTSIDE", use_maker=use_maker)
 
-    # 1d. Adverse microstructure reversal (Hawkes OFI)
-    # Apply time-decay multiplier: lower threshold near expiry.
-    if minutes_remaining <= 1.0 and unrealized_pct < 0:
-        ofi_threshold = Config.EXIT_DEEP_OFI_REV_THRESH / td_mult  # tighter near expiry
-        if (held_side == "YES" and deep_ofi < -ofi_threshold) or (held_side == "NO" and deep_ofi > ofi_threshold):
-            log.warning(
-                "FORCED_ADVERSE_OFI: deep_ofi=%.1f threshold=%.3f td_mult=%.2f "
-                "(unrealized=%.1f%%) — adverse selection via OFI reversal",
-                deep_ofi, ofi_threshold, td_mult, unrealized_pct * 100,
-            )
-            return _exit("FORCED_ADVERSE_OFI")  # emergency — ignore spread
-
-    # 1e. Distance-based forced exit near expiry
-    if minutes_remaining <= 1.0 and distance is not None and unrealized_pct < -Config.FORCED_LATE_LOSS_PCT:
-        if abs(distance) <= 5.0:
-            log.warning(
-                "FORCED_DISTANCE_LATE: distance=%.1f <= 5, unrealized=%.1f%% — forcing exit near expiry",
-                abs(distance), unrealized_pct * 100,
-            )
-            return _exit("FORCED_DISTANCE_LATE")
-        else:
-            log.info(
-                "DISTANCE_HELD: distance=%.1f > 5, unrealized=%.1f%% — holding for expiry",
-                abs(distance), unrealized_pct * 100,
-            )
+    # 1d. Strike distance exceeded — migrated from monitor_and_exit_open_positions
+    # When BTC has moved far from strike and position is losing, cut losses.
+    if (
+        distance is not None and atr14 is not None and atr14 > 0
+        and abs(distance) > 0.6 * atr14
+        and unrealized_pct < -0.05
+    ):
+        log.warning(
+            "STRIKE_DISTANCE_EXCEEDED: distance=%.1f > 0.6*ATR=%.1f, unrealized=%.1f%% — exiting",
+            abs(distance), 0.6 * atr14, unrealized_pct * 100,
+        )
+        return _exit("STRIKE_DISTANCE_EXCEEDED")
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 2: TIERED TAKE-PROFITS (Req #1)
@@ -212,8 +200,8 @@ def evaluate_exit(
                 log.info("TP3: unrealized=%.1f%% >= %.1f%% — selling remaining", unrealized_pct * 100, Config.TP3_PCT * 100)
                 return _exit("TP3", partial_pct=1.0, use_maker=use_maker)
             if not tp2_hit and unrealized_pct >= Config.TP2_PCT:
-                log.info("TP2: unrealized=%.1f%% >= %.1f%% — selling 50%%", unrealized_pct * 100, Config.TP2_PCT * 100)
-                return _exit("TP2", partial_pct=0.5, use_maker=use_maker)
+                log.info("TP2: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP2_PCT * 100)
+                return _exit("TP2", partial_pct=0.333, use_maker=use_maker)
             if not tp1_hit and unrealized_pct >= Config.TP1_PCT:
                 if tp1_allowed:
                     log.info("TP1: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP1_PCT * 100)
@@ -350,14 +338,17 @@ def evaluate_exit(
         if posterior <= _peak_post - allow_drop:
             return _exit("TRAIL_POSTERIOR", use_maker=use_maker)
 
-    # 5d. Forced profit lock (near expiry, strong profit)
-    if minutes_remaining <= Config.FORCED_PROFIT_LOCK_MIN_REM:
-        if unrealized_pct > Config.FORCED_PROFIT_PCT:
-            return _exit("FORCED_PROFIT_LOCK", use_maker=use_maker)
-
-    # 5e. Absolute price take-profit
-    if current_price >= Config.TAKE_PROFIT_PRICE:
-        return _exit("TAKE_PROFIT", use_maker=use_maker)
+    # 5d. Trailing PRICE stop — track peak price, exit if price drops ATR-scaled % from peak
+    if current_price is not None and entry_price > 0 and peak_price is not None:
+        trail_price_drop_pct = max(0.03, min(0.15, 0.05 * max(1.0, atr_ratio)))
+        if current_price < peak_price * (1.0 - trail_price_drop_pct):
+            log.info(
+                "TRAIL_PRICE_STOP: price=%.4f dropped %.1f%% from peak=%.4f "
+                "(ATR-scaled threshold=%.1f%%)",
+                current_price, (1.0 - current_price / peak_price) * 100,
+                peak_price, trail_price_drop_pct * 100,
+            )
+            return _exit("TRAIL_PRICE_STOP", use_maker=use_maker)
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 6: TIME-DECAY-ENHANCED MICROSTRUCTURE EXITS (Req #6)
@@ -419,6 +410,13 @@ def evaluate_exit(
         return _exit("ALPHA_DECAY", use_maker=use_maker)
     if held_side == "NO" and score_delta > Config.STOP_LOSS_DELTA:
         return _exit("ALPHA_DECAY", use_maker=use_maker)
+
+    # 6a2. Absolute score reversal (migrated from monitor_and_exit_open_positions)
+    # Fires on absolute score opposing the held side, not just delta from entry.
+    if held_side == "YES" and signed_score < -5.0 and unrealized_pct < 0:
+        return _exit("ABS_SCORE_REVERSAL", use_maker=use_maker)
+    if held_side == "NO" and signed_score > 5.0 and unrealized_pct < 0:
+        return _exit("ABS_SCORE_REVERSAL", use_maker=use_maker)
 
     # 6b. Momentum reversal — CVD flipped against position
     if held_side == "YES" and cvd_delta < -0.5 and unrealized_pct < 0 and minutes_remaining < 8.0:

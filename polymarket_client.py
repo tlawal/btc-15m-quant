@@ -1044,10 +1044,19 @@ class PolymarketClient:
             log.error(f"Failed to fetch open positions from Data API: {e}")
             return []
     async def monitor_and_exit_open_positions(self, open_positions: list[dict], sig, btc_price: float, atr14: float, state=None) -> list[dict]:
+        """DEPRECATED: All exit logic consolidated into exit_policy.evaluate_exit().
+
+        Conditions migrated:
+        - SCORE_REVERSAL → ABS_SCORE_REVERSAL in exit_policy L6
+        - STOP_LOSS_15PCT → FORCED_DRAWDOWN (now 15%) in exit_policy L5
+        - STRIKE_DISTANCE_EXCEEDED → exit_policy L1
+        - MICROSTRUCTURE_FLIP → MICRO_REVERSAL in exit_policy L6
+
+        This method is kept for backward compatibility but returns empty list.
         """
-        Evaluate open positions against mid-window exit criteria.
-        Returns a list of reasons/orders for any triggered exits.
-        """
+        log.debug("monitor_and_exit_open_positions: DEPRECATED — all exits via exit_policy.evaluate_exit()")
+        return []
+        # Original implementation below (unreachable):
         exits = []
         if not self.can_trade or not open_positions:
             return exits

@@ -51,6 +51,7 @@ class HeldPosition:
     tp1_hit: bool                   = False  # TP1 (5%) already triggered
     tp2_hit: bool                   = False  # TP2 (12%) already triggered
     tp3_hit: bool                   = False  # TP3 (20%) already triggered
+    peak_price: Optional[float]     = None   # highest price seen while held (for TRAIL_PRICE_STOP)
 
 
 @dataclass
@@ -191,6 +192,10 @@ class EngineState:
     # ── Tier 1: Cross-window memory ───────────────────────────────────────────
     window_outcomes: List[str]            = field(default_factory=list)  # ["UP","DOWN",...]
     last_funding_rate: Optional[float]    = None  # previous cycle's funding rate
+
+    # ── Daily trade counter ──────────────────────────────────────────────────
+    daily_trade_count: int                = 0
+    daily_trade_reset_day: int            = 0     # day number (unix_ts // 86400)
 
 
 # ── State manager ─────────────────────────────────────────────────────────────

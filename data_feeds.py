@@ -215,6 +215,7 @@ class DataFeeds:
         self.kline_ws = BinanceKlineWebsocket()
         self.funding_ws = BinanceFundingWebsocket()
         self.oracle = ChainlinkOraclePolygon()
+        self.last_kline_fetch_ts: int = 0  # unix ts of last successful kline fetch
 
     async def start(self):
         timeout = aiohttp.ClientTimeout(total=8)
@@ -292,13 +293,22 @@ class DataFeeds:
 
     # ── Klines ────────────────────────────────────────────────────────────────
 
+    def is_kline_stale(self, threshold_sec: int = 30) -> bool:
+        """Return True if last successful kline fetch was more than threshold_sec ago."""
+        if self.last_kline_fetch_ts == 0:
+            return False  # never fetched yet — don't block on first cycle
+        import time as _time
+        return (_time.time() - self.last_kline_fetch_ts) > threshold_sec
+
     async def get_klines(self, symbol: str, interval: str, limit: int) -> list[Candle]:
         """Fetch klines: Priority 1 = Binance REST (works from NL Railway) → Fallbacks."""
+        import time as _time
         # Priority 1: Binance REST
         url = f"{BINANCE_REST}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
         alt = f"{BINANCE_ALT}/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
         raw = await self._fetch_json_with_fallback(url, alt)
         if raw:
+            self.last_kline_fetch_ts = int(_time.time())
             return [
                 Candle(
                     ts_ms=int(row[0]),
@@ -314,12 +324,14 @@ class DataFeeds:
         # Priority 2: Bybit REST (US-friendly)
         bybit_candles = await self._get_bybit_klines(symbol, interval, limit)
         if bybit_candles:
+            self.last_kline_fetch_ts = int(_time.time())
             return bybit_candles
 
         # Priority 3: Coinbase
         cb_interval = interval  # "5m" or "1m"
         cb_candles = await self.get_coinbase_klines(cb_interval, limit)
         if cb_candles:
+            self.last_kline_fetch_ts = int(_time.time())
             return cb_candles
 
         log.warning(f"All kline sources failed for {symbol} {interval}")

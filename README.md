@@ -31,10 +31,10 @@ utils.py             — Logging, Telegram alerts, formatting
 ## Feature Set
 
 ### Signal Engine
-- **Bayesian posterior blending** — logit-space signal weight (0.7), time-decay curve
+- **Bayesian posterior blending** — logit-space signal weight (0.5), time-decay curve
 - **Belief-vol sigma_B** — rolling 3-min belief volatility regresses posterior toward 0.5 in high-noise regimes (capped at 1.15–1.30)
 - **EMA score smoothing** — `signed_score = 0.6 * raw + 0.4 * prev` to reduce single-cycle noise
-- **Group-max scoring** — 5 signal groups (Trend, Momentum, Flow, Microstructure, New Signals) each contribute only their strongest member; prevents correlated feature inflation; raw score capped at ±8.0
+- **Group-max scoring** — 4 signal groups (Trend, Momentum, Flow, Microstructure) each contribute only their strongest member; prevents correlated feature inflation; raw score capped at ±8.0
 - **Microstructure signals** — TOB imbalance, CVD velocity, deep OFI (10-level), VPIN proxy
 - **Deep LOB + ML ensemble (real-time)** — compute 40-level cumulative imbalance + depth VWAP deviation + momentum-change proxy from Binance L2 (`limit=100`), feed into the lightweight ML model (`inference.py`), and blend with the Bayesian posterior each cycle via weights `ENSEMBLE_BAYES_WEIGHT` and `ENSEMBLE_MODEL_WEIGHT`
 - **Hawkes-style timing gate (late window)** — estimate next-event timing from clustered trade arrivals; within last 5 min, if `next_event_sec < 5` and the signal direction agrees, relax required edge down to `HAWKES_LATE_REQUIRED_EDGE`
@@ -46,6 +46,7 @@ utils.py             — Logging, Telegram alerts, formatting
 - **Late conviction sniping** — within last 3 min, `posterior >= 0.80` and `distance >= $40` suppresses score gate for near-certain OTM binaries
 - **Negative-edge block** — never sizes a position when model edge < 0, even on monster signals
 - **Early window guard** — blocks non-monster entries for the first 7.5 min of each 15-min window
+- **Early-minute momentum (stub)** — concept: BTC price momentum in the first 1-2 minutes of a window predicts direction for the remainder. If BTC moves strongly in one direction immediately after window open, momentum tends to persist. Currently stubbed (`compute_early_minute_momentum()` returns None) pending calibration data from historical windows. Will require: 1m klines from window's first 2 minutes, comparison of close[t=1min] vs open[t=0] as % of ATR, threshold calibration
 
 ### Exit Engine (`exit_policy.py`)
 Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior override) and **soft exits** (suppressed by trailing posterior guard while model is still confident).
@@ -93,7 +94,8 @@ References (microstructure / adverse selection):
 - `MAX_TRADE_USD = 50.00` — absolute per-trade cap
 - `MAX_EXPOSURE_USD = 100.00` — blocks new entries if already at exposure limit
 - `MAX_TRADES_PER_HOUR = 14` — rolling 1-hour entry limit
-- `STREAK_HALT_AT = 5` — halts trading after 5 consecutive losses
+- `STREAK_HALT_AT = 3` — halts trading after 3 consecutive losses
+- `MAX_DAILY_TRADES = 20` — absolute daily trade limit (resets midnight UTC)
 - `DAILY_LOSS_LIMIT_PCT = 10%` — stops if rolling 24h realized loss > 10% of session start balance
 - **Session drawdown halt** — halts if session drawdown exceeds 30%
 - **Manual resume** — `POST /api/resume` with password resets halt, loss streak reset

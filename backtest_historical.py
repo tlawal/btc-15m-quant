@@ -299,8 +299,94 @@ async def backtest_historical(days_back: int = 30):
             print(f"  Trade-only results saved to backtest_trades.csv")
 
 
+async def collect_calibration_data(days_back: int = 30):
+    """Collect (posterior, outcome) pairs from resolved markets for Platt training.
+
+    Fetches resolved Polymarket 15m BTC markets, computes simplified posteriors
+    using Binance kline data, and outputs calibration_data.jsonl.
+
+    Usage:
+        python backtest_historical.py --collect --days 60
+    """
+    print(f"═══════════════════════════════════════════════════")
+    print(f"  Calibration Data Collector")
+    print(f"  Lookback: {days_back} days")
+    print(f"═══════════════════════════════════════════════════")
+
+    output_path = "calibration_data.jsonl"
+    collected = 0
+
+    async with aiohttp.ClientSession() as session:
+        print("\n[1/2] Fetching resolved Polymarket 15m BTC markets...")
+        markets = await fetch_resolved_markets(session, days_back)
+        print(f"       Found {len(markets)} resolved markets")
+
+        if not markets:
+            print("No markets found. Exiting.")
+            return
+
+        print(f"[2/2] Computing posteriors for resolved markets...")
+
+        with open(output_path, "w") as f:
+            for i, mkt in enumerate(markets):
+                if i % 50 == 0 and i > 0:
+                    print(f"       Processed {i}/{len(markets)} markets ({collected} collected)...")
+                    await asyncio.sleep(0.5)
+
+                k5m = await fetch_binance_klines(session, mkt["start_ts"], "5m", 50)
+                await asyncio.sleep(0.15)
+
+                if len(k5m) < 15:
+                    continue
+
+                indic = compute_local_indicators(k5m, [])
+
+                # Find strike (open of 15m window)
+                strike_price = None
+                for c in k5m:
+                    if c.ts_ms >= mkt["start_ts"] * 1000:
+                        strike_price = c.open
+                        break
+                if strike_price is None:
+                    strike_price = k5m[-1].open
+
+                btc_close = k5m[-1].close
+                atr = indic.atr14 or 150.0
+
+                sig = simulate_signal(indic, strike_price, btc_close, atr)
+
+                # Actual outcome: did BTC close above strike?
+                actual_up = btc_close > strike_price
+                outcome = 1 if actual_up else 0
+                dist = abs(btc_close - strike_price)
+                confidence = "low" if dist < 20 else "high"
+
+                record = {
+                    "ts": mkt["end_ts"],
+                    "window_id": mkt["start_ts"],
+                    "posterior": round(sig["posterior_up"], 6),
+                    "market_price": 0.50,  # unknown for resolved markets
+                    "strike": round(strike_price, 2),
+                    "btc_price": round(btc_close, 2),
+                    "outcome": outcome,
+                    "distance_from_strike": round(dist, 2),
+                    "resolution_confidence": confidence,
+                }
+                f.write(json.dumps(record) + "\n")
+                collected += 1
+
+    print(f"\n═══════════════════════════════════════════════════")
+    print(f"  Collected {collected} calibration records")
+    print(f"  Output: {output_path}")
+    print(f"═══════════════════════════════════════════════════")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Predi-Quant Historical Backtester")
     parser.add_argument("--days", type=int, default=30, help="Days to look back (default: 30)")
+    parser.add_argument("--collect", action="store_true", help="Collect calibration data instead of backtesting")
     args = parser.parse_args()
-    asyncio.run(backtest_historical(days_back=args.days))
+    if args.collect:
+        asyncio.run(collect_calibration_data(days_back=args.days))
+    else:
+        asyncio.run(backtest_historical(days_back=args.days))
