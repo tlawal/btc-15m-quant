@@ -99,7 +99,6 @@ def evaluate_exit(
     tp1_hit:          bool = False,
     tp2_hit:          bool = False,
     tp3_hit:          bool = False,
-    peak_price:       Optional[float] = None,
 ) -> Optional[dict]:
     """Evaluate whether to exit the current position.
 
@@ -263,10 +262,19 @@ def evaluate_exit(
 
     if posterior is not None and _entry_post is not None:
         posterior_drop = _entry_post - posterior
-        if posterior_drop >= Config.MODEL_REVERSAL_DROP_PCT:
+        # Time-dependent threshold: early drops are informative, late drops are noisier
+        minutes_elapsed = 15.0 - minutes_remaining
+        if minutes_elapsed < 5.0:
+            _reversal_threshold = 0.10   # tighter early — posterior updates carry more signal
+        elif minutes_elapsed < 10.0:
+            _reversal_threshold = Config.MODEL_REVERSAL_DROP_PCT  # 0.15 mid-window
+        else:
+            _reversal_threshold = 0.20   # looser late — spread noise dominates near expiry
+        if posterior_drop >= _reversal_threshold:
             log.warning(
-                "MODEL_REVERSAL: posterior=%.3f dropped %.1fpp from entry=%.3f (threshold=%.0fpp) — exiting",
-                posterior, posterior_drop * 100, _entry_post, Config.MODEL_REVERSAL_DROP_PCT * 100,
+                "MODEL_REVERSAL: posterior=%.3f dropped %.1fpp from entry=%.3f "
+                "(threshold=%.0fpp, %.1fmin elapsed) — exiting",
+                posterior, posterior_drop * 100, _entry_post, _reversal_threshold * 100, minutes_elapsed,
             )
             return _exit("MODEL_REVERSAL", use_maker=use_maker)
 
@@ -338,17 +346,6 @@ def evaluate_exit(
         if posterior <= _peak_post - allow_drop:
             return _exit("TRAIL_POSTERIOR", use_maker=use_maker)
 
-    # 5d. Trailing PRICE stop — track peak price, exit if price drops ATR-scaled % from peak
-    if current_price is not None and entry_price > 0 and peak_price is not None:
-        trail_price_drop_pct = max(0.03, min(0.15, 0.05 * max(1.0, atr_ratio)))
-        if current_price < peak_price * (1.0 - trail_price_drop_pct):
-            log.info(
-                "TRAIL_PRICE_STOP: price=%.4f dropped %.1f%% from peak=%.4f "
-                "(ATR-scaled threshold=%.1f%%)",
-                current_price, (1.0 - current_price / peak_price) * 100,
-                peak_price, trail_price_drop_pct * 100,
-            )
-            return _exit("TRAIL_PRICE_STOP", use_maker=use_maker)
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 6: TIME-DECAY-ENHANCED MICROSTRUCTURE EXITS (Req #6)

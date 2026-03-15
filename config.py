@@ -120,7 +120,7 @@ class Config:
 
     # ── Tiered Take-Profit (percentage from entry) ─────────────────────────
     TP1_PCT                    = 0.05     # +5% → sell 1/3 (or full if partial disabled)
-    TP2_PCT                    = 0.15     # +15% → sell 1/3
+    TP2_PCT                    = 0.12     # +12% → sell 1/3
     TP3_PCT                    = 0.20     # +20% → sell remaining
     TP_LATE_ENTRY_THRESH       = 0.95     # entry >= $0.95 triggers single TP
     TP_LATE_ENTRY_PCT          = 0.02     # +2% single TP for late entries

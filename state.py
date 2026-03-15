@@ -51,7 +51,6 @@ class HeldPosition:
     tp1_hit: bool                   = False  # TP1 (5%) already triggered
     tp2_hit: bool                   = False  # TP2 (12%) already triggered
     tp3_hit: bool                   = False  # TP3 (20%) already triggered
-    peak_price: Optional[float]     = None   # highest price seen while held (for TRAIL_PRICE_STOP)
 
 
 @dataclass

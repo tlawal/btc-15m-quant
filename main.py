@@ -1289,6 +1289,7 @@ class Engine:
         # Phase 6: Periodic Institutional Retraining (every hour)
         if self._status_counter % 240 == 0 and self._status_counter > 0:
             self.optimizer.retrain_and_adjust()
+            self.optimizer.try_fit_platt()
             if self.inference:
                 self.inference.reload_model()
 
@@ -1882,11 +1883,6 @@ class Engine:
             if prev_peak is None or curr_post > prev_peak:
                 setattr(pos, "peak_posterior", curr_post)
 
-        # Track peak price for TRAIL_PRICE_STOP
-        if current_px is not None:
-            if pos.peak_price is None or current_px > pos.peak_price:
-                pos.peak_price = current_px
-
         # Track adverse-selection / book-flip persistence
         # A "flip" is meaningful if OBI crosses sign against the held side with enough magnitude.
         # Config may not define book-flip params if this exit is disabled.
@@ -1933,7 +1929,6 @@ class Engine:
             tp1_hit           = getattr(pos, "tp1_hit", False),
             tp2_hit           = getattr(pos, "tp2_hit", False),
             tp3_hit           = getattr(pos, "tp3_hit", False),
-            peak_price        = pos.peak_price,
         )
         # Unpack structured exit result (dict or None)
         if not exit_result:

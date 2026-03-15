@@ -32,13 +32,16 @@ async def fetch_resolved_markets(session: aiohttp.ClientSession, days_back: int)
     """Fetch resolved BTC 15m up/down markets from Polymarket Gamma API."""
     markets = []
     offset = 0
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days_back)
 
     while True:
         url = (
             f"{GAMMA_API}/markets"
             f"?closed=true&limit=100&offset={offset}"
             f"&order=endDate&ascending=false"
+            f"&end_date_min={int(cutoff.timestamp())}"
+            f"&end_date_max={int(now.timestamp())}"
         )
         try:
             async with session.get(url) as r:
@@ -165,7 +168,7 @@ async def backtest_historical(days_back: int = 30):
     print(f"  Lookback: {days_back} days")
     print(f"═══════════════════════════════════════════════════")
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
         # 1. Fetch resolved markets
         print("\n[1/3] Fetching resolved Polymarket 15m BTC markets...")
         markets = await fetch_resolved_markets(session, days_back)
@@ -316,7 +319,7 @@ async def collect_calibration_data(days_back: int = 30):
     output_path = "calibration_data.jsonl"
     collected = 0
 
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
         print("\n[1/2] Fetching resolved Polymarket 15m BTC markets...")
         markets = await fetch_resolved_markets(session, days_back)
         print(f"       Found {len(markets)} resolved markets")
