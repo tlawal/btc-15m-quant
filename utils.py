@@ -89,6 +89,15 @@ async def send_telegram(
     except Exception as e:
         log.warning(f"Telegram send failed: {e}")
 
+def _json_default(obj):
+    """Fallback serializer for numpy/non-standard types."""
+    if isinstance(obj, (bool,)):
+        return bool(obj)
+    if hasattr(obj, "item"):  # numpy scalar
+        return obj.item()
+    return str(obj)
+
+
 class StructuredJSONLogger:
     """Phase 5: Structured JSON logging to persistent storage on /data."""
     def __init__(self, log_dir="/data"):
@@ -115,7 +124,7 @@ class StructuredJSONLogger:
         }
         try:
             with open(self.filepath, "a") as f:
-                f.write(json.dumps(entry) + "\n")
+                f.write(json.dumps(entry, default=_json_default) + "\n")
         except Exception as e:
             log.error(f"Failed to write structured log: {e}")
 
