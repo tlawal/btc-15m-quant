@@ -446,6 +446,19 @@ class Engine:
                 
                 log.info(f"Recorded redemption win: +{tr.pnl*100:.2f}% (approx profit: ${profit_usd:.2f})")
 
+                # Record to closed_trades DB so performance metrics stay in sync
+                if self.state_mgr:
+                    asyncio.create_task(self.state_mgr.record_closed_trade(
+                        ts=int(time.time()),
+                        market_slug=self.state.last_market_slug or "unknown",
+                        size=tr.size or size_usd,
+                        entry_price=ep,
+                        exit_price=1.0,
+                        pnl_usd=profit_usd,
+                        outcome_win=1,
+                        regime=getattr(self.state, "entry_regime", None),
+                    ))
+
                 # Clear held position — the old market has settled
                 self.state.held_position = HeldPosition()
 
@@ -1846,11 +1859,12 @@ class Engine:
             old_expiry = pos.market_expiry
             if old_expiry:
                 min_rem = max(0.0, (old_expiry - time.time()) / 60.0)
-            # If old market already expired, position will auto-settle at $1.00.
-            # CRITICAL: Clear held_position so the bot can trade the new window.
-            # Without this, the stale position blocks all new entries forever.
-            if min_rem <= 0:
-                log.info(f"EXIT: Old market expired — clearing held_position, will auto-settle at $1.00")
+            # Auto-settle when old market is near/past expiry (<= 2 min).
+            # Polymarket endDate includes a ~2min settlement buffer after the nominal
+            # window end, which causes stale OB prices and phantom negative PnL.
+            # Clear immediately once the trading window is effectively over.
+            if min_rem <= 2.0:
+                log.info(f"EXIT: Old market expired (min_rem={min_rem:.1f}) — clearing held_position, will auto-settle at $1.00")
                 # Record as WIN at $1.00 if we were on the winning side
                 for tr in reversed(self.state.trade_history):
                     if tr.side == pos.side and tr.outcome == "OPEN":
@@ -1860,9 +1874,21 @@ class Engine:
                         tr.outcome = "WIN"
                         self.state.total_trades += 1
                         self.state.total_wins += 1
-                        self.state.total_pnl_usd += (1.0 - ep) * (pos.size or 0)
+                        profit_usd = (1.0 - ep) * (pos.size or 0)
+                        self.state.total_pnl_usd += profit_usd
                         self.state.loss_streak = 0
                         log.info(f"AUTO_SETTLE_WIN: {pos.side} entry={ep:.3f} -> $1.00 pnl={tr.pnl*100:.1f}%")
+                        # Record to closed_trades DB
+                        await self.state_mgr.record_closed_trade(
+                            ts=int(time.time()),
+                            market_slug=self.state.last_market_slug or "unknown",
+                            size=tr.size or pos.size or 0,
+                            entry_price=ep,
+                            exit_price=1.0,
+                            pnl_usd=profit_usd,
+                            outcome_win=1,
+                            regime=getattr(self.state, "entry_regime", None),
+                        )
                         break
                 self.state.held_position = HeldPosition()
                 return False
