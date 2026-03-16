@@ -1499,7 +1499,62 @@ class Engine:
             return
 
         status = await self.pm.get_order_status(pos.order_id)
+        age_s = int(time.time()) - (pos.placed_at_ts or 0)
+
         if not status:
+            # API failure — if exit order is old enough, force-resolve via position check
+            if pos.exit_reason and age_s > 15:
+                log.warning(f"RECONCILE: get_order_status returned None for exit order (age={age_s}s) — checking positions API")
+                actual = await self.pm.get_positions()
+                still_held = any(
+                    p.get("asset") == pos.token_id and float(p.get("size", 0)) > 0
+                    for p in (actual or [])
+                )
+                if not still_held:
+                    log.info("RECONCILE: shares no longer held — exit order was filled (status API missed it)")
+                    # Treat as filled at intended exit price
+                    pos.is_pending = False
+                    entry_px = pos.avg_entry_price or pos.entry_price or 0.5
+                    actual_px = pos.intended_exit_price or entry_px
+                    pnl_pct = (actual_px - entry_px) / entry_px if entry_px > 0 else 0.0
+                    outcome = "WIN" if pnl_pct >= 0 else "LOSS"
+                    if pnl_pct < 0:
+                        self.state.loss_streak += 1
+                    else:
+                        self.state.loss_streak = 0
+                    for tr in reversed(self.state.trade_history):
+                        if tr.side == pos.side and tr.outcome == "OPEN":
+                            tr.exit_price = actual_px
+                            tr.pnl = pnl_pct
+                            tr.outcome = outcome
+                            break
+                    self.state.total_trades += 1
+                    if outcome == "WIN":
+                        self.state.total_wins += 1
+                    else:
+                        self.state.total_losses += 1
+                    self.state.total_pnl_usd += (actual_px - entry_px) * (pos.size or 0)
+                    await self.state_mgr.record_closed_trade(
+                        ts=int(time.time()),
+                        market_slug=self.state.last_market_slug or "unknown",
+                        size=pos.size or 0,
+                        entry_price=entry_px,
+                        exit_price=actual_px,
+                        pnl_usd=(actual_px - entry_px) * (pos.size or 0),
+                        outcome_win=1 if outcome == "WIN" else 0,
+                    )
+                    log.info(f"RECONCILE FORCE EXIT: {outcome} pnl={pnl_pct*100:.1f}%")
+                    self.state.held_position = HeldPosition()
+                elif age_s > 30:
+                    # Still held but order status unknown for 30s — cancel and let exit re-evaluate
+                    log.warning(f"RECONCILE: shares still held, exit order status unknown for {age_s}s — clearing pending flag")
+                    try:
+                        await self.pm.cancel_order(str(pos.order_id))
+                    except Exception:
+                        pass
+                    pos.is_pending = False
+                    pos.exit_reason = None
+                    pos.order_id = None
             return
 
         st = status.get("status")
@@ -1628,8 +1683,7 @@ class Engine:
 
         elif st in ("OPEN", "LIVE"):
             # Stale order replacement: if >12s old, cancel and re-place at current price
-            age_s = int(time.time()) - (pos.placed_at_ts or 0)
-            if age_s > 60 and pos.exit_reason:
+            if age_s > 30 and pos.exit_reason:
                 # Exit order stale >60s — force FOK at bid-1tick for guaranteed fill
                 log.warning(f"EXIT TIMEOUT ({age_s}s): re-placing {pos.order_id} as FOK")
                 try:
@@ -2061,9 +2115,12 @@ class Engine:
         exit_bid = max(0.01, min(0.99, exit_bid))
         exit_px_gtc = max(0.01, min(0.99, exit_px_gtc))
 
-        # Emergency reasons use FOK at bid for guaranteed fill
+        # Reasons that must use FOK at bid for guaranteed fill:
+        # Emergency stops + take-profits + near-certain locks (we want the money NOW)
         _fok_reasons = ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT", "VOL_HARD_STOP",
-                        "FORCED_ADVERSE_OFI", "FORCED_DISTANCE_LATE")
+                        "FORCED_ADVERSE_OFI", "FORCED_DISTANCE_LATE",
+                        "TP1", "TP2", "TP3", "TP_FULL", "TP_LATE_ENTRY",
+                        "NEAR_CERTAIN_LOCK", "PROB_CONVERGENCE")
         if reason in _fok_reasons:
             order_id = await self.pm.limit_sell(pos.token_id, exit_bid, sell_size, order_type="FOK")
             exit_px = exit_bid

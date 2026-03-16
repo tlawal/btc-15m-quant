@@ -1162,7 +1162,9 @@ function updateUI() {
             d.wallet_usdc = debug.live_wallet_usdc;
         }
         const sig  = d.signal || {};
-        const perf = d.performance_metrics || d.perf_db || d.performance || {};
+        // Prefer heartbeat performance (computed from trade_history, always correct)
+        // over performance_metrics/perf_db (from closed_trades DB, may miss auto-settle wins)
+        const perf = d.performance || d.perf_db || d.performance_metrics || {};
         const lats = d.latencies || {};
 
         // Build version
@@ -1221,13 +1223,12 @@ function updateUI() {
         $('halt-banner').style.display = halted ? '' : 'none';
         if ($('halt-label')) $('halt-label').innerText = killActive ? '🔴 Kill Switch Active' : '⛔ Trading Halted';
 
-        // ── PnL header ──
-        const perfObj = d.performance_metrics || d.performance || {};
-        const pnlUsd = d.total_pnl_usd ?? perfObj?.total_pnl_usd;
-        const totalTrades = d.total_trades ?? perfObj?.total_trades ?? 0;
-        if (pnlUsd != null && totalTrades > 0) {
-            $('cum-pnl').innerText = (pnlUsd>=0?'+':'-')+'$'+(Math.abs(pnlUsd)).toFixed(2);
-            $('cum-pnl').className = `banner-val ${pnlUsd>=0?'text-green-400':'text-red-400'}`;
+        // ── PnL header — compute from actual closed trades (ground truth) ──
+        const closedTrades = (d.recent_trades||[]).filter(t=>t.exit!=null && t.pnl!=null);
+        if (closedTrades.length > 0) {
+            const cumPnlUsd = closedTrades.reduce((s,t) => s + (t.pnl||0) * (t.entry||0) * (t.size||0), 0);
+            $('cum-pnl').innerText = (cumPnlUsd>=0?'+':'-')+'$'+(Math.abs(cumPnlUsd)).toFixed(2);
+            $('cum-pnl').className = `banner-val ${cumPnlUsd>=0?'text-green-400':'text-red-400'}`;
         }
 
         // ── Regime badge ──
