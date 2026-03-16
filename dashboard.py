@@ -1317,6 +1317,26 @@ async def manual_exit_cancel(request: Request):
         return JSONResponse({"status": "error", "message": str(e)}, status_code=400)
 
 
+@app.post("/api/force-clear-position")
+async def force_clear_position(request: Request):
+    """Emergency: clear held_position state when shares are already sold but state is stuck."""
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    if not engine or not engine.state:
+        return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
+    from state import HeldPosition
+    old = engine.state.held_position
+    info = f"Cleared: side={old.side} size={old.size} pending={old.is_pending} exit_reason={old.exit_reason}"
+    engine.state.held_position = HeldPosition()
+    engine.state.pos_current_price = None
+    engine.state.pos_unrealized_pnl_pct = None
+    engine.state.pos_unrealized_pnl_usd = None
+    await engine.state_mgr.save(engine.state)
+    log.warning(f"FORCE_CLEAR_POSITION via API: {info}")
+    return {"status": "ok", "message": info}
+
+
 @app.post("/api/manual/exit-now")
 async def manual_exit_now(request: Request):
     deny = _require_admin(request)
