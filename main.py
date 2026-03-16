@@ -1634,63 +1634,97 @@ class Engine:
                     margin = await self.pm.get_margin()
                     balance = margin.get("balance_usdc", 0.0)
                     self.state.session_start_balance = balance
-                for tr in reversed(self.state.trade_history):
-                    if tr.side == pos.side and tr.outcome == "OPEN":
-                        tr.exit_price = actual_px
-                        tr.pnl        = pnl_pct
-                        tr.slippage   = slippage
-                        tr.outcome    = outcome
-                        break
-                
                 # Determine actual sell size (matched shares, not full position)
                 sell_size = matched if matched > 0 else pos.size
-
-                # Phase 4: Record closed trade to DB + optimizer feedback
-                entry_feats = getattr(self.state, "entry_features", None)
-                await self.state_mgr.record_closed_trade(
-                    ts=int(time.time()),
-                    market_slug=self.state.last_market_slug or "unknown",
-                    size=sell_size,
-                    entry_price=entry_px,
-                    exit_price=actual_px,
-                    pnl_usd=(actual_px - entry_px) * sell_size,
-                    outcome_win=1 if outcome == "WIN" else 0,
-                    regime=getattr(self.state, "entry_regime", None),
-                    features=entry_feats,
-                    kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
-                )
-                # Phase 4: Feed optimizer for signal decay + Sharpe-Kelly
-                if entry_feats:
-                    if self._last_sig:
-                        self.optimizer.log_trade(self._last_sig, outcome)
-                self.optimizer.record_trade_pnl(pnl_pct)
-
-                # Notify
-                margin = await self.pm.get_margin()
-                balance = margin.get("balance_usdc", 0.0)
-                await send_telegram(
-                    self.feeds.session,
-                    fmt_exit(pos.side, actual_px, entry_px, pnl_pct, pos.exit_reason, balance),
-                )
-                log.info(f"EXIT CONFIRMED: {pos.side} {pos.exit_reason} pnl={pnl_pct*100:.2f}% sell_size={sell_size} slippage={slippage*100:.4f}%")
-
-                self.state.total_trades += 1
-                if outcome == "WIN":
-                    self.state.total_wins += 1
-                else:
-                    self.state.total_losses += 1
 
                 # Handle partial vs full exits
                 _partial_reasons = ("TP1", "TP2", "TP3")
                 remaining = pos.size - sell_size
-                if pos.exit_reason in _partial_reasons and remaining > 0.5:
-                    # Partial fill — keep position open with reduced size
-                    log.info(f"PARTIAL EXIT: sold {sell_size}, remaining {remaining} shares — position stays open")
+                is_partial = pos.exit_reason in _partial_reasons and remaining > 0.5
+
+                if is_partial:
+                    # Partial fill — record the partial exit, keep TradeRecord as OPEN
+                    pos.partial_exits.append({
+                        "size": sell_size,
+                        "price": actual_px,
+                        "reason": pos.exit_reason,
+                        "ts": int(time.time()),
+                        "pnl_pct": pnl_pct,
+                    })
+                    log.info(f"PARTIAL EXIT: sold {sell_size}@{actual_px:.3f} ({pos.exit_reason}), remaining {remaining} shares — position stays open")
+
+                    # Record partial to DB for tracking
+                    entry_feats = getattr(self.state, "entry_features", None)
+                    await self.state_mgr.record_closed_trade(
+                        ts=int(time.time()),
+                        market_slug=self.state.last_market_slug or "unknown",
+                        size=sell_size,
+                        entry_price=entry_px,
+                        exit_price=actual_px,
+                        pnl_usd=(actual_px - entry_px) * sell_size,
+                        outcome_win=1 if outcome == "WIN" else 0,
+                        regime=getattr(self.state, "entry_regime", None),
+                        features=entry_feats,
+                        kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
+                    )
+
                     pos.size = remaining
                     pos.is_pending = False
                     pos.exit_reason = None
                     pos.order_id = None
                 else:
+                    # Full exit — finalize TradeRecord with weighted average if partial exits exist
+                    all_exits = list(pos.partial_exits) + [{"size": sell_size, "price": actual_px}]
+                    total_sold = sum(e["size"] for e in all_exits)
+                    wavg_exit = sum(e["size"] * e["price"] for e in all_exits) / total_sold if total_sold > 0 else actual_px
+                    final_pnl = (wavg_exit - entry_px) / entry_px if entry_px > 0 else 0.0
+                    final_outcome = "WIN" if final_pnl > 0 else "LOSS"
+
+                    for tr in reversed(self.state.trade_history):
+                        if tr.side == pos.side and tr.outcome == "OPEN":
+                            tr.exit_price = wavg_exit
+                            tr.pnl        = final_pnl
+                            tr.slippage   = slippage
+                            tr.outcome    = final_outcome
+                            break
+
+                    # Record final exit portion to DB
+                    entry_feats = getattr(self.state, "entry_features", None)
+                    await self.state_mgr.record_closed_trade(
+                        ts=int(time.time()),
+                        market_slug=self.state.last_market_slug or "unknown",
+                        size=sell_size,
+                        entry_price=entry_px,
+                        exit_price=actual_px,
+                        pnl_usd=(actual_px - entry_px) * sell_size,
+                        outcome_win=1 if final_outcome == "WIN" else 0,
+                        regime=getattr(self.state, "entry_regime", None),
+                        features=entry_feats,
+                        kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
+                    )
+                    # Feed optimizer
+                    if entry_feats:
+                        if self._last_sig:
+                            self.optimizer.log_trade(self._last_sig, final_outcome)
+                    self.optimizer.record_trade_pnl(final_pnl)
+
+                    # Notify
+                    margin = await self.pm.get_margin()
+                    balance = margin.get("balance_usdc", 0.0)
+                    await send_telegram(
+                        self.feeds.session,
+                        fmt_exit(pos.side, wavg_exit, entry_px, final_pnl, pos.exit_reason, balance),
+                    )
+                    log.info(f"EXIT CONFIRMED: {pos.side} {pos.exit_reason} pnl={final_pnl*100:.2f}% wavg_exit={wavg_exit:.3f} partials={len(pos.partial_exits)} slippage={slippage*100:.4f}%")
+
+                    self.state.total_trades += 1
+                    if final_outcome == "WIN":
+                        self.state.total_wins += 1
+                        self.state.loss_streak = 0
+                    else:
+                        self.state.total_losses += 1
+                        self.state.loss_streak += 1
+
                     # Full exit — clear position
                     self.state.held_position = HeldPosition()
             else:
@@ -2001,7 +2035,31 @@ class Engine:
                 pos.order_id = None
                 # Fall through to normal exit handling (auto-settle will fire below)
             else:
-                return False
+                # HARD_STOP bypass: check if position breached unconditional stop while pending.
+                # This prevents hard stops from being blocked by stale pending orders.
+                _bypass = False
+                try:
+                    _pending_ob = await self.pm.get_order_books(pos.token_id, pos.token_id)
+                    if _pending_ob and pos.entry_price and pos.entry_price > 0:
+                        _px = _pending_ob.yes_mid if pos.side == "YES" else _pending_ob.no_mid
+                        _unreal = (_px - pos.entry_price) / pos.entry_price if _px else None
+                        if _unreal is not None and _unreal < -Config.HARD_STOP_PCT:
+                            log.warning(
+                                "HARD_STOP_BYPASS: unrealized=%.1f%% breached -%.1f%% while is_pending — cancelling pending order",
+                                _unreal * 100, Config.HARD_STOP_PCT * 100,
+                            )
+                            try:
+                                if pos.order_id:
+                                    await self.pm.cancel_order(str(pos.order_id))
+                            except Exception:
+                                pass
+                            pos.is_pending = False
+                            pos.order_id = None
+                            _bypass = True
+                except Exception as e:
+                    log.warning(f"HARD_STOP_BYPASS check failed: {e}")
+                if not _bypass:
+                    return False
 
         # ALWAYS fetch the order book for the position's own token_id.
         # The passed-in `ob` may be from a different market after window roll.
@@ -2099,6 +2157,18 @@ class Engine:
         # Store position's correct current price for dashboard display
         self.state.pos_current_price = current_px
 
+        # ── MAE/MFE tracking ────────────────────────────────────────────────
+        if current_px is not None and entry_px > 0:
+            if pos.lowest_price_since_entry is None or current_px < pos.lowest_price_since_entry:
+                pos.lowest_price_since_entry = current_px
+            if pos.highest_price_since_entry is None or current_px > pos.highest_price_since_entry:
+                pos.highest_price_since_entry = current_px
+            pos.mae_pct = (entry_px - pos.lowest_price_since_entry) / entry_px
+            pos.mfe_pct = (pos.highest_price_since_entry - entry_px) / entry_px
+            # Record when deep drawdown first occurred
+            if pos.mae_pct >= Config.MAE_RECOVERY_EXIT_THRESHOLD and pos.deep_drawdown_ts is None:
+                pos.deep_drawdown_ts = int(time.time())
+
         # Get previous posterior for decay detection
         prev_post = self.state.last_posterior_up if pos.side == "YES" else self.state.last_posterior_down
         curr_post = sig.posterior_final_up if pos.side == "YES" else sig.posterior_final_down
@@ -2155,6 +2225,9 @@ class Engine:
             tp1_hit           = getattr(pos, "tp1_hit", False),
             tp2_hit           = getattr(pos, "tp2_hit", False),
             tp3_hit           = getattr(pos, "tp3_hit", False),
+            mae_pct           = getattr(pos, "mae_pct", 0.0),
+            mfe_pct           = getattr(pos, "mfe_pct", 0.0),
+            deep_drawdown_ts  = getattr(pos, "deep_drawdown_ts", None),
         )
         # Unpack structured exit result (dict or None)
         if not exit_result:
@@ -2284,8 +2357,9 @@ class Engine:
 
         # Reasons that must use FOK at bid for guaranteed fill:
         # Emergency stops + take-profits + near-certain locks (we want the money NOW)
-        _fok_reasons = ("FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT", "VOL_HARD_STOP",
+        _fok_reasons = ("HARD_STOP", "FORCED_DRAWDOWN", "ALPHA_DECAY", "FORCED_LATE_EXIT", "VOL_HARD_STOP",
                         "FORCED_ADVERSE_OFI", "FORCED_DISTANCE_LATE",
+                        "MAE_RECOVERY_EXIT", "MAE_LATE_RECOVERY",
                         "TP1", "TP2", "TP3", "TP_FULL", "TP_LATE_ENTRY",
                         "NEAR_CERTAIN_LOCK", "PROB_CONVERGENCE")
         if reason in _fok_reasons:
@@ -2302,8 +2376,30 @@ class Engine:
             exit_px = exit_px_gtc
 
         if not order_id:
-            log.error(f"Exit order failed ({reason})")
-            return False
+            pos.consecutive_sell_failures += 1
+            log.error(f"Exit order failed ({reason}) — consecutive_sell_failures={pos.consecutive_sell_failures}")
+
+            # Escalation: after 3 consecutive failures, try half position size
+            if pos.consecutive_sell_failures >= 3 and sell_size > 1:
+                half_size = max(1, int(sell_size / 2))
+                log.warning(f"SELL_ESCALATION: trying smaller size {half_size} (was {sell_size}) at bid {exit_bid:.2f} FOK")
+                order_id = await self.pm.limit_sell(pos.token_id, exit_bid, half_size, order_type="FOK")
+                if order_id:
+                    sell_size = half_size
+                    pos.consecutive_sell_failures = 0
+
+            # Escalation: after 10 consecutive failures, try market_sell as last resort
+            if not order_id and pos.consecutive_sell_failures >= 10:
+                log.critical(f"SELL_ESCALATION_MARKET: {pos.consecutive_sell_failures} consecutive failures — trying market_sell")
+                order_id = await self.pm.market_sell(pos.token_id, sell_size)
+                if order_id:
+                    pos.consecutive_sell_failures = 0
+
+            if not order_id:
+                return False
+
+        # Reset failure counter on success
+        pos.consecutive_sell_failures = 0
 
         # Update TP tier flags for partial exits
         if reason == "TP1":

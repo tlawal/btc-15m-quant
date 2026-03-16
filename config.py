@@ -109,6 +109,13 @@ class Config:
     MID_WINDOW_PROTECTIVE_LOSS_PCT = 0.05
     MID_WINDOW_POSTERIOR_CEIL      = 0.55
 
+    # ── MAE (Maximum Adverse Excursion) framework ────────────────────────────
+    MAE_TIGHTEN_THRESHOLD          = 0.10   # MAE >= 10% → tighten drawdown tolerance 40%
+    MAE_RECOVERY_EXIT_THRESHOLD    = 0.20   # MAE >= 20% → recovery exit when near entry
+    MAE_DEEP_THRESHOLD             = 0.25   # MAE >= 25% → maximum pain, hard exit
+    MAE_RECOVERY_NEAR_ENTRY_PCT    = 0.03   # "near entry" = within 3% of entry price
+    MAE_RECOVERY_TIME_LATE_SEC     = 300    # 5 min: after this, accept -10% instead of -3%
+
     # Volatility-adjusted trailing stop (probability-space, ATR-scaled)
     TRAIL_ATR_REF              = 120.0    # reference ATR level for scaling trailing width
     TRAIL_BASE_POST_DROP       = 0.04     # base allowable posterior drop from peak before exit

@@ -51,6 +51,16 @@ class HeldPosition:
     tp1_hit: bool                   = False  # TP1 (5%) already triggered
     tp2_hit: bool                   = False  # TP2 (12%) already triggered
     tp3_hit: bool                   = False  # TP3 (20%) already triggered
+    # Sell failure tracking for escalation
+    consecutive_sell_failures: int  = 0
+    # MAE/MFE tracking (updated every cycle)
+    lowest_price_since_entry: Optional[float]  = None
+    highest_price_since_entry: Optional[float] = None
+    mae_pct: float                 = 0.0  # Maximum Adverse Excursion (worst drawdown)
+    mfe_pct: float                 = 0.0  # Maximum Favorable Excursion (best unrealized)
+    deep_drawdown_ts: Optional[int] = None  # timestamp when MAE first exceeded deep threshold
+    # Partial exit tracking: list of {"size": float, "price": float, "reason": str, "ts": int}
+    partial_exits: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass

@@ -12,6 +12,7 @@ Production-grade exit architecture with 6 layered mechanisms:
 """
 
 import math
+import time
 import logging
 from typing import Optional
 
@@ -99,6 +100,10 @@ def evaluate_exit(
     tp1_hit:          bool = False,
     tp2_hit:          bool = False,
     tp3_hit:          bool = False,
+    # ── MAE/MFE tracking ──
+    mae_pct:          float = 0.0,
+    mfe_pct:          float = 0.0,
+    deep_drawdown_ts: Optional[int] = None,
 ) -> Optional[dict]:
     """Evaluate whether to exit the current position.
 
@@ -123,6 +128,17 @@ def evaluate_exit(
 
     # Pre-compute time-decay multiplier for microstructure exits
     td_mult = _time_decay_multiplier(minutes_remaining)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 0: ABSOLUTE HARD STOP — unconditional circuit breaker, no gates
+    # At -25% the position is unrecoverable on a 15m binary; cut always.
+    # ══════════════════════════════════════════════════════════════════════════
+    if unrealized_pct < -Config.HARD_STOP_PCT:
+        log.warning(
+            "HARD_STOP: unrealized=%.1f%% breached -%.1f%% — unconditional exit",
+            unrealized_pct * 100, Config.HARD_STOP_PCT * 100,
+        )
+        return _exit("HARD_STOP")
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 1: HARD CIRCUIT BREAKERS — bypass ALL posterior gating
@@ -176,6 +192,30 @@ def evaluate_exit(
         return _exit("STRIKE_DISTANCE_EXCEEDED")
 
     # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 1.5: MAE-CONDITIONED EXITS
+    # After deep drawdown, exit aggressively on recovery instead of waiting
+    # for full TP. Deep-V recoveries are rare on 15-min binaries.
+    # ══════════════════════════════════════════════════════════════════════════
+    if mae_pct >= Config.MAE_RECOVERY_EXIT_THRESHOLD:
+        # MAE_RECOVERY_EXIT: deep drawdown recovered near entry → exit 100%
+        if unrealized_pct >= -Config.MAE_RECOVERY_NEAR_ENTRY_PCT:
+            log.warning(
+                "MAE_RECOVERY_EXIT: mae=%.1f%% recovered to unrealized=%.1f%% (within %.1f%% of entry) — full exit",
+                mae_pct * 100, unrealized_pct * 100, Config.MAE_RECOVERY_NEAR_ENTRY_PCT * 100,
+            )
+            return _exit("MAE_RECOVERY_EXIT")
+
+        # MAE_LATE_RECOVERY: deep drawdown + time elapsed → accept partial recovery
+        if deep_drawdown_ts is not None:
+            _time_since_deep = time.time() - deep_drawdown_ts
+            if _time_since_deep >= Config.MAE_RECOVERY_TIME_LATE_SEC and unrealized_pct >= -0.10:
+                log.warning(
+                    "MAE_LATE_RECOVERY: mae=%.1f%% + %.0fs since deep drawdown, unrealized=%.1f%% — accepting partial recovery",
+                    mae_pct * 100, _time_since_deep, unrealized_pct * 100,
+                )
+                return _exit("MAE_LATE_RECOVERY")
+
+    # ══════════════════════════════════════════════════════════════════════════
     # LAYER 2: TIERED TAKE-PROFITS (Req #1)
     # ══════════════════════════════════════════════════════════════════════════
 
@@ -203,8 +243,13 @@ def evaluate_exit(
                 return _exit("TP2", partial_pct=0.333, use_maker=use_maker)
             if not tp1_hit and unrealized_pct >= Config.TP1_PCT:
                 if tp1_allowed:
-                    log.info("TP1: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP1_PCT * 100)
-                    return _exit("TP1", partial_pct=0.333, use_maker=use_maker)
+                    # MAE TP override: after deep drawdown, take full profit instead of partial
+                    _tp1_pct = 1.0 if mae_pct >= Config.MAE_RECOVERY_EXIT_THRESHOLD else 0.333
+                    if _tp1_pct >= 1.0:
+                        log.info("TP1_MAE_OVERRIDE: mae=%.1f%% — upgrading TP1 to full exit", mae_pct * 100)
+                    else:
+                        log.info("TP1: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP1_PCT * 100)
+                    return _exit("TP1", partial_pct=_tp1_pct, use_maker=use_maker)
                 log.info(
                     "TP1_SKIPPED_HIGH_CONVICTION: posterior=%.3f >= %.3f — holding despite unrealized=%.1f%%",
                     float(posterior),
@@ -297,6 +342,10 @@ def evaluate_exit(
         Config.MAX_DRAWDOWN_PCT * max(1.0, atr_ratio),
         Config.VOL_STOP_MAX_PCT,
     )
+    # MAE tightening: if position has already shown vulnerability (MAE >= 10%),
+    # reduce drawdown tolerance by 40% to exit faster on second adverse move.
+    if mae_pct >= Config.MAE_TIGHTEN_THRESHOLD:
+        adapted_drawdown *= 0.60
     if unrealized_pct < -adapted_drawdown:
         # 0.95+ conviction exemption near expiry with large distance
         if (posterior is not None and posterior > 0.95 and minutes_remaining < 2.0

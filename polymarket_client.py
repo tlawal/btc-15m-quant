@@ -347,12 +347,10 @@ class PolymarketClient:
                 log.error("Conditional allowance check failed: %s", e)
                 return None
 
-        allowance = await _fetch_allowance()
-        if allowance is None:
-            return False
-        if allowance >= float(min_required):
-            return True
-
+        # ALWAYS force-update allowance proactively before checking.
+        # The check alone returns false positives ("approved: true") when on-chain
+        # allowance is actually insufficient, causing ALL sell orders to be rejected
+        # by the CLOB with "not enough balance / allowance".
         try:
             loop = asyncio.get_event_loop()
             params = BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL, token_id=str(token_id))
@@ -361,29 +359,23 @@ class PolymarketClient:
                 timeout=10.0,
             )
         except asyncio.TimeoutError:
-            log.error("Conditional allowance update timed out (10s)")
-            return False
+            log.warning("Conditional allowance proactive update timed out (10s) — checking anyway")
         except Exception as e:
-            log.error("Conditional allowance update failed: %s", e)
-            return False
+            log.warning("Conditional allowance proactive update failed: %s — checking anyway", e)
 
-        allowance2 = await _fetch_allowance()
-        if allowance2 is None:
+        allowance = await _fetch_allowance()
+        log.info(
+            "Conditional allowance for token_id=%s: %s (min_required=%.1f)",
+            str(token_id)[:16], allowance, min_required,
+        )
+        if allowance is None:
             return False
-        if allowance2 >= float(min_required):
-            log.info(
-                "Conditional allowance updated for token_id=%s: %.4f -> %.4f",
-                str(token_id),
-                allowance,
-                allowance2,
-            )
+        if allowance >= float(min_required):
             return True
 
         log.error(
-            "Conditional allowance still insufficient after update for token_id=%s: %.4f < %.4f",
-            str(token_id),
-            allowance2,
-            float(min_required),
+            "Conditional allowance insufficient after proactive update for token_id=%s: %s < %.1f",
+            str(token_id)[:16], allowance, min_required,
         )
         return False
 
@@ -1469,32 +1461,53 @@ class PolymarketClient:
         if not ok:
             log.error("Order blocked: conditional token allowance check failed for token_id=%s", str(token_id))
             raise PolyApiException(error_msg="conditional_allowance_missing")
-        try:
-            clean_price = round(price, 2)
-            clean_size = int(size) if size > 1 else round(size, 2)
-            if clean_size < 1 and int(size) == 0:
-                # Selling fractional position — keep as-is, CLOB may accept for sells
-                clean_size = round(size, 2)
-            log.info(f"limit_sell: price={clean_price} size={clean_size} type={order_type}")
-            args = OrderArgs(
-                token_id = token_id,
-                price    = clean_price,
-                size     = float(clean_size),
-                side     = "SELL",
-                nonce    = nonce,
-            )
-            ot = OrderType.FOK if order_type in ("IOC", "FOK") else OrderType.GTC
-            loop = asyncio.get_event_loop()
-            signed = await loop.run_in_executor(
-                None, lambda: self.client.create_order(args)
-            )
-            resp = await loop.run_in_executor(
-                None, lambda: self.client.post_order(signed, ot)
-            )
-            return resp.get("orderID") or resp.get("id")
-        except Exception as e:
-            log.error(f"limit_sell failed: {e}")
-            return None
+        clean_price = round(price, 2)
+        clean_size = int(size) if size > 1 else round(size, 2)
+        if clean_size < 1 and int(size) == 0:
+            # Selling fractional position — keep as-is, CLOB may accept for sells
+            clean_size = round(size, 2)
+
+        for attempt in range(2):
+            try:
+                log.info(f"limit_sell: price={clean_price} size={clean_size} type={order_type} attempt={attempt+1}")
+                args = OrderArgs(
+                    token_id = token_id,
+                    price    = clean_price,
+                    size     = float(clean_size),
+                    side     = "SELL",
+                    nonce    = nonce,
+                )
+                ot = OrderType.FOK if order_type in ("IOC", "FOK") else OrderType.GTC
+                loop = asyncio.get_event_loop()
+                signed = await loop.run_in_executor(
+                    None, lambda: self.client.create_order(args)
+                )
+                resp = await loop.run_in_executor(
+                    None, lambda: self.client.post_order(signed, ot)
+                )
+                return resp.get("orderID") or resp.get("id")
+            except PolyApiException as e:
+                err_str = str(e).lower()
+                if "balance" in err_str or "allowance" in err_str:
+                    if attempt == 0:
+                        log.warning(f"limit_sell: 400 balance/allowance on attempt 1 — force-updating allowance and retrying")
+                        try:
+                            params = BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL, token_id=str(token_id))
+                            await asyncio.wait_for(
+                                loop.run_in_executor(None, lambda: self.client.update_balance_allowance(params)),
+                                timeout=10.0,
+                            )
+                        except Exception as ue:
+                            log.error(f"limit_sell: allowance force-update failed: {ue}")
+                        continue  # retry
+                    log.error(f"limit_sell failed after retry: {e}")
+                    return None
+                log.error(f"limit_sell failed: {e}")
+                return None
+            except Exception as e:
+                log.error(f"limit_sell failed: {e}")
+                return None
+        return None
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
