@@ -291,6 +291,12 @@ class StateManager:
             elif hasattr(state, k):
                 setattr(state, k, v)
 
+        # Sanitize counters — prevent impossible states from accumulation bugs
+        state.total_trades  = max(0, state.total_trades)
+        state.total_wins    = max(0, min(state.total_wins, state.total_trades))
+        state.total_losses  = max(0, min(state.total_losses, state.total_trades))
+        state.loss_streak   = max(0, state.loss_streak)
+
         log.info(
             f"State loaded: streak={state.loss_streak} "
             f"halted={state.trading_halted} "

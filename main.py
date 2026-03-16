@@ -427,18 +427,21 @@ class Engine:
                 tr.exit_price = 1.0  # Polymarket winning shares are always redeemed at $1
                 tr.pnl = (tr.exit_price - ep) / ep
                 
-                # If it was prematurely marked as a LOSS, reverse the loss stats
+                # Fix stats depending on prior outcome
                 if tr.outcome == "LOSS":
-                    self.state.total_losses -= 1
-                    self.state.total_pnl_usd += size_usd # Add the size back
-                
+                    # Was already counted as a trade+loss — flip to win
+                    self.state.total_losses = max(0, self.state.total_losses - 1)
+                    self.state.total_wins += 1
+                    self.state.total_pnl_usd += size_usd  # reverse the loss PnL
+                else:
+                    # OPEN → WIN: not yet counted — add as new trade + win
+                    self.state.total_trades += 1
+                    self.state.total_wins += 1
+
                 tr.outcome = "WIN"
-                
+
                 self.state.loss_streak = 0
                 self.state.session_start_balance = None  # force re-record on next cycle so drawdown resets
-                if self.state.total_trades == 0:
-                    self.state.total_trades += 1 # Ensure counting if lost
-                self.state.total_wins += 1
                 
                 # Approximate PnL logic (size_usd is the *payout*)
                 profit_usd = size_usd * tr.pnl if tr.pnl else 0.0

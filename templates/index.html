@@ -1297,15 +1297,18 @@ function updateUI() {
         $('unclaimed-win').innerText = d.unclaimed_usdc != null ? '$'+parseFloat(d.unclaimed_usdc).toFixed(2) : '$0.00';
 
         if (perf && Object.keys(perf).length) {
-            // Prefer state-level win rate (includes auto-settle wins) over DB-only
-            const stateWr = (d.total_trades > 0) ? (d.total_wins / d.total_trades) : null;
-            const wr = stateWr ?? perf.win_rate ?? 0, pf=perf.profit_factor||0, sh=perf.sharpe_ratio||perf.sharpe||0;
+            const wr = perf.win_rate||0;
+            // profit_factor = 0 when no losses (gross_loss=0); display as "∞" or large
+            const pf = perf.profit_factor||0;
+            const pfDisplay = (pf === 0 && wr > 0 && (perf.losses||0) === 0) ? '∞' : pf.toFixed(2);
+            const sh = perf.sharpe_ratio||perf.sharpe||0;
+            const tradeCount = perf.closed_trades||perf.total_trades||closedTrades.length||0;
             $('new-pm-wr').innerText   = `${(wr*100).toFixed(1)}%`;
-            $('new-pm-pf').innerText   = pf.toFixed(2);
+            $('new-pm-pf').innerText   = pfDisplay;
             $('new-pm-sharpe').innerText = sh.toFixed(2);
-            $('new-pm-total').innerText = d.total_trades||perf.total_trades||perf.closed_trades||0;
+            $('new-pm-total').innerText = tradeCount;
             $('new-pm-wr').className   = `mono text-sm font-bold ${wr>0.5?'text-green-400':'text-slate-300'}`;
-            $('new-pm-pf').className   = `mono text-sm font-bold ${pf>=1.0?'text-green-400':'text-red-400'}`;
+            $('new-pm-pf').className   = `mono text-sm font-bold ${pf>=1.0||pfDisplay==='∞'?'text-green-400':'text-red-400'}`;
             $('new-pm-sharpe').className = `mono text-sm font-bold ${sh>0?'text-green-400':'text-slate-300'}`;
         }
 
