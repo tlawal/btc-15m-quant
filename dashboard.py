@@ -1337,6 +1337,46 @@ async def force_clear_position(request: Request):
     return {"status": "ok", "message": info}
 
 
+@app.post("/api/fix-last-trade")
+async def fix_last_trade(request: Request):
+    """Fix the most recent trade's exit price/pnl when it was wrongly marked (e.g., -100% LOSS on a manual exit)."""
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    if not engine or not engine.state:
+        return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
+    body = await request.json()
+    exit_price = float(body.get("exit_price", 0))
+    if exit_price <= 0 or exit_price > 1.0:
+        return JSONResponse({"status": "error", "message": "exit_price must be between 0.01 and 1.00"}, status_code=400)
+    # Find the most recent trade (or match by side if provided)
+    side = body.get("side")
+    target = None
+    for tr in reversed(engine.state.trade_history):
+        if side and tr.side != side:
+            continue
+        target = tr
+        break
+    if not target:
+        return JSONResponse({"status": "error", "message": "No matching trade found"}, status_code=404)
+    old_exit = target.exit_price
+    old_pnl = target.pnl
+    old_outcome = target.outcome
+    entry_px = target.entry_price or 0.5
+    target.exit_price = exit_price
+    target.pnl = (exit_price - entry_px) / entry_px if entry_px > 0 else 0.0
+    target.outcome = "WIN" if target.pnl >= 0 else "LOSS"
+    await engine.state_mgr.save(engine.state)
+    log.warning(f"FIX_LAST_TRADE via API: {target.side} entry={entry_px:.3f} exit {old_exit}->{exit_price} pnl {old_pnl}->{target.pnl:.4f} outcome {old_outcome}->{target.outcome}")
+    return {
+        "status": "ok",
+        "entry": entry_px,
+        "exit_price": exit_price,
+        "pnl_pct": round(target.pnl * 100, 2),
+        "outcome": target.outcome,
+    }
+
+
 @app.post("/api/manual/exit-now")
 async def manual_exit_now(request: Request):
     deny = _require_admin(request)

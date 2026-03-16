@@ -1723,9 +1723,18 @@ class Engine:
                         pos.placed_at_ts = int(time.time())
                         log.info(f"EXIT FOK placed @ {force_px} -> {new_oid}")
                     else:
-                        log.error("Exit FOK replace failed — position may be stuck")
+                        log.warning("Exit FOK replace failed — clearing pending to allow re-evaluation")
+                        try:
+                            await self.pm.cancel_order(str(pos.order_id))
+                        except Exception:
+                            pass
+                        pos.is_pending = False
+                        pos.order_id = None
                 except Exception as e:
                     log.warning(f"Exit timeout replace error: {e}")
+                    # Clear pending on failure to prevent permanent stuck state
+                    pos.is_pending = False
+                    pos.order_id = None
 
             elif age_s > 12 and not pos.exit_reason:
                 log.info(f"STALE ORDER ({age_s}s): replacing {pos.order_id}")
@@ -1909,8 +1918,28 @@ class Engine:
             return False
 
         # Phase 3: Don't exit while pending (wait for fill/cancel)
+        # EXCEPTION: if on an expired old market, force-clear pending so auto-settle can run.
+        # This prevents positions stuck forever when exit orders fail on expired markets.
         if pos.is_pending:
-            return False
+            pos_expired = (
+                pos.condition_id is not None
+                and market_info is not None
+                and pos.condition_id != market_info.condition_id
+                and pos.market_expiry
+                and (pos.market_expiry - time.time()) <= 0
+            )
+            if pos_expired:
+                log.warning(f"EXIT: is_pending on EXPIRED market — force-clearing pending to allow auto-settle")
+                try:
+                    if pos.order_id:
+                        await self.pm.cancel_order(str(pos.order_id))
+                except Exception:
+                    pass
+                pos.is_pending = False
+                pos.order_id = None
+                # Fall through to normal exit handling (auto-settle will fire below)
+            else:
+                return False
 
         # ALWAYS fetch the order book for the position's own token_id.
         # The passed-in `ob` may be from a different market after window roll.
@@ -2691,6 +2720,12 @@ class Engine:
                 # Record any expired out-of-the-money trades as losses in the DB
                 for tr in reversed(self.state.trade_history):
                     if tr.window == win_start and tr.outcome == "OPEN":
+                        # Skip if there's a pending exit for this position —
+                        # let reconciliation handle it instead of wrongly marking LOSS
+                        pos = self.state.held_position
+                        if pos.is_pending and pos.exit_reason and pos.side == tr.side:
+                            log.info(f"OUTCOME_LOG: skipping LOSS mark for {tr.side} — pending exit ({pos.exit_reason})")
+                            continue
                         tr.outcome = "LOSS"
                         tr.exit_price = 0.0
                         tr.pnl = -1.0
