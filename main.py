@@ -1658,26 +1658,29 @@ class Engine:
                 
                 pos.is_pending = False
                 pos.avg_entry_price = actual_px
-                
+                # Update size from actual fill (CLOB may partially fill)
+                if matched > 0 and matched != pos.size:
+                    log.info(f"ENTRY SIZE ADJUSTED: requested={pos.size} filled={matched}")
+                    pos.size = matched
+
                 # Set tx_hash for link
                 pos.tx_hash = status.get("tx_hash")
-                
-                # Update trade_history with tx_hash
+
+                # Update trade_history with tx_hash and actual fill size
                 for tr in reversed(self.state.trade_history):
                     if tr.side == pos.side and tr.outcome == "OPEN":
                         tr.tx_hash = status.get("tx_hash")
+                        tr.entry_price = actual_px
+                        tr.slippage = slippage
+                        if matched > 0:
+                            tr.size = matched
                         break
-                
+
                 # Update TradeRecord in history
                 if abs(slippage) > 0.01:
                     log.warning(f"HIGH SLIPPAGE: {slippage*100:.2f}% (intended={intended_px:.3f} actual={actual_px:.3f})")
-                for tr in reversed(self.state.trade_history):
-                    if tr.side == pos.side and tr.outcome == "OPEN":
-                        tr.entry_price = actual_px
-                        tr.slippage = slippage
-                        break
 
-                log.info(f"ENTRY CONFIRMED: {pos.side} @ {actual_px} slippage={slippage*100:.4f}%")
+                log.info(f"ENTRY CONFIRMED: {pos.side} @ {actual_px} size={matched or pos.size} slippage={slippage*100:.4f}%")
 
         elif st in ("CANCELED", "EXPIRED"):
             if matched > 0:
@@ -1711,11 +1714,27 @@ class Engine:
                         force_px = max((ob.no_bid or 0.01) - 0.01, 0.01)
                     else:
                         force_px = max((pos.intended_exit_price or 0.50) - 0.01, 0.01)
+                    # Verify actual position size to avoid overselling
+                    replace_size = pos.size
+                    try:
+                        live_pos = await self.pm.get_positions()
+                        for p in (live_pos or []):
+                            if str((p or {}).get("asset")) == str(pos.token_id):
+                                replace_size = float((p or {}).get("size") or 0.0)
+                                break
+                    except Exception:
+                        pass
+                    if replace_size <= 0:
+                        log.info("RECONCILE: no shares held — exit already filled, clearing position")
+                        pos.is_pending = False
+                        pos.order_id = None
+                        # Let _handle_exits auto-settle or clear on next cycle
+                        return
                     new_oid = await self.pm.replace_order(
                         old_order_id=pos.order_id,
                         token_id=pos.token_id,
                         new_price=force_px,
-                        size=pos.size,
+                        size=replace_size,
                         order_type="FOK",
                     )
                     if new_oid:
@@ -2085,8 +2104,28 @@ class Engine:
         except Exception as _ex_log_err:
             log.warning(f"exit log error: {_ex_log_err}")
 
-        # Compute sell size (partial or full)
-        sell_size = pos.size if partial_pct >= 1.0 else max(1, int(pos.size * partial_pct))
+        # Compute sell size — verify against actual Polymarket position to avoid overselling
+        actual_size = pos.size
+        try:
+            live_positions = await self.pm.get_positions()
+            for p in (live_positions or []):
+                if str((p or {}).get("asset")) == str(pos.token_id):
+                    actual_size = float((p or {}).get("size") or 0.0)
+                    if actual_size != pos.size:
+                        log.warning(f"EXIT SIZE MISMATCH: state={pos.size} actual={actual_size} — using actual")
+                        pos.size = actual_size
+                    break
+        except Exception as _sz_err:
+            log.warning(f"Failed to verify position size: {_sz_err}")
+
+        if actual_size <= 0:
+            log.warning("EXIT: no actual position found — clearing state")
+            self.state.held_position = HeldPosition()
+            return False
+
+        sell_size = actual_size if partial_pct >= 1.0 else max(1, int(actual_size * partial_pct))
+        # Clamp to actual available
+        sell_size = min(sell_size, actual_size)
 
         # Paper-trade mode: apply exits locally without touching Polymarket.
         if Config.PAPER_TRADE_ENABLED:
@@ -2197,6 +2236,8 @@ class Engine:
         pos.order_id = order_id
         pos.exit_reason = reason
         pos.intended_exit_price = exit_px
+        pos.placed_at_ts = int(time.time())
+        pos.size = sell_size  # Track actual sell size for reconciliation
         log.info(f"Exit order placed ({order_id}) for {reason} — sell_size={sell_size} use_maker={use_maker} — waiting for fill")
         return True
 
