@@ -926,25 +926,6 @@
                     </div>
                     <div id="sweep-body" style="display:none">
                     <div class="mt-2 grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
-                        <div>
-                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Max Transfers</div>
-                            <input id="sweep-max" type="number" min="1" max="50" step="1" value="10" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200" />
-                        </div>
-                        <div>
-                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Min Shares</div>
-                            <input id="sweep-min" type="number" min="0" step="0.000001" value="0" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200" />
-                        </div>
-                        <div class="md:col-span-2 grid grid-cols-2 gap-2">
-                            <button id="btn-sweep-dry" class="rounded bg-slate-500/20 border border-slate-500/40 text-slate-200 text-xs px-2 py-1 hover:bg-slate-500/30">Dry Run</button>
-                            <button id="btn-sweep-exec" class="rounded bg-amber-500/20 border border-amber-500/40 text-amber-200 text-xs px-2 py-1 hover:bg-amber-500/30">Execute Sweep</button>
-                        </div>
-                    </div>
-                    <div class="mt-2 text-[0.6rem] text-slate-500">
-                        Sweeps full balances of resolved YES+NO ERC-1155 positions from your EOA into the Polymarket proxy wallet.
-                    </div>
-                    <pre id="sweep-out" class="mt-2 text-[0.62rem] mono bg-black/40 border border-white/10 rounded p-2 overflow-auto" style="max-height:180px">Ready.</pre>
-
-                    <div class="mt-3 grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
                         <div class="md:col-span-2">
                             <div class="text-[0.55rem] text-slate-500 uppercase mb-1">ConditionId</div>
                             <input id="cond-id" type="text" placeholder="0x..." class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200" />
