@@ -1505,8 +1505,9 @@ class Engine:
         age_s = int(time.time()) - (pos.placed_at_ts or 0)
 
         if not status:
-            # API failure — if exit order is old enough, force-resolve via position check
+            # API failure — force-resolve via position check after timeout
             if pos.exit_reason and age_s > 15:
+                # EXIT order: check if shares are gone (exit filled)
                 log.warning(f"RECONCILE: get_order_status returned None for exit order (age={age_s}s) — checking positions API")
                 actual = await self.pm.get_positions()
                 still_held = any(
@@ -1515,7 +1516,6 @@ class Engine:
                 )
                 if not still_held:
                     log.info("RECONCILE: shares no longer held — exit order was filled (status API missed it)")
-                    # Treat as filled at intended exit price
                     pos.is_pending = False
                     entry_px = pos.avg_entry_price or pos.entry_price or 0.5
                     actual_px = pos.intended_exit_price or entry_px
@@ -1549,7 +1549,6 @@ class Engine:
                     log.info(f"RECONCILE FORCE EXIT: {outcome} pnl={pnl_pct*100:.1f}%")
                     self.state.held_position = HeldPosition()
                 elif age_s > 30:
-                    # Still held but order status unknown for 30s — cancel and let exit re-evaluate
                     log.warning(f"RECONCILE: shares still held, exit order status unknown for {age_s}s — clearing pending flag")
                     try:
                         await self.pm.cancel_order(str(pos.order_id))
@@ -1558,6 +1557,39 @@ class Engine:
                     pos.is_pending = False
                     pos.exit_reason = None
                     pos.order_id = None
+            elif not pos.exit_reason and age_s > 10:
+                # ENTRY order: check if shares appeared (entry filled but status API missed it)
+                log.warning(f"RECONCILE: get_order_status returned None for ENTRY order (age={age_s}s) — checking positions API")
+                actual = await self.pm.get_positions()
+                held_size = 0.0
+                held_value = 0.0
+                for p in (actual or []):
+                    if str((p or {}).get("asset")) == str(pos.token_id):
+                        held_size = float((p or {}).get("size", 0))
+                        held_value = float((p or {}).get("entryValue", 0))
+                        break
+                if held_size > 0:
+                    log.info(f"RECONCILE: entry fill confirmed via positions API — size={held_size} value={held_value:.4f}")
+                    pos.is_pending = False
+                    pos.size = held_size
+                    if held_value > 0 and held_size > 0:
+                        pos.avg_entry_price = round(held_value / held_size, 4)
+                    # Update trade record with actual fill
+                    for tr in reversed(self.state.trade_history):
+                        if tr.side == pos.side and tr.outcome == "OPEN":
+                            if held_value > 0 and held_size > 0:
+                                tr.entry_price = pos.avg_entry_price
+                            tr.size = held_size
+                            break
+                elif age_s > 30:
+                    log.warning(f"RECONCILE: no position found after {age_s}s — entry likely failed, clearing")
+                    try:
+                        await self.pm.cancel_order(str(pos.order_id))
+                    except Exception:
+                        pass
+                    if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
+                        self.state.trade_history.pop()
+                    self.state.held_position = HeldPosition()
             return
 
         st = status.get("status")
@@ -1983,31 +2015,69 @@ class Engine:
             # window end, which causes stale OB prices and phantom negative PnL.
             # Clear immediately once the trading window is effectively over.
             if min_rem <= 2.0:
-                log.info(f"EXIT: Old market expired (min_rem={min_rem:.1f}) — clearing held_position, will auto-settle at $1.00")
-                # Record as WIN at $1.00 if we were on the winning side
+                # Determine if position won or lost by checking current value
+                settle_px = None
+                # Method 1: order book mid price
+                if ob:
+                    settle_px = ob.yes_mid if pos.side == "YES" else ob.no_mid
+                # Method 2: positions API as fallback
+                if settle_px is None or settle_px == 0:
+                    try:
+                        live_pos = await self.pm.get_positions()
+                        for p in (live_pos or []):
+                            if str((p or {}).get("asset")) == str(pos.token_id):
+                                pv = float((p or {}).get("currentValue", 0))
+                                ps = float((p or {}).get("size", 0))
+                                if ps > 0:
+                                    settle_px = pv / ps
+                                break
+                    except Exception:
+                        pass
+
+                position_won = settle_px is not None and settle_px >= 0.50
+
                 for tr in reversed(self.state.trade_history):
                     if tr.side == pos.side and tr.outcome == "OPEN":
-                        tr.exit_price = 1.0
-                        ep = tr.entry_price or pos.entry_price or pos.avg_entry_price or 0.9
-                        tr.pnl = (1.0 - ep) / ep if ep > 0 else 0.0
-                        tr.outcome = "WIN"
+                        ep = tr.entry_price or pos.entry_price or pos.avg_entry_price or 0.5
+                        if position_won:
+                            tr.exit_price = 1.0
+                            tr.pnl = (1.0 - ep) / ep if ep > 0 else 0.0
+                            tr.outcome = "WIN"
+                            self.state.total_wins += 1
+                            self.state.loss_streak = 0
+                            profit_usd = (1.0 - ep) * (pos.size or 0)
+                            self.state.total_pnl_usd += profit_usd
+                            log.info(f"AUTO_SETTLE_WIN: {pos.side} entry={ep:.3f} -> $1.00 pnl={tr.pnl*100:.1f}% settle_px={settle_px}")
+                            await self.state_mgr.record_closed_trade(
+                                ts=int(time.time()),
+                                market_slug=self.state.last_market_slug or "unknown",
+                                size=tr.size or pos.size or 0,
+                                entry_price=ep,
+                                exit_price=1.0,
+                                pnl_usd=profit_usd,
+                                outcome_win=1,
+                                regime=getattr(self.state, "entry_regime", None),
+                            )
+                        else:
+                            tr.exit_price = 0.0
+                            tr.pnl = -1.0
+                            tr.outcome = "LOSS"
+                            self.state.total_losses += 1
+                            self.state.loss_streak += 1
+                            loss_usd = ep * (pos.size or 0)
+                            self.state.total_pnl_usd -= loss_usd
+                            log.warning(f"AUTO_SETTLE_LOSS: {pos.side} entry={ep:.3f} -> $0.00 settle_px={settle_px} — position lost")
+                            await self.state_mgr.record_closed_trade(
+                                ts=int(time.time()),
+                                market_slug=self.state.last_market_slug or "unknown",
+                                size=tr.size or pos.size or 0,
+                                entry_price=ep,
+                                exit_price=0.0,
+                                pnl_usd=-loss_usd,
+                                outcome_win=0,
+                                regime=getattr(self.state, "entry_regime", None),
+                            )
                         self.state.total_trades += 1
-                        self.state.total_wins += 1
-                        profit_usd = (1.0 - ep) * (pos.size or 0)
-                        self.state.total_pnl_usd += profit_usd
-                        self.state.loss_streak = 0
-                        log.info(f"AUTO_SETTLE_WIN: {pos.side} entry={ep:.3f} -> $1.00 pnl={tr.pnl*100:.1f}%")
-                        # Record to closed_trades DB
-                        await self.state_mgr.record_closed_trade(
-                            ts=int(time.time()),
-                            market_slug=self.state.last_market_slug or "unknown",
-                            size=tr.size or pos.size or 0,
-                            entry_price=ep,
-                            exit_price=1.0,
-                            pnl_usd=profit_usd,
-                            outcome_win=1,
-                            regime=getattr(self.state, "entry_regime", None),
-                        )
                         break
                 self.state.held_position = HeldPosition()
                 return False
