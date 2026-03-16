@@ -2319,8 +2319,10 @@ class Engine:
         pos.exit_reason = reason
         pos.intended_exit_price = exit_px
         pos.placed_at_ts = int(time.time())
-        pos.size = sell_size  # Track actual sell size for reconciliation
-        log.info(f"Exit order placed ({order_id}) for {reason} — sell_size={sell_size} use_maker={use_maker} — waiting for fill")
+        # NOTE: Do NOT set pos.size = sell_size here. pos.size must reflect the FULL
+        # position so partial exit reconciliation can compute remaining = pos.size - matched.
+        # Setting pos.size = sell_size makes remaining=0 and clears the entire position.
+        log.info(f"Exit order placed ({order_id}) for {reason} — sell_size={sell_size} pos_size={pos.size} use_maker={use_maker} — waiting for fill")
         return True
 
 
