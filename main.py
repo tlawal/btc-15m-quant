@@ -1582,14 +1582,25 @@ class Engine:
                             tr.size = held_size
                             break
                 elif age_s > 30:
-                    log.warning(f"RECONCILE: no position found after {age_s}s — entry likely failed, clearing")
+                    # No position found — attempt cancel. Only clear state if cancel succeeds
+                    # (order still open = entry didn't fill). If cancel fails (order not found),
+                    # the entry may have filled; keep position alive to avoid orphaned real shares.
+                    canceled = False
                     try:
                         await self.pm.cancel_order(str(pos.order_id))
+                        canceled = True
                     except Exception:
                         pass
-                    if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
-                        self.state.trade_history.pop()
-                    self.state.held_position = HeldPosition()
+                    if canceled:
+                        log.warning(f"RECONCILE: entry order canceled after {age_s}s with no fill — clearing position")
+                        if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
+                            self.state.trade_history.pop()
+                        self.state.held_position = HeldPosition()
+                    else:
+                        # Cancel failed → order may already have filled; just clear pending flag
+                        log.warning(f"RECONCILE: cancel failed for entry order — assuming filled, clearing is_pending only")
+                        pos.is_pending = False
+                        pos.order_id = None
             return
 
         st = status.get("status")
@@ -2189,9 +2200,10 @@ class Engine:
             log.warning(f"Failed to verify position size: {_sz_err}")
 
         if actual_size <= 0:
-            log.warning("EXIT: no actual position found — clearing state")
-            self.state.held_position = HeldPosition()
-            return False
+            # API returned no position — fall back to state size rather than clearing.
+            # Clearing here would allow re-entry while real shares still exist on-chain.
+            log.warning("EXIT: positions API returned 0 — using state size as fallback")
+            actual_size = pos.size
 
         sell_size = actual_size if partial_pct >= 1.0 else max(1, int(actual_size * partial_pct))
         # Clamp to actual available
@@ -2675,6 +2687,7 @@ class Engine:
             self.state.entry_features = sig.to_feature_dict()
             self.state.entry_regime = sig.regime
             self.state.trades_this_window += 1
+            self.state.window_trade_count += 1
 
             self.state.trade_history.append(TradeRecord(
                 ts          = int(time.time()),
@@ -2728,6 +2741,7 @@ class Engine:
         self.state.entry_features = sig.to_feature_dict()
         self.state.entry_regime = sig.regime
         self.state.trades_this_window += 1
+        self.state.window_trade_count += 1
         self.state.daily_trade_count += 1
 
         log.info(f"Order placed: {order_id} — waiting for fill confirmation.")
