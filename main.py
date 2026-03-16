@@ -1599,15 +1599,18 @@ class Engine:
                         tr.outcome    = outcome
                         break
                 
+                # Determine actual sell size (matched shares, not full position)
+                sell_size = matched if matched > 0 else pos.size
+
                 # Phase 4: Record closed trade to DB + optimizer feedback
                 entry_feats = getattr(self.state, "entry_features", None)
                 await self.state_mgr.record_closed_trade(
                     ts=int(time.time()),
                     market_slug=self.state.last_market_slug or "unknown",
-                    size=pos.size,
+                    size=sell_size,
                     entry_price=entry_px,
                     exit_price=actual_px,
-                    pnl_usd=(actual_px - entry_px) * pos.size,
+                    pnl_usd=(actual_px - entry_px) * sell_size,
                     outcome_win=1 if outcome == "WIN" else 0,
                     regime=getattr(self.state, "entry_regime", None),
                     features=entry_feats,
@@ -1615,7 +1618,6 @@ class Engine:
                 )
                 # Phase 4: Feed optimizer for signal decay + Sharpe-Kelly
                 if entry_feats:
-                    # self.optimizer.record_signal_outcome(entry_feats, outcome == "WIN")
                     if self._last_sig:
                         self.optimizer.log_trade(self._last_sig, outcome)
                 self.optimizer.record_trade_pnl(pnl_pct)
@@ -1627,15 +1629,27 @@ class Engine:
                     self.feeds.session,
                     fmt_exit(pos.side, actual_px, entry_px, pnl_pct, pos.exit_reason, balance),
                 )
-                log.info(f"EXIT CONFIRMED: {pos.side} {pos.exit_reason} pnl={pnl_pct*100:.2f}% slippage={slippage*100:.4f}%")
-                
+                log.info(f"EXIT CONFIRMED: {pos.side} {pos.exit_reason} pnl={pnl_pct*100:.2f}% sell_size={sell_size} slippage={slippage*100:.4f}%")
+
                 self.state.total_trades += 1
                 if outcome == "WIN":
                     self.state.total_wins += 1
                 else:
                     self.state.total_losses += 1
-                
-                self.state.held_position = HeldPosition()
+
+                # Handle partial vs full exits
+                _partial_reasons = ("TP1", "TP2", "TP3")
+                remaining = pos.size - sell_size
+                if pos.exit_reason in _partial_reasons and remaining > 0.5:
+                    # Partial fill — keep position open with reduced size
+                    log.info(f"PARTIAL EXIT: sold {sell_size}, remaining {remaining} shares — position stays open")
+                    pos.size = remaining
+                    pos.is_pending = False
+                    pos.exit_reason = None
+                    pos.order_id = None
+                else:
+                    # Full exit — clear position
+                    self.state.held_position = HeldPosition()
             else:
                 # ENTRY FILL handle
                 intended_px = pos.intended_entry_price or actual_px
