@@ -1334,15 +1334,25 @@ class PolymarketClient:
             return None
 
     @staticmethod
-    def smart_entry_price(bid: Optional[float], ask: Optional[float], tick: float = 0.01, aggressive: bool = False) -> Optional[float]:
+    def smart_entry_price(
+        bid: Optional[float], ask: Optional[float], tick: float = 0.01,
+        aggressive: bool = False, pump_detected: bool = False, mid: Optional[float] = None,
+    ) -> Optional[float]:
         """
         aggressive=True  (FOK): use ask to guarantee immediate fill.
         aggressive=False (GTC): bid+tick for passive queue entry.
+        pump_detected=True: buy below mid to capture overshoot reversion
+            (Tetlock 2004, Avellaneda & Stoikov 2008).
         Falls back to ask if no bid available.
         """
         if aggressive:
             # Cap at 0.98 — buying at 0.99+ has <1% edge, negative EV after fees
             return round(min(ask, 0.98), 2) if ask is not None else None
+        if pump_detected and mid is not None:
+            # Overshoot reversion: buy below mid
+            offset = getattr(Config, "PUMP_REVERSION_OFFSET", 0.03)
+            reversion_px = round(max(mid - offset, bid or 0.01), 2)
+            return round(min(reversion_px, 0.98), 2)
         if bid is not None and ask is not None:
             smart_px = round(bid + tick, 2)
             return round(min(smart_px, ask, 0.98), 2)

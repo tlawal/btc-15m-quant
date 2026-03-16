@@ -298,6 +298,8 @@ def compute_signals(
     edge_offset:      float = 0.0,
     # Balance-adaptive edge
     balance:          float = None,
+    # Late-window entry hardening
+    one_sided_cycles: int = 0,
 ) -> SignalResult:
 
     res = SignalResult()
@@ -960,6 +962,8 @@ def compute_signals(
 
     # One-sided market gate: only trade when the market has clearly picked a side.
     # YES >= 0.75 (trade YES) or NO >= 0.75 (trade NO). Prevents entering ambiguous markets.
+    # Require multi-cycle confirmation to filter transient spikes
+    # (Pennock & Sami 2007: single-tick prediction market spikes are noise)
     _one_sided = (
         yes_mid is not None and no_mid is not None
         and (
@@ -967,9 +971,10 @@ def compute_signals(
             (res.direction == "DOWN" and no_mid >= 0.75)
         )
     )
-    if not _one_sided and chosen_posterior < 0.95 and not res.monster_signal:
+    _one_sided_confirmed = _one_sided and one_sided_cycles >= Config.ONE_SIDED_CONFIRM_CYCLES
+    if not _one_sided_confirmed and chosen_posterior < 0.95 and not res.monster_signal:
         side_px = yes_mid if res.direction == "UP" else no_mid
-        gates.append(f"not_one_sided={res.direction}_px={side_px:.2f}_need>=0.75")
+        gates.append(f"not_one_sided={res.direction}_px={side_px:.2f}_need>=0.75_cycles={one_sided_cycles}")
 
     # DYNAMIC EDGE + MONSTER OVERRIDE
     market_price = yes_mid if res.direction == "UP" else (no_mid if res.direction == "DOWN" else None)

@@ -116,6 +116,15 @@ class Config:
     MAE_RECOVERY_NEAR_ENTRY_PCT    = 0.03   # "near entry" = within 3% of entry price
     MAE_RECOVERY_TIME_LATE_SEC     = 300    # 5 min: after this, accept -10% instead of -3%
 
+    # ── Late-Window Entry Hardening ─────────────────────────────────────────
+    LATE_WINDOW_FOK_MIN_REM        = 4.0    # Force FOK (not GTC) for entries < 4 min remaining
+    ONE_SIDED_CONFIRM_CYCLES       = 2      # Require 2+ consecutive cycles of one-sided clearance
+    FORCED_DRAWDOWN_GRACE_SEC      = 15.0   # Grace period: don't fire FORCED_DRAWDOWN in first 15s
+
+    # ── Pump Reversion Entry ────────────────────────────────────────────────
+    PUMP_REVERSION_THRESHOLD       = 0.05   # 5% single-cycle pump triggers limit-below entry
+    PUMP_REVERSION_OFFSET          = 0.03   # buy $0.03 below mid on pump detection
+
     # Volatility-adjusted trailing stop (probability-space, ATR-scaled)
     TRAIL_ATR_REF              = 120.0    # reference ATR level for scaling trailing width
     TRAIL_BASE_POST_DROP       = 0.04     # base allowable posterior drop from peak before exit

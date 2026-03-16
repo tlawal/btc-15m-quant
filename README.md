@@ -71,15 +71,45 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 - **No loser-holding posterior exemption near expiry** — late forced-loss exits and adverse microstructure exits do not allow a “posterior says hold” override.
 - **Adverse OFI (Hawkes-style) strengthened** — `FORCED_ADVERSE_OFI` applies at ≤60s remaining with no posterior exemption when deep OFI reverses against the held side while losing.
 
-References (microstructure / adverse selection):
+References:
+
+**Microstructure / adverse selection:**
 1. **Kyle, A. S. (1985). "Continuous Auctions and Insider Trading." _Econometrica_, 53(6), 1315–1335.**
 2. **Easley, D., López de Prado, M., & O’Hara, M. (2012). "The volume clock: Insights into the high frequency paradigm." _Journal of Portfolio Management_, 39(1).** (VPIN / toxic flow intuition)
 3. **Cont, R., Stoikov, S., & Talreja, R. (2014). "A stochastic model for order book dynamics." _Operations Research_, 62(6), 1263–1283.** (order book imbalance and short-horizon price impact)
 4. **Bacry, E., Mastromatteo, I., & Muzy, J.-F. (2015). "Hawkes processes in finance." _Market Microstructure and Liquidity_, 1(1).** (event-time clustering / intensity models)
-5. **Zhang, Z., Zohren, S., & Roberts, S. (2019). "DeepLOB: Deep Convolutional Neural Networks for Limit Order Books." _IEEE Transactions on Signal Processing_, 67(11), 3001–3012.** (deep LOB features outperform lagged candle features at short horizons)
+5. **Zhang, Z., Zohren, S., & Roberts, S. (2019). "DeepLOB: Deep Convolutional Neural Networks for Limit Order Books." _IEEE Transactions on Signal Processing_, 67(11), 3001–3012.** (deep LOB features outperform lagged candle features)
+
+**Prediction markets:**
+6. **Pennock, D. M. & Sami, R. (2007). "Computational Aspects of Prediction Markets." Ch. 26 in _Algorithmic Game Theory_, Cambridge University Press.** (transient spikes in thin prediction markets are noise; multi-observation confirmation)
+7. **Hanson, R. (2003). "Combinatorial Information Market Design." _Information Systems Frontiers_, 5(1), 107–119.** (logarithmic market scoring rules; single-tick jumps unreliable in thin markets)
+8. **Tetlock, P. E. (2004). "How Efficient Are Information Markets? Evidence from Prediction Markets." Mimeo.** (prediction market prices overshoot then mean-revert)
+9. **Das, S. & Magdon-Ismail, M. (2009). "Adapting to a Market Shock: Optimal Sequential Market-Making." _NIPS 2009_.** (adverse selection from informed traders near expiry)
+
+**Optimal order placement:**
+10. **Avellaneda, M. & Stoikov, S. (2008). "High-frequency trading in a limit order book." _Quantitative Finance_, 8(3), 217–224.** (optimal bid/ask placement; reservation price offset proportional to volatility × time)
+11. **Cont, R. & Kukanov, A. (2017). "Optimal order placement in limit order markets." _Quantitative Finance_, 17(8), 1143–1156.** (aggressive fills when alpha strong + time short; passive when moderate signal + time permits)
+12. **Gueant, O., Lehalle, C.-A. & Fernandez-Tapia, J. (2013). "Dealing with the Inventory Risk." _Mathematics and Financial Economics_, 7(4), 477–507.** (optimal offset from fair value larger in thin markets)
+
+**Execution near discrete-time events:**
+13. **Budish, E., Cramton, P. & Shim, J. (2015). "The High-Frequency Trading Arms Race." _Quarterly Journal of Economics_, 130(4), 1547–1621.** (sniping/latency arbitrage intensifies near discrete-time market events)
+14. **Gjerstad, S. & Dickhaut, J. (1998). "Price Formation in Double Auctions." _Games and Economic Behavior_, 22(1), 1–29.** (order book transience in thin markets; displayed price ≠ executable price)
+
+### Late-Window Entry Hardening
+Addresses adverse selection and stale-fill vulnerabilities in the final minutes of each 15-minute window.
+
+- **FOK for late-window entries** — entries with < 4 min remaining use Fill-or-Kill instead of GTC. GTC orders in thin late-window books hang 10-15s and fill at stale prices after the market has already moved. Per Budish, Cramton & Shim (2015), sniping and latency arbitrage intensify near discrete-time events.
+- **One-sided gate multi-cycle confirmation** — the `YES >= 0.75` / `NO >= 0.75` gate now requires 2+ consecutive cycles of clearance before allowing entry. A single transient pump (e.g. 0.72→0.82 in one 3s cycle) no longer clears the gate. Per Pennock & Sami (2007) and Hanson (2003), single-tick price jumps in thin prediction markets are noise — sustained movement is the signal.
+- **FORCED_DRAWDOWN grace period** — within the first 15s after fill, FORCED_DRAWDOWN only fires if the loss exceeds the HARD_STOP threshold (-25%) or model conviction dropped >10pp. Hard stops (Layer 0/1) are unaffected. Per Tetlock (2004), prediction market prices overshoot then mean-revert — a brief grace period allows the initial shock to resolve.
+- **MAE tightening grace exemption** — the MAE ×0.60 tightening factor only applies after the grace period. Instant post-fill drawdowns represent price discovery, not a "second adverse move."
+
+### Adaptive Entry Pricing
+- **Pump reversion detection** — when the relevant side's mid-price pumps >5% in a single cycle, the bot places a limit buy $0.03 below mid instead of at `bid + $0.01`. Captures mean-reversion instead of buying at the peak. Per Tetlock (2004) and Avellaneda & Stoikov (2008).
+- **FOK vs passive limit decision framework** — monster signals or late-window (<4 min) → FOK at ask; pump detected → limit below mid; normal → passive `bid + tick`. Based on Cont & Kukanov (2017): aggressive fills when alpha is strong + time is short; passive when signal is moderate + time permits.
+- **Data-driven offset optimization (planned)** — optimizer.py will log fill rates and entry conditions, and tune `PUMP_REVERSION_OFFSET` adaptively based on historical fill probability vs. edge captured. Per Gueant, Lehalle & Fernandez-Tapia (2013), the optimal offset from fair value is larger in thin markets (low order arrival intensity).
 
 ### Execution
-- **Smart entry pricing** — passive `bid+1tick` for GTC, aggressive `ask` for FOK monster signals
+- **Smart entry pricing** — passive `bid+1tick` for GTC, aggressive `ask` for FOK monster signals, reversion `mid - offset` on pump detection
 - **Mid-price fallback** — when ask is None (deep ITM), uses `mid + 0.01` capped at 0.99
 - **Depth-aware sizing** — caps position at 50% of top-of-book depth
 - **Stale order replace** — cancel + re-place after 12s if entry GTC not filled
@@ -323,4 +353,9 @@ python main.py --reset
 | `LATE_CONVICTION_DISTANCE` | 40.0 | Min BTC distance from strike for late sniping |
 | `BB_SQUEEZE_NORMAL` | 0.0030 | BB squeeze gate threshold (normal regime) |
 | `DAILY_LOSS_LIMIT_PCT` | 0.10 | Daily loss limit as fraction of session start balance |
+| `LATE_WINDOW_FOK_MIN_REM` | 4.0 | Force FOK (not GTC) for entries < 4 min remaining |
+| `ONE_SIDED_CONFIRM_CYCLES` | 2 | Require 2+ consecutive cycles of one-sided clearance |
+| `FORCED_DRAWDOWN_GRACE_SEC` | 15.0 | Grace period: don't fire FORCED_DRAWDOWN in first 15s |
+| `PUMP_REVERSION_THRESHOLD` | 0.05 | 5% single-cycle pump triggers limit-below entry |
+| `PUMP_REVERSION_OFFSET` | 0.03 | Buy $0.03 below mid on pump detection |
 

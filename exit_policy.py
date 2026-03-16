@@ -344,11 +344,36 @@ def evaluate_exit(
     )
     # MAE tightening: if position has already shown vulnerability (MAE >= 10%),
     # reduce drawdown tolerance by 40% to exit faster on second adverse move.
-    if mae_pct >= Config.MAE_TIGHTEN_THRESHOLD:
+    # Only apply after grace period — instant post-fill drawdowns are price discovery,
+    # not a "second adverse move" (Tetlock 2004: prediction markets overshoot then revert).
+    _grace_sec = getattr(Config, "FORCED_DRAWDOWN_GRACE_SEC", 15.0)
+    _in_grace = hold_seconds < _grace_sec
+    mae_tightened = False
+    if mae_pct >= Config.MAE_TIGHTEN_THRESHOLD and not _in_grace:
         adapted_drawdown *= 0.60
+        mae_tightened = True
+    log.debug(
+        "DRAWDOWN_THRESHOLD: adapted=%.1f%% (base=%.1f%% atr_ratio=%.2f mae_tight=%s) "
+        "unrealized=%.1f%% mae=%.1f%% hold=%.0fs grace=%s",
+        adapted_drawdown * 100, Config.MAX_DRAWDOWN_PCT * 100, atr_ratio,
+        mae_tightened, unrealized_pct * 100, mae_pct * 100, hold_seconds, _in_grace,
+    )
     if unrealized_pct < -adapted_drawdown:
+        # Grace period: within first N seconds, only fire if loss > HARD_STOP
+        # or model conviction dropped significantly (>10pp from entry).
+        # Hard stops (Layer 0/1) still fire normally — this only gates Layer 5.
+        if _in_grace and unrealized_pct > -Config.HARD_STOP_PCT:
+            if posterior is not None and posterior > _entry_post - 0.10:
+                log.info(
+                    "DRAWDOWN_GRACE: unrealized=%.1f%% but hold=%.0fs < %.0fs grace "
+                    "and posterior=%.3f near entry=%.3f — holding",
+                    unrealized_pct * 100, hold_seconds, _grace_sec,
+                    posterior, _entry_post,
+                )
+            else:
+                return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
         # 0.95+ conviction exemption near expiry with large distance
-        if (posterior is not None and posterior > 0.95 and minutes_remaining < 2.0
+        elif (posterior is not None and posterior > 0.95 and minutes_remaining < 2.0
                 and distance is not None and abs(distance) > 50.0):
             log.info(
                 "DRAWDOWN_EXEMPT: posterior=%.3f > 0.95, distance=%.1f > 50, rem=%.1f "

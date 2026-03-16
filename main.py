@@ -563,6 +563,8 @@ class Engine:
             _current_win = current_window_start(int(time.time()))
             if _current_win != self.state.last_window_start_sec:
                 self.state.prev_cycle_score = None
+                self.state.one_sided_clear_count = 0
+                self.state.prev_cycle_mid = None
                 log.info("prev_cycle_score cleared on cross-window restart")
 
         # Startup position reconciliation — sync held position with Polymarket API
@@ -745,6 +747,8 @@ class Engine:
             self.state.cvd                  = 0.0   # reset CVD each window
             self.state.accumulated_ofi      = 0.0   # Phase 2: reset accumulated OFI
             self.state.prev_cycle_score     = None  # reset EMA score — no contamination from prior window
+            self.state.one_sided_clear_count = 0     # reset one-sided gate cycles on window roll
+            self.state.prev_cycle_mid       = None   # reset pump detection mid
             self.cvd_ws.reset(win_start * 1000)      # Reset real-time CVD WebSocket
 
         self.state.last_window_start_sec = win_start
@@ -1090,6 +1094,15 @@ class Engine:
         # ── Phase 4: Compute full signal suite ───────────────────────────────
         perp_basis_pct = await self.feeds.get_binance_perp_basis_pct("BTCUSDT")
 
+        # Track one-sided gate consecutive cycles for multi-cycle confirmation
+        # (Pennock & Sami 2007: single-tick prediction market spikes are noise)
+        _yes_m = ob.yes_mid or 0.0
+        _no_m = ob.no_mid or 0.0
+        if _yes_m >= 0.75 or _no_m >= 0.75:
+            self.state.one_sided_clear_count += 1
+        else:
+            self.state.one_sided_clear_count = 0
+
         sig = compute_signals(
             indic             = indic,
             btc_price         = btc_price,
@@ -1137,6 +1150,7 @@ class Engine:
             score_offset      = score_offset,
             edge_offset       = edge_offset,
             balance           = balance,
+            one_sided_cycles  = self.state.one_sided_clear_count,
         )
         self._last_sig = sig # Phase 6: Store for trade logging feedback
 
@@ -1383,6 +1397,10 @@ class Engine:
         # Update cycle memory for deltas
         self.state.prev_cycle_score = max(-8.0, min(8.0, sig.signed_score))
         self.state.prev_cycle_price = btc_price
+        # Track mid price for pump detection (Tetlock 2004: overshoot/reversion)
+        _side_mid = ob.yes_mid if (sig.direction == "UP") else (ob.no_mid if sig.direction == "DOWN" else ob.yes_mid)
+        if _side_mid is not None:
+            self.state.prev_cycle_mid = _side_mid
 
         # ── Update Prometheus Metrics ─────────────────────────────────────────
         metrics_exporter.update_metrics(self.state, asdict(self.state), sig)
@@ -2699,10 +2717,27 @@ class Engine:
             return
 
         # Determine token + price (Phase 3: Smart Pricing)
+        # Pump detection: if price pumped >5% in one cycle, buy below mid
+        # (Tetlock 2004: prediction market prices overshoot then mean-revert)
+        _pump_detected = False
+        _current_mid = ob.yes_mid if sig.direction == "UP" else ob.no_mid
+        if (self.state.prev_cycle_mid is not None and _current_mid is not None
+                and self.state.prev_cycle_mid > 0):
+            _cycle_pump_pct = (_current_mid - self.state.prev_cycle_mid) / self.state.prev_cycle_mid
+            if _cycle_pump_pct > Config.PUMP_REVERSION_THRESHOLD:
+                _pump_detected = True
+                log.info(
+                    "PUMP_DETECTED: mid moved %.1f%% in one cycle (%.3f→%.3f) — using reversion entry",
+                    _cycle_pump_pct * 100, self.state.prev_cycle_mid, _current_mid,
+                )
+        _aggressive = sig.monster_signal
         if sig.direction == "UP":
             token_id  = market_info.yes_token_id
             side_name = "YES"
-            entry_px  = self.pm.smart_entry_price(ob.yes_bid, ob.yes_ask, aggressive=sig.monster_signal)
+            entry_px  = self.pm.smart_entry_price(
+                ob.yes_bid, ob.yes_ask, aggressive=_aggressive,
+                pump_detected=_pump_detected, mid=ob.yes_mid,
+            )
             if entry_px is None and ob.yes_mid:
                 entry_px = round(min(ob.yes_mid + 0.01, 0.99), 2)
             entry_px  = round(entry_px or 0.0, 2)
@@ -2710,7 +2745,10 @@ class Engine:
         else:
             token_id  = market_info.no_token_id
             side_name = "NO"
-            entry_px  = self.pm.smart_entry_price(ob.no_bid, ob.no_ask, aggressive=sig.monster_signal)
+            entry_px  = self.pm.smart_entry_price(
+                ob.no_bid, ob.no_ask, aggressive=_aggressive,
+                pump_detected=_pump_detected, mid=ob.no_mid,
+            )
             if entry_px is None and ob.no_mid:
                 entry_px = round(min(ob.no_mid + 0.01, 0.99), 2)
             entry_px  = round(entry_px or 0.0, 2)
@@ -2808,7 +2846,10 @@ class Engine:
         await self.state_mgr.save(self.state)
 
         # Place order (nonce=0 lets the CLOB API auto-assign)
-        if sig.monster_signal:
+        # Force FOK for late-window entries to avoid stale GTC fills
+        # (Budish, Cramton & Shim 2015: sniping intensifies near discrete-time events)
+        _use_fok = sig.monster_signal or (min_rem is not None and min_rem < Config.LATE_WINDOW_FOK_MIN_REM)
+        if _use_fok:
             order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="FOK")
         else:
             order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="GTC")

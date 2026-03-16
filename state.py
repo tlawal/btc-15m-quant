@@ -144,6 +144,10 @@ class EngineState:
     ofi_15m_by_window: Dict[str, float]   = field(default_factory=dict)
     zero_ofi_cycles: int                  = 0
 
+    # ── One-sided gate multi-cycle confirmation ────────────────────────────────
+    one_sided_clear_count: int                = 0      # consecutive cycles with YES≥0.75 or NO≥0.75
+    prev_cycle_mid: Optional[float]           = None   # mid price from previous cycle (pump detection)
+
     # ── Micro score memory (stale micro fallback) ──────────────────────────────
     last_cvd_score: float                 = 0.0
     last_ofi_score: float                 = 0.0
