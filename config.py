@@ -121,6 +121,10 @@ class Config:
     ONE_SIDED_CONFIRM_CYCLES       = 2      # Require 2+ consecutive cycles of one-sided clearance
     FORCED_DRAWDOWN_GRACE_SEC      = 15.0   # Grace period: don't fire FORCED_DRAWDOWN in first 15s
 
+    # ── Sell Retry Limits ─────────────────────────────────────────────────────
+    MAX_SELL_ATTEMPTS_PER_CYCLE    = 2      # Max sell attempts per 5s cycle (caps RUNTIME)
+    MAX_CONSECUTIVE_SELL_FAILURES  = 20     # After this many, stop trying and let auto-settle
+
     # ── Pump Reversion Entry ────────────────────────────────────────────────
     PUMP_REVERSION_THRESHOLD       = 0.05   # 5% single-cycle pump triggers limit-below entry
     PUMP_REVERSION_OFFSET          = 0.03   # buy $0.03 below mid on pump detection

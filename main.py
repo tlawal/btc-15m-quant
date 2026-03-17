@@ -590,6 +590,32 @@ class Engine:
             except Exception as e:
                 log.warning(f"Startup position reconciliation failed: {e}")
 
+        # On-chain position reconciliation: verify inherited position actually exists
+        if self.pm.can_trade and self.state.held_position.side and self.state.held_position.token_id:
+            try:
+                async with asyncio.timeout(8):
+                    onchain_bal = await self.pm.get_conditional_token_balance(self.state.held_position.token_id)
+                    if onchain_bal is not None:
+                        if onchain_bal == 0:
+                            log.warning(
+                                "STARTUP_ONCHAIN_DESYNC: inherited %s position size=%d but on-chain balance=0 — clearing",
+                                self.state.held_position.side, int(self.state.held_position.size),
+                            )
+                            self.state.held_position = HeldPosition()
+                        elif onchain_bal < self.state.held_position.size:
+                            log.warning(
+                                "STARTUP_ONCHAIN_DESYNC: inherited size=%d but on-chain=%d — adjusting",
+                                int(self.state.held_position.size), onchain_bal,
+                            )
+                            self.state.held_position.size = float(onchain_bal)
+                        else:
+                            log.info(
+                                "STARTUP_ONCHAIN_OK: %s size=%d on-chain=%d",
+                                self.state.held_position.side, int(self.state.held_position.size), onchain_bal,
+                            )
+            except Exception as e:
+                log.warning("Startup on-chain reconciliation failed: %s", e)
+
         if self.pm.can_trade:
             print(f"ENGINE START BUILD={BUILD_VERSION} RPC_SET={bool(Config.POLYGON_RPC_URL)} USDC_ADDR={Config.POLYGON_USDC_ADDRESS}", flush=True)
             log.info("Engine started. Ensuring Polymarket approvals...")
@@ -2278,22 +2304,46 @@ class Engine:
 
         # Compute sell size — verify against actual Polymarket position to avoid overselling
         actual_size = pos.size
+
+        # Primary: on-chain ERC-1155 balance (authoritative, not cached)
+        try:
+            onchain_bal = await self.pm.get_conditional_token_balance(pos.token_id)
+            if onchain_bal is not None:
+                if onchain_bal == 0:
+                    log.warning("ONCHAIN_DESYNC: on-chain balance=0 but bot state=%d — clearing position", pos.size)
+                    # Position doesn't exist on-chain — clear it
+                    for tr in reversed(self.state.trade_history):
+                        if tr.side == pos.side and tr.outcome == "OPEN":
+                            tr.exit_price = 0.0
+                            tr.pnl = -1.0
+                            tr.outcome = "LOSS"
+                            break
+                    self.state.held_position = HeldPosition()
+                    return True
+                elif onchain_bal < actual_size:
+                    log.warning("ONCHAIN_DESYNC: bot state=%d on-chain=%d — using on-chain", int(actual_size), onchain_bal)
+                    actual_size = float(onchain_bal)
+                    pos.size = actual_size
+        except Exception as _chain_err:
+            log.warning("on-chain balance check failed: %s — falling back to API", _chain_err)
+
+        # Fallback: positions API (may be stale/cached)
         try:
             live_positions = await self.pm.get_positions()
             for p in (live_positions or []):
                 if str((p or {}).get("asset")) == str(pos.token_id):
-                    actual_size = float((p or {}).get("size") or 0.0)
-                    if actual_size != pos.size:
-                        log.warning(f"EXIT SIZE MISMATCH: state={pos.size} actual={actual_size} — using actual")
+                    api_size = float((p or {}).get("size") or 0.0)
+                    if api_size != pos.size:
+                        log.warning(f"EXIT SIZE MISMATCH: state={pos.size} api={api_size} — using min(state, api)")
+                        actual_size = min(actual_size, api_size) if api_size > 0 else actual_size
                         pos.size = actual_size
                     break
         except Exception as _sz_err:
             log.warning(f"Failed to verify position size: {_sz_err}")
 
         if actual_size <= 0:
-            # API returned no position — fall back to state size rather than clearing.
-            # Clearing here would allow re-entry while real shares still exist on-chain.
-            log.warning("EXIT: positions API returned 0 — using state size as fallback")
+            # Both sources returned 0 — fall back to state size rather than clearing.
+            log.warning("EXIT: all balance sources returned 0 — using state size as fallback")
             actual_size = pos.size
 
         sell_size = actual_size if partial_pct >= 1.0 else max(1, int(actual_size * partial_pct))
@@ -2397,8 +2447,22 @@ class Engine:
             pos.consecutive_sell_failures += 1
             log.error(f"Exit order failed ({reason}) — consecutive_sell_failures={pos.consecutive_sell_failures}")
 
-            # Escalation: after 3 consecutive failures, try half position size
-            if pos.consecutive_sell_failures >= 3 and sell_size > 1:
+            # Cap: after MAX_CONSECUTIVE_SELL_FAILURES, stop trying — let auto-settle
+            if pos.consecutive_sell_failures >= Config.MAX_CONSECUTIVE_SELL_FAILURES:
+                log.critical(
+                    "SELL_ABANDONED: %d consecutive failures — stopping sell attempts, will auto-settle",
+                    pos.consecutive_sell_failures,
+                )
+                return False
+
+            # Escalation (1 extra attempt per cycle — total 2 attempts max):
+            # After 3+ failures → half position size; after 10+ → market_sell
+            if pos.consecutive_sell_failures >= 10:
+                log.critical(f"SELL_ESCALATION_MARKET: {pos.consecutive_sell_failures} failures — trying market_sell")
+                order_id = await self.pm.market_sell(pos.token_id, sell_size)
+                if order_id:
+                    pos.consecutive_sell_failures = 0
+            elif pos.consecutive_sell_failures >= 3 and sell_size > 1:
                 half_size = max(1, int(sell_size / 2))
                 log.warning(f"SELL_ESCALATION: trying smaller size {half_size} (was {sell_size}) at bid {exit_bid:.2f} FOK")
                 order_id = await self.pm.limit_sell(pos.token_id, exit_bid, half_size, order_type="FOK")
@@ -2406,14 +2470,19 @@ class Engine:
                     sell_size = half_size
                     pos.consecutive_sell_failures = 0
 
-            # Escalation: after 10 consecutive failures, try market_sell as last resort
-            if not order_id and pos.consecutive_sell_failures >= 10:
-                log.critical(f"SELL_ESCALATION_MARKET: {pos.consecutive_sell_failures} consecutive failures — trying market_sell")
-                order_id = await self.pm.market_sell(pos.token_id, sell_size)
-                if order_id:
-                    pos.consecutive_sell_failures = 0
-
             if not order_id:
+                # Log diagnostic info for debugging the sell bug
+                try:
+                    _diag_positions = await self.pm.get_positions()
+                    _diag_onchain = await self.pm.get_conditional_token_balance(pos.token_id)
+                    _matching = [p for p in (_diag_positions or []) if str((p or {}).get("asset")) == str(pos.token_id)]
+                    log.error(
+                        "SELL_FAIL_DEBUG: token=%s bot_size=%d api_match=%s onchain=%s failures=%d",
+                        str(pos.token_id)[:16], int(pos.size), _matching, _diag_onchain,
+                        pos.consecutive_sell_failures,
+                    )
+                except Exception as _diag_err:
+                    log.warning("SELL_FAIL_DEBUG: diagnostic failed: %s", _diag_err)
                 return False
 
         # Reset failure counter on success

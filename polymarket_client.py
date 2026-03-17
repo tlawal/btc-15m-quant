@@ -757,6 +757,53 @@ class PolymarketClient:
             log.debug("get_wallet_usdc_balance: %s", e)
             return None
 
+    async def get_conditional_token_balance(self, token_id: str) -> Optional[int]:
+        """Query on-chain ERC-1155 balanceOf for a conditional token via Polygon RPC.
+
+        Returns the number of shares held on-chain (integer), or None on error.
+        This is authoritative — unlike the positions API which may be cached/stale.
+        """
+        if not Config.POLYGON_RPC_URL or not token_id:
+            return None
+        pk = Config.POLYMARKET_PRIVATE_KEY
+        if not pk:
+            return None
+        try:
+            if not pk.startswith("0x"):
+                pk = "0x" + pk
+            acct = Account.from_key(pk)
+            wallet = acct.address.lower().replace("0x", "")
+
+            # Gnosis CTF contract on Polygon (ERC-1155)
+            ctf_addr = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+            # balanceOf(address,uint256) selector = 0x00fdd58e
+            token_int = int(token_id)
+            data = (
+                "0x00fdd58e"
+                + wallet.rjust(64, "0")
+                + hex(token_int).replace("0x", "").rjust(64, "0")
+            )
+            payload = {
+                "jsonrpc": "2.0", "id": 1,
+                "method": "eth_call",
+                "params": [{"to": ctf_addr.lower(), "data": data}, "latest"],
+            }
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6)) as s:
+                async with s.post(Config.POLYGON_RPC_URL, json=payload) as r:
+                    if r.status != 200:
+                        log.warning("get_conditional_token_balance: RPC returned %d", r.status)
+                        return None
+                    resp = await r.json()
+            raw_hex = (resp or {}).get("result", "0x0")
+            if not isinstance(raw_hex, str) or not raw_hex.startswith("0x"):
+                return None
+            balance = int(raw_hex, 16)
+            log.info("onchain_ctf_balance: token=%s balance=%d", str(token_id)[:16], balance)
+            return balance
+        except Exception as e:
+            log.warning("get_conditional_token_balance: %s", e)
+            return None
+
     # ── Positions ─────────────────────────────────────────────────────────────
 
     async def get_positions(self) -> list[dict]:
