@@ -6,6 +6,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="theme-color" content="#07090E">
+    <link rel="manifest" href="/static/manifest.json">
+    <link rel="apple-touch-icon" href="/static/icon-192.svg">
+    <meta name="apple-mobile-web-app-title" content="BTC Quant">
     <title>BTC-15m Quant | Live Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -70,20 +73,45 @@
         #top-banner {
             background: var(--banner-bg);
             border-bottom: 1px solid var(--border);
-            padding: 0 1.5rem;
-            height: 56px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
             position: sticky;
             top: 0;
             z-index: 100;
             backdrop-filter: blur(12px);
         }
-        .banner-cell { text-align:center; min-width:110px; }
-        .banner-label { font-size:0.55rem; letter-spacing:0.1em; text-transform:uppercase; color:#475569; }
-        .banner-val { font-family:'JetBrains Mono',monospace; font-size:1rem; font-weight:700; line-height:1.2; }
-        .sep { width:1px; background:var(--border); height:32px; }
+        #banner-row1 {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 1rem;
+            height: 40px;
+        }
+        #banner-metrics {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2px 4px;
+            padding: 4px 12px 6px;
+        }
+        .banner-cell { text-align:center; }
+        .banner-label { font-size:0.48rem; letter-spacing:0.1em; text-transform:uppercase; color:#475569; }
+        .banner-val { font-family:'JetBrains Mono',monospace; font-size:0.78rem; font-weight:700; line-height:1.2; }
+        .banner-desktop-only { display:none; }
+        .banner-mobile-only { display:block; }
+
+        /* Desktop: single-row layout */
+        @media (min-width:769px) {
+            #top-banner { display:flex; align-items:center; height:56px; padding:0 1.5rem; }
+            #banner-row1 { flex:0 0 auto; height:auto; padding:0; }
+            #banner-metrics {
+                display:flex; align-items:center; justify-content:center;
+                flex:1 1 auto; gap:0; padding:0 2rem;
+            }
+            #banner-metrics .banner-cell { min-width:110px; padding:0 12px; border-right:1px solid var(--border); }
+            #banner-metrics .banner-cell:last-child { border-right:none; }
+            .banner-val { font-size:1rem; }
+            .banner-label { font-size:0.55rem; }
+            .banner-desktop-only { display:block; }
+            .banner-mobile-only { display:none; }
+        }
 
         /* ── Countdown timer ── */
         #countdown-val { font-size:1.05rem; }
@@ -258,16 +286,9 @@
         ::-webkit-scrollbar-thumb { background:var(--scrollbar-thumb); border-radius:4px; }
 
         /* ── Mobile improvements ── */
-        @media (max-width:768px) {
-            #top-banner { height:auto; min-height:48px; flex-wrap:wrap; padding:6px 10px; gap:6px; }
-            .banner-cell { min-width:70px; }
-            .banner-val { font-size:0.82rem; }
-            .banner-label { font-size:0.45rem; }
-            .sep { display:none; }
-        }
-        @media (max-width:480px) {
-            .banner-cell { min-width:55px; }
-            .banner-val { font-size:0.72rem; }
+        @media (max-width:380px) {
+            .banner-val { font-size:0.7rem; }
+            .banner-label { font-size:0.42rem; }
         }
     </style>
 </head>
@@ -275,54 +296,57 @@
 
 <!-- ═══════════════ TOP BANNER ═══════════════ -->
 <div id="top-banner">
-    <!-- Left: Logo -->
-    <div class="flex items-center gap-3">
-        <span class="dot dot-g" id="main-dot"></span>
-        <div>
-            <div class="text-[0.82rem] font-bold text-white tracking-tight">BTC-15m <span class="text-sky-400">QUANT</span></div>
-            <div class="text-[0.52rem] text-slate-500 uppercase tracking-widest mono" id="build-ver">v2.3</div>
+    <!-- Row 1: Logo + Controls (always one row) -->
+    <div id="banner-row1">
+        <div class="flex items-center gap-3">
+            <span class="dot dot-g" id="main-dot"></span>
+            <div>
+                <div class="text-[0.82rem] font-bold text-white tracking-tight">BTC-15m <span class="text-sky-400">QUANT</span></div>
+                <div class="text-[0.52rem] text-slate-500 uppercase tracking-widest mono" id="build-ver">v2.3</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <div class="text-right banner-desktop-only">
+                <div class="banner-label">Cum PnL</div>
+                <div class="banner-val" id="cum-pnl">--</div>
+            </div>
+            <div id="status-badge" class="text-[0.65rem] font-bold uppercase tracking-wide px-3 py-1 rounded border border-green-500/30 bg-green-500/10 text-green-400">HEALTHY</div>
+            <button id="mute-toggle" onclick="toggleMute()" title="Toggle audio alerts" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text);font-size:1rem;line-height:1;transition:border-color 0.2s">
+                <span id="mute-icon">🔔</span>
+            </button>
+            <button id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text);font-size:1rem;line-height:1;transition:border-color 0.2s">
+                <span id="theme-icon">☀️</span>
+            </button>
         </div>
     </div>
 
-    <!-- Center: BTC / Strike / Delta / Countdown -->
-    <div class="flex items-center gap-4 md:gap-7">
+    <!-- Row 2: Metrics (grid on mobile, flex on desktop) -->
+    <div id="banner-metrics">
         <div class="banner-cell" style="position:relative">
             <div class="banner-label">BTC Price <span class="info-icon" data-pop="pop-btc-src" style="vertical-align:top;margin-left:2px">i</span></div>
             <div class="banner-val text-white" id="b-btc">--</div>
         </div>
-        <div class="sep"></div>
         <div class="banner-cell" style="position:relative">
             <div class="banner-label">Strike <span class="info-icon" data-pop="pop-strike-src" style="vertical-align:top;margin-left:2px">i</span></div>
             <div class="banner-val text-slate-300" id="b-strike">--</div>
             <div class="text-[0.5rem] text-slate-600 mono" id="strike-src-label"></div>
         </div>
-        <div class="sep"></div>
         <div class="banner-cell">
-            <div class="banner-label">Δ Price</div>
+            <div class="banner-label">&Delta; Price</div>
             <div class="banner-val" id="b-delta">--</div>
         </div>
-        <div class="sep"></div>
         <div class="banner-cell">
-            <div class="banner-label">Window Closes</div>
+            <div class="banner-label">Window</div>
             <div class="banner-val" id="countdown-val">--:--</div>
         </div>
-        <div class="sep hidden md:block"></div>
-        <div class="banner-cell hidden md:block">
+        <div class="banner-cell">
             <div class="banner-label">Direction</div>
             <div class="banner-val" id="b-dir">--</div>
         </div>
-    </div>
-
-    <!-- Right: Status + PnL + Theme -->
-    <div class="flex items-center gap-4">
-        <div class="text-right hidden md:block">
+        <div class="banner-cell banner-mobile-only">
             <div class="banner-label">Cum PnL</div>
-            <div class="banner-val" id="cum-pnl">--</div>
+            <div class="banner-val" id="cum-pnl-mobile">--</div>
         </div>
-        <div id="status-badge" class="text-[0.65rem] font-bold uppercase tracking-wide px-3 py-1 rounded border border-green-500/30 bg-green-500/10 text-green-400">HEALTHY</div>
-        <button id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text);font-size:1rem;line-height:1;transition:border-color 0.2s">
-            <span id="theme-icon">☀️</span>
-        </button>
     </div>
 </div>
 
@@ -1209,8 +1233,11 @@ function updateUI() {
         const closedTrades = (d.recent_trades||[]).filter(t=>t.exit!=null && t.pnl!=null);
         if (closedTrades.length > 0) {
             const cumPnlUsd = closedTrades.reduce((s,t) => s + (t.pnl||0) * (t.entry||0) * (t.size||0), 0);
-            $('cum-pnl').innerText = (cumPnlUsd>=0?'+':'-')+'$'+(Math.abs(cumPnlUsd)).toFixed(2);
-            $('cum-pnl').className = `banner-val ${cumPnlUsd>=0?'text-green-400':'text-red-400'}`;
+            const pnlText = (cumPnlUsd>=0?'+':'-')+'$'+(Math.abs(cumPnlUsd)).toFixed(2);
+            const pnlClass = `banner-val ${cumPnlUsd>=0?'text-green-400':'text-red-400'}`;
+            $('cum-pnl').innerText = pnlText;
+            $('cum-pnl').className = pnlClass;
+            if ($('cum-pnl-mobile')) { $('cum-pnl-mobile').innerText = pnlText; $('cum-pnl-mobile').className = pnlClass; }
         }
 
         // ── Regime badge ──
@@ -1945,6 +1972,122 @@ async function resumeTrading() {
         msg.className = 'mt-1 text-red-400 text-[0.6rem]';
     }
 }
+
+// ── PWA Service Worker ──────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/static/service-worker.js')
+        .then(reg => console.log('SW registered:', reg.scope))
+        .catch(err => console.warn('SW registration failed:', err));
+}
+
+// ── Audio system (Web Audio API) ────────────────────────────────────────────
+let _audioCtx = null, _audioMuted = localStorage.getItem('btcq-mute') === '1', _audioUnlocked = false;
+
+function unlockAudio() {
+    if (_audioUnlocked) return;
+    if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (_audioCtx.state === 'suspended') _audioCtx.resume().then(() => { _audioUnlocked = true; });
+    else _audioUnlocked = true;
+}
+document.addEventListener('click', unlockAudio, { once: true });
+document.addEventListener('touchstart', unlockAudio, { once: true });
+
+const TONES = {
+    entry: { freq: [880, 1100], dur: 0.15, type: 'sine', gap: 0.08 },
+    exit:  { freq: [660, 440],  dur: 0.12, type: 'sine', gap: 0.08 },
+    halt:  { freq: [220, 220, 220], dur: 0.3, type: 'square', gap: 0.15 },
+    error: { freq: [330],      dur: 0.4,  type: 'sawtooth', gap: 0 },
+};
+
+function playTone(name) {
+    if (_audioMuted || !_audioUnlocked) return;
+    const cfg = TONES[name]; if (!cfg) return;
+    let t = _audioCtx.currentTime;
+    cfg.freq.forEach(f => {
+        const osc = _audioCtx.createOscillator(), gain = _audioCtx.createGain();
+        osc.type = cfg.type; osc.frequency.value = f;
+        gain.gain.setValueAtTime(0.15, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + cfg.dur);
+        osc.connect(gain).connect(_audioCtx.destination);
+        osc.start(t); osc.stop(t + cfg.dur);
+        t += cfg.dur + cfg.gap;
+    });
+}
+
+function toggleMute() {
+    _audioMuted = !_audioMuted;
+    localStorage.setItem('btcq-mute', _audioMuted ? '1' : '0');
+    $('mute-icon').textContent = _audioMuted ? '🔇' : '🔔';
+    unlockAudio();
+}
+// Restore saved mute state
+if (_audioMuted && $('mute-icon')) $('mute-icon').textContent = '🔇';
+
+// ── Notification system ─────────────────────────────────────────────────────
+const EVENT_CFG = {
+    trade_entry:     { label: 'ENTRY',   tone: 'entry' },
+    trade_exit:      { label: 'EXIT',    tone: 'exit' },
+    redemption:      { label: 'REDEEM',  tone: 'exit' },
+    system_halt:     { label: 'HALT',    tone: 'halt' },
+    kill_switch:     { label: 'KILL',    tone: 'halt' },
+    trading_resumed: { label: 'RESUMED', tone: 'entry' },
+    error:           { label: 'ERROR',   tone: 'error' },
+};
+
+function handleEvent(evt) {
+    const cfg = EVENT_CFG[evt.event_type] || { label: 'SYS', tone: null };
+    // Browser notification
+    if ('Notification' in window && Notification.permission === 'granted') {
+        try {
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                navigator.serviceWorker.ready.then(reg => {
+                    reg.showNotification('BTC Quant: ' + cfg.label, {
+                        body: evt.message,
+                        icon: '/static/icon-192.svg',
+                        badge: '/static/icon-192.svg',
+                        tag: evt.event_type,
+                        vibrate: [200, 100, 200],
+                    });
+                });
+            } else {
+                new Notification('BTC Quant: ' + cfg.label, { body: evt.message, icon: '/static/icon-192.svg', tag: evt.event_type });
+            }
+        } catch(e) {}
+    }
+    // Audio alert
+    if (cfg.tone && !_audioMuted) playTone(cfg.tone);
+    // Haptic feedback
+    if (navigator.vibrate) {
+        if (['system_halt','kill_switch'].includes(evt.event_type)) navigator.vibrate([300,100,300]);
+        else if (['trade_entry','trade_exit'].includes(evt.event_type)) navigator.vibrate(200);
+    }
+}
+
+// Request notification permission on first user interaction
+document.addEventListener('click', () => {
+    if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+    }
+}, { once: true });
+
+// ── WebSocket event listener (alongside existing polling) ───────────────────
+function connectEventWS() {
+    try {
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(proto + '//' + location.host + '/ws');
+        ws.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'event') handleEvent(msg);
+            } catch(err) {}
+        };
+        ws.onclose = () => setTimeout(connectEventWS, 3000);
+        ws.onerror = () => ws.close();
+    } catch(e) {
+        setTimeout(connectEventWS, 5000);
+    }
+}
+connectEventWS();
 </script>
 </body>
 </html>

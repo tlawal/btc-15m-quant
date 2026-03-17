@@ -32,7 +32,7 @@ from signals import SignalResult, compute_signals
 from exit_policy import evaluate_exit
 from sizing import compute_position_size
 from inference import InferenceEngine
-from dashboard import run_dashboard
+from dashboard import run_dashboard, emit_event, EventType
 from utils import (
     setup_logging, send_telegram, Timer,
     fmt_entry, fmt_exit, fmt_halt, fmt_status, fmt_engine_block, fmt_pnl_dashboard,
@@ -448,6 +448,10 @@ class Engine:
                 self.state.total_pnl_usd += profit_usd
                 
                 log.info(f"Recorded redemption win: +{tr.pnl*100:.2f}% (approx profit: ${profit_usd:.2f})")
+                try:
+                    asyncio.create_task(emit_event(EventType.REDEMPTION, f"Auto-settle WIN +{tr.pnl*100:.2f}% (${profit_usd:.2f})"))
+                except Exception:
+                    pass
 
                 # Record to closed_trades DB so performance metrics stay in sync
                 if self.state_mgr:
@@ -721,6 +725,10 @@ class Engine:
                 import traceback
                 self.last_cycle_error = traceback.format_exc()
                 log.exception(f"Cycle error: {e}")
+                try:
+                    asyncio.create_task(emit_event(EventType.ERROR, f"Cycle error: {str(e)[:200]}"))
+                except Exception:
+                    pass
                 _crash_streak += 1
                 if _crash_streak >= 5:
                     log.critical(f"CRASH_LOOP: {_crash_streak} consecutive cycle failures — last: {e}")
@@ -1267,6 +1275,10 @@ class Engine:
                 "✅ Trading resumed: loss_streak <5 and session_drawdown <=30%.",
                 tier=AlertTier.INFO
             )
+            try:
+                asyncio.create_task(emit_event(EventType.TRADING_RESUMED, "Trading resumed: halt conditions cleared"))
+            except Exception:
+                pass
 
         if (self.state.loss_streak >= Config.STREAK_HALT_AT or session_drawdown > 0.30) and not self.state.trading_halted:
             # Pre-halt alert
@@ -1283,6 +1295,10 @@ class Engine:
                 fmt_halt(self.state.loss_streak, balance),
                 tier=AlertTier.CRITICAL
             )
+            try:
+                asyncio.create_task(emit_event(EventType.SYSTEM_HALT, f"Trading halted: streak={self.state.loss_streak}, drawdown={session_drawdown*100:.1f}%"))
+            except Exception:
+                pass
 
         # ── Periodic status message ────────────────────────────────────────────
         self._status_counter += 1
@@ -1764,6 +1780,10 @@ class Engine:
                         fmt_exit(pos.side, wavg_exit, entry_px, final_pnl, pos.exit_reason, balance),
                     )
                     log.info(f"EXIT CONFIRMED: {pos.side} {pos.exit_reason} pnl={final_pnl*100:.2f}% wavg_exit={wavg_exit:.3f} partials={len(pos.partial_exits)} slippage={slippage*100:.4f}%")
+                    try:
+                        asyncio.create_task(emit_event(EventType.TRADE_EXIT, f"EXIT {pos.side} @ {wavg_exit:.3f} PnL={final_pnl*100:.2f}% ({pos.exit_reason})"))
+                    except Exception:
+                        pass
 
                     self.state.total_trades += 1
                     if final_outcome == "WIN":
@@ -3009,6 +3029,10 @@ class Engine:
                 self.state.last_window_start_sec or 0, balance,
             )
         )
+        try:
+            asyncio.create_task(emit_event(EventType.TRADE_ENTRY, f"BUY {side_name} @ {entry_px:.3f} ({shares} shares)"))
+        except Exception:
+            pass
     async def _log_cycle_features(self, sig, btc_price: float, min_rem: float, ts: int, ob=None):
         """Phase 5: Log all signals/features to JSONL every cycle."""
         try:

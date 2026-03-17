@@ -19,6 +19,11 @@ start_time = time.time()
 
 app = FastAPI()
 
+# ── Static files (PWA manifest, service worker, icons) ────────────────────────
+_static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+if os.path.isdir(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+
 # ── Phase 5: WebSocket connection manager ────────────────────────────────────
 class ConnectionManager:
     def __init__(self):
@@ -43,6 +48,34 @@ class ConnectionManager:
             self.disconnect(ws)
 
 ws_manager = ConnectionManager()
+
+# ── Event system for notifications ────────────────────────────────────────────
+import collections
+from enum import Enum
+
+class EventType(str, Enum):
+    TRADE_ENTRY = "trade_entry"
+    TRADE_EXIT = "trade_exit"
+    REDEMPTION = "redemption"
+    SYSTEM_HALT = "system_halt"
+    KILL_SWITCH = "kill_switch"
+    TRADING_RESUMED = "trading_resumed"
+    ERROR = "error"
+
+_event_buffer: collections.deque = collections.deque(maxlen=50)
+
+async def emit_event(event_type: EventType, message: str, data: dict = None):
+    """Emit a typed event to all WS clients and buffer for late joiners."""
+    evt = {
+        "type": "event",
+        "event_type": event_type.value,
+        "message": message,
+        "ts": time.time(),
+        "data": data or {},
+    }
+    _event_buffer.appendleft(evt)
+    await ws_manager.broadcast(evt)
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _templates_dir = os.path.join(_HERE, "templates")
 templates = Jinja2Templates(directory=_templates_dir)
@@ -307,6 +340,10 @@ async def kill_switch(request: Request):
             engine.state.trading_halted = True
             await engine.state_mgr.save(engine.state)
         log.warning("KILL SWITCH ACTIVATED VIA DASHBOARD")
+        try:
+            await emit_event(EventType.KILL_SWITCH, "Kill switch activated via dashboard")
+        except Exception:
+            pass
         return {"status": "success", "message": "Kill switch activated — trading halted"}
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
@@ -1555,7 +1592,14 @@ async def websocket_endpoint(websocket: WebSocket):
 
 async def broadcast_cycle_update(data: dict):
     """Called from engine after each cycle to push live data to all WS clients."""
+    data["type"] = "metrics"
     await ws_manager.broadcast(data)
+
+
+@app.get("/api/events")
+async def get_events(limit: int = 50):
+    """Return recent events for clients that missed WS broadcasts."""
+    return list(_event_buffer)[:limit]
 
 
 # ── Phase 5 #26: Per-signal accuracy metrics (7-day rolling) ─────────────────
