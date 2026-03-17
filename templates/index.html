@@ -1311,9 +1311,10 @@ function updateUI() {
 
         if (perf && Object.keys(perf).length) {
             const wr = perf.win_rate||0;
-            // profit_factor = 0 when no losses (gross_loss=0); display as "∞" or large
+            // profit_factor = 0 when no losses (gross_loss=0); cap display at 99.99
             const pf = perf.profit_factor||0;
-            const pfDisplay = (pf === 0 && wr > 0 && (perf.losses||0) === 0) ? '∞' : pf.toFixed(2);
+            const noLosses = (pf === 0 || pf >= 100) && wr > 0;
+            const pfDisplay = noLosses ? '99.99' : pf.toFixed(2);
             const sh = perf.sharpe_ratio||perf.sharpe||0;
             const tradeCount = perf.closed_trades||perf.total_trades||closedTrades.length||0;
             $('new-pm-wr').innerText   = `${(wr*100).toFixed(1)}%`;
