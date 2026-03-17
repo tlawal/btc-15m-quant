@@ -153,15 +153,22 @@ def evaluate_exit(
         Config.VOL_STOP_BASE_PCT * max(1.0, atr_ratio),
         Config.VOL_STOP_MAX_PCT,
     )
+    _min_hold = getattr(Config, "MIN_HOLD_BEFORE_DRAWDOWN_SEC", 60)
     if unrealized_pct < -vol_stop_pct:
-        log.warning(
-            "VOL_HARD_STOP: unrealized=%.1f%% breached -%.1f%% "
-            "(atr=%.1f, ratio=%.2f, base=%.0f%%, widened=%.1f%%) — exiting unconditionally",
-            unrealized_pct * 100, vol_stop_pct * 100,
-            eff_atr, atr_ratio,
-            Config.VOL_STOP_BASE_PCT * 100, vol_stop_pct * 100,
-        )
-        return _exit("VOL_HARD_STOP")  # emergency — ignore spread
+        if hold_seconds < _min_hold:
+            log.info(
+                "VOL_HARD_STOP_SUPPRESSED: unrealized=%.1f%% breached -%.1f%% but hold_seconds=%.0f < %ds — suppressing (transient impact)",
+                unrealized_pct * 100, vol_stop_pct * 100, hold_seconds, _min_hold,
+            )
+        else:
+            log.warning(
+                "VOL_HARD_STOP: unrealized=%.1f%% breached -%.1f%% "
+                "(atr=%.1f, ratio=%.2f, base=%.0f%%, widened=%.1f%%) — exiting unconditionally",
+                unrealized_pct * 100, vol_stop_pct * 100,
+                eff_atr, atr_ratio,
+                Config.VOL_STOP_BASE_PCT * 100, vol_stop_pct * 100,
+            )
+            return _exit("VOL_HARD_STOP")  # emergency — ignore spread
 
     # 1b. Late-window hard stop: near expiry, any loss beyond small threshold.
     # Skip for late-entered positions to allow holding to expiry.
@@ -346,7 +353,7 @@ def evaluate_exit(
     # reduce drawdown tolerance by 40% to exit faster on second adverse move.
     # Only apply after grace period — instant post-fill drawdowns are price discovery,
     # not a "second adverse move" (Tetlock 2004: prediction markets overshoot then revert).
-    _grace_sec = getattr(Config, "FORCED_DRAWDOWN_GRACE_SEC", 15.0)
+    _grace_sec = _min_hold  # unified: same as VOL_HARD_STOP suppression window
     _in_grace = hold_seconds < _grace_sec
     mae_tightened = False
     if mae_pct >= Config.MAE_TIGHTEN_THRESHOLD and not _in_grace:

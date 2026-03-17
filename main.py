@@ -439,6 +439,7 @@ class Engine:
                     self.state.total_wins += 1
 
                 tr.outcome = "WIN"
+                tr.exit_reason = "REDEMPTION_WIN"
 
                 self.state.loss_streak = 0
                 self.state.session_start_balance = None  # force re-record on next cycle so drawdown resets
@@ -611,7 +612,7 @@ class Engine:
                                 "STARTUP_ONCHAIN_DESYNC: inherited size=%.2f but on-chain=%.2f — adjusting",
                                 self.state.held_position.size, onchain_bal,
                             )
-                            self.state.held_position.size = round(onchain_bal)
+                            self.state.held_position.size = int(onchain_bal)
                         else:
                             log.info(
                                 "STARTUP_ONCHAIN_OK: %s size=%.2f on-chain=%.2f",
@@ -2357,12 +2358,14 @@ class Engine:
 
         # Compute sell size — verify against actual Polymarket position to avoid overselling
         actual_size = pos.size
+        _onchain_floor = None  # floored on-chain balance for sell_size cap
 
         # Primary: on-chain ERC-1155 balance (authoritative, not cached)
         try:
             onchain_bal = await self.pm.get_conditional_token_balance(pos.token_id)
             if onchain_bal is not None:
-                onchain_shares = round(onchain_bal)
+                onchain_shares = int(onchain_bal)  # floor — on-chain is always slightly less than nominal
+                _onchain_floor = onchain_shares
                 if onchain_shares < 1:
                     log.warning("ONCHAIN_DESYNC: on-chain balance=%.2f but bot state=%.2f — clearing position", onchain_bal, pos.size)
                     # Position doesn't exist on-chain — clear it
@@ -2377,7 +2380,7 @@ class Engine:
                     self.state.held_position = HeldPosition()
                     return True
                 elif onchain_shares < actual_size:
-                    log.warning("ONCHAIN_DESYNC: bot state=%.2f on-chain=%.2f — using on-chain", actual_size, onchain_bal)
+                    log.warning("ONCHAIN_DESYNC: bot state=%.2f on-chain=%.2f (floored=%d) — using on-chain", actual_size, onchain_bal, onchain_shares)
                     actual_size = float(onchain_shares)
                     pos.size = actual_size
         except Exception as _chain_err:
@@ -2405,6 +2408,9 @@ class Engine:
         sell_size = actual_size if partial_pct >= 1.0 else max(1, int(actual_size * partial_pct))
         # Clamp to actual available
         sell_size = min(sell_size, actual_size)
+        # Hard cap: never sell more than floored on-chain balance (Polymarket mints ~0.2-0.6% fewer tokens)
+        if _onchain_floor is not None and _onchain_floor > 0:
+            sell_size = min(sell_size, _onchain_floor)
 
         # Paper-trade mode: apply exits locally without touching Polymarket.
         if Config.PAPER_TRADE_ENABLED:
@@ -2564,6 +2570,24 @@ class Engine:
         # position so partial exit reconciliation can compute remaining = pos.size - matched.
         # Setting pos.size = sell_size makes remaining=0 and clears the entire position.
         log.info(f"Exit order placed ({order_id}) for {reason} — sell_size={sell_size} pos_size={pos.size} use_maker={use_maker} — waiting for fill")
+
+        # FOK orders resolve instantly on CLOB — check status immediately so we don't
+        # leave is_pending=True for minutes blocking all further exit attempts.
+        if reason in _fok_reasons and order_id:
+            try:
+                _fok_status = await self.pm.get_order_status(str(order_id))
+                _fok_matched = float((_fok_status or {}).get("size_matched", 0))
+                _fok_state = str((_fok_status or {}).get("status", "")).upper()
+                if _fok_matched <= 0 and _fok_state in ("CANCELLED", "EXPIRED", ""):
+                    # FOK was killed — no fill. Clear pending so next cycle can retry.
+                    log.warning(f"FOK_IMMEDIATE_RECONCILE: order {str(order_id)[:10]} killed (matched=0) — clearing is_pending")
+                    pos.is_pending = False
+                    pos.order_id = None
+                elif _fok_matched > 0:
+                    log.info(f"FOK_IMMEDIATE_RECONCILE: order {str(order_id)[:10]} filled {_fok_matched} — reconcile will finalize")
+            except Exception as _fok_err:
+                log.warning(f"FOK_IMMEDIATE_RECONCILE: status check failed: {_fok_err} — will reconcile next cycle")
+
         return True
 
 

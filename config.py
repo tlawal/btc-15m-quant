@@ -119,7 +119,7 @@ class Config:
     # ── Late-Window Entry Hardening ─────────────────────────────────────────
     LATE_WINDOW_FOK_MIN_REM        = 4.0    # Force FOK (not GTC) for entries < 4 min remaining
     ONE_SIDED_CONFIRM_CYCLES       = 2      # Require 2+ consecutive cycles of one-sided clearance
-    FORCED_DRAWDOWN_GRACE_SEC      = 15.0   # Grace period: don't fire FORCED_DRAWDOWN in first 15s
+    MIN_HOLD_BEFORE_DRAWDOWN_SEC   = 60     # Don't fire FORCED_DRAWDOWN / VOL_HARD_STOP in first 60s (transient impact recovery)
 
     # ── Sell Retry Limits ─────────────────────────────────────────────────────
     MAX_SELL_ATTEMPTS_PER_CYCLE    = 2      # Max sell attempts per 5s cycle (caps RUNTIME)
