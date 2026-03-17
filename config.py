@@ -16,7 +16,7 @@ class Config:
     ENSEMBLE_MODEL_WEIGHT      = 0.60
     BASIS_EDGE_MIN             = 0.008
     HAWKES_LATE_REQUIRED_EDGE  = 0.003
-    OUTSIDE_HOURS_ENTRY_POSTERIOR_MIN = 0.75
+    OUTSIDE_HOURS_ENTRY_POSTERIOR_MIN = 0.92
     # Belief-volatility multiplier caps: keep regression toward 0.5 gentle, not crushing.
     BELIEF_VOL_MULT_MAX        = 1.30     # normal cap when more than 5 min remain
     BELIEF_VOL_LATE_MAX        = 1.15     # tighter cap when < 5 min remain
@@ -79,7 +79,7 @@ class Config:
     VPIN_TOXIC_THRESHOLD       = 0.85     # VPIN above this = toxic flow regime
     VPIN_TOXIC_HOLD_MAX_SEC    = 240.0    # shorten holding in toxic regime (theta + adverse selection)
 
-    OUTSIDE_HOURS_TAKE_PROFIT_PCT = 0.03
+    OUTSIDE_HOURS_TAKE_PROFIT_PCT = 0.02
 
     # ── Scoring constants ─────────────────────────────────────────────────────
     BLIND_ENTRY_SCORE          = 7.0      # legacy; use min_score_* in practice
@@ -275,9 +275,9 @@ class Config:
     LOG_LEVEL                  = os.getenv("LOG_LEVEL", "INFO")
 
     # Preferred trading times
-    PREFERRED_START_HOUR_ET    = 6   # 6 AM ET
-    PREFERRED_END_HOUR_ET      = 24 #18  # 6 PM ET
-    PREFERRED_WEEKDAYS_ONLY    = False  # If True, restrict to Monday-Friday
+    PREFERRED_START_HOUR_ET    = 7    # 7 AM ET (market open area)
+    PREFERRED_END_HOUR_ET      = 18   # 6 PM ET (core hours only)
+    PREFERRED_WEEKDAYS_ONLY    = True  # Block weekends entirely
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @classmethod

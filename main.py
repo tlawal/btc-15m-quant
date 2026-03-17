@@ -596,22 +596,22 @@ class Engine:
                 async with asyncio.timeout(8):
                     onchain_bal = await self.pm.get_conditional_token_balance(self.state.held_position.token_id)
                     if onchain_bal is not None:
-                        if onchain_bal == 0:
+                        if onchain_bal < 0.01:
                             log.warning(
-                                "STARTUP_ONCHAIN_DESYNC: inherited %s position size=%d but on-chain balance=0 — clearing",
-                                self.state.held_position.side, int(self.state.held_position.size),
+                                "STARTUP_ONCHAIN_DESYNC: inherited %s position size=%.2f but on-chain balance=%.2f — clearing",
+                                self.state.held_position.side, self.state.held_position.size, onchain_bal,
                             )
                             self.state.held_position = HeldPosition()
-                        elif onchain_bal < self.state.held_position.size:
+                        elif onchain_bal < self.state.held_position.size - 0.01:
                             log.warning(
-                                "STARTUP_ONCHAIN_DESYNC: inherited size=%d but on-chain=%d — adjusting",
-                                int(self.state.held_position.size), onchain_bal,
+                                "STARTUP_ONCHAIN_DESYNC: inherited size=%.2f but on-chain=%.2f — adjusting",
+                                self.state.held_position.size, onchain_bal,
                             )
-                            self.state.held_position.size = float(onchain_bal)
+                            self.state.held_position.size = round(onchain_bal)
                         else:
                             log.info(
-                                "STARTUP_ONCHAIN_OK: %s size=%d on-chain=%d",
-                                self.state.held_position.side, int(self.state.held_position.size), onchain_bal,
+                                "STARTUP_ONCHAIN_OK: %s size=%.2f on-chain=%.2f",
+                                self.state.held_position.side, self.state.held_position.size, onchain_bal,
                             )
             except Exception as e:
                 log.warning("Startup on-chain reconciliation failed: %s", e)
@@ -1574,6 +1574,8 @@ class Engine:
                             tr.exit_price = actual_px
                             tr.pnl = pnl_pct
                             tr.outcome = outcome
+                            tr.exit_reason = pos.exit_reason
+                            tr.partial_exits = list(pos.partial_exits)
                             break
                     self.state.total_trades += 1
                     if outcome == "WIN":
@@ -1730,6 +1732,8 @@ class Engine:
                             tr.pnl        = final_pnl
                             tr.slippage   = slippage
                             tr.outcome    = final_outcome
+                            tr.exit_reason = pos.exit_reason
+                            tr.partial_exits = list(pos.partial_exits)
                             break
 
                     # Record final exit portion to DB
@@ -2092,6 +2096,25 @@ class Engine:
                                 "HARD_STOP_BYPASS: unrealized=%.1f%% breached -%.1f%% while is_pending — cancelling pending order",
                                 _unreal * 100, Config.HARD_STOP_PCT * 100,
                             )
+                            # Check if pending order already partially/fully filled before cancelling
+                            if pos.order_id:
+                                try:
+                                    _ord_status = await self.pm.get_order_status(str(pos.order_id))
+                                    _matched = float((_ord_status or {}).get("size_matched", 0))
+                                    if _matched > 0:
+                                        log.warning(
+                                            "HARD_STOP_BYPASS: pending order already filled %.0f shares — adjusting pos.size from %.0f to %.0f",
+                                            _matched, pos.size, max(0, pos.size - _matched),
+                                        )
+                                        pos.partial_exits.append({
+                                            "size": _matched,
+                                            "price": float((_ord_status or {}).get("price", 0)),
+                                            "reason": pos.exit_reason or "HARD_STOP_PARTIAL",
+                                            "ts": int(time.time()),
+                                        })
+                                        pos.size = max(0, pos.size - _matched)
+                                except Exception as _fill_err:
+                                    log.warning("HARD_STOP_BYPASS: failed to check fill status: %s", _fill_err)
                             try:
                                 if pos.order_id:
                                     await self.pm.cancel_order(str(pos.order_id))
@@ -2156,6 +2179,8 @@ class Engine:
                             tr.exit_price = 1.0
                             tr.pnl = (1.0 - ep) / ep if ep > 0 else 0.0
                             tr.outcome = "WIN"
+                            tr.exit_reason = "AUTO_SETTLE_WIN"
+                            tr.partial_exits = list(pos.partial_exits)
                             self.state.total_wins += 1
                             self.state.loss_streak = 0
                             profit_usd = (1.0 - ep) * (pos.size or 0)
@@ -2175,6 +2200,8 @@ class Engine:
                             tr.exit_price = 0.0
                             tr.pnl = -1.0
                             tr.outcome = "LOSS"
+                            tr.exit_reason = "AUTO_SETTLE_LOSS"
+                            tr.partial_exits = list(pos.partial_exits)
                             self.state.total_losses += 1
                             self.state.loss_streak += 1
                             loss_usd = ep * (pos.size or 0)
@@ -2309,20 +2336,23 @@ class Engine:
         try:
             onchain_bal = await self.pm.get_conditional_token_balance(pos.token_id)
             if onchain_bal is not None:
-                if onchain_bal == 0:
-                    log.warning("ONCHAIN_DESYNC: on-chain balance=0 but bot state=%d — clearing position", pos.size)
+                onchain_shares = round(onchain_bal)
+                if onchain_shares < 1:
+                    log.warning("ONCHAIN_DESYNC: on-chain balance=%.2f but bot state=%.2f — clearing position", onchain_bal, pos.size)
                     # Position doesn't exist on-chain — clear it
                     for tr in reversed(self.state.trade_history):
                         if tr.side == pos.side and tr.outcome == "OPEN":
                             tr.exit_price = 0.0
                             tr.pnl = -1.0
                             tr.outcome = "LOSS"
+                            tr.exit_reason = "ONCHAIN_DESYNC"
+                            tr.partial_exits = list(pos.partial_exits)
                             break
                     self.state.held_position = HeldPosition()
                     return True
-                elif onchain_bal < actual_size:
-                    log.warning("ONCHAIN_DESYNC: bot state=%d on-chain=%d — using on-chain", int(actual_size), onchain_bal)
-                    actual_size = float(onchain_bal)
+                elif onchain_shares < actual_size:
+                    log.warning("ONCHAIN_DESYNC: bot state=%.2f on-chain=%.2f — using on-chain", actual_size, onchain_bal)
+                    actual_size = float(onchain_shares)
                     pos.size = actual_size
         except Exception as _chain_err:
             log.warning("on-chain balance check failed: %s — falling back to API", _chain_err)
@@ -2365,6 +2395,8 @@ class Engine:
                     tr.exit_price = current_px
                     tr.pnl        = pnl_pct
                     tr.outcome    = outcome
+                    tr.exit_reason = pos.exit_reason
+                    tr.partial_exits = list(pos.partial_exits)
                     break
 
             # Record to DB for performance stats
@@ -3062,6 +3094,8 @@ class Engine:
                         tr.outcome = "LOSS"
                         tr.exit_price = 0.0
                         tr.pnl = -1.0
+                        tr.exit_reason = getattr(pos, "exit_reason", None) or "WINDOW_EXPIRED"
+                        tr.partial_exits = list(getattr(pos, "partial_exits", []))
                         try:
                             # Use stored entry features/regime
                             regime = getattr(self.state, "entry_regime", "unknown")

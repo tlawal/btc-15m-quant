@@ -82,6 +82,8 @@ class TradeRecord:
     slippage: Optional[float] = None
     tx_hash: Optional[str] = None
     size: Optional[float] = None
+    exit_reason: Optional[str] = None
+    partial_exits: List[Dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass

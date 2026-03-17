@@ -116,6 +116,9 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Exit timeout FOK** — if exit order pending > 60s, force-replaces as FOK at `bid - 1 tick`
 - **State checkpoint** — saves state before every order placement (crash-safe)
 - **Startup reconciliation** — checks pending orders AND live API positions on restart; populates `held_position` from Polymarket if local state is out of sync
+- **On-chain position reconciliation** — on startup and before every sell, queries on-chain ERC-1155 `balanceOf` (Gnosis CTF contract) to verify inherited position size is correct. Clears phantom positions (on-chain balance = 0) immediately. Catches stale Polymarket positions-API data that can cause futile sell loops.
+- **Sell retry cap** — limits sell attempts to `MAX_CONSECUTIVE_SELL_FAILURES` (default 20) total; after that, stops retrying and waits for auto-settle. Prevents 3+ minute loops of futile HTTP calls when shares don't exist on-chain.
+- **Sell failure diagnostics** — on sell failure, logs `SELL_FAIL_DEBUG` with positions-API response and on-chain balance side-by-side for root cause analysis.
 - **Slippage tracking** — actual fill price vs intended price logged per trade; warns if > 1%
 - **Market quality filter** — skips cycle if spreads > 8%, book depth < 20 USDC, or klines > 5 min stale
 
@@ -358,4 +361,6 @@ python main.py --reset
 | `FORCED_DRAWDOWN_GRACE_SEC` | 15.0 | Grace period: don't fire FORCED_DRAWDOWN in first 15s |
 | `PUMP_REVERSION_THRESHOLD` | 0.05 | 5% single-cycle pump triggers limit-below entry |
 | `PUMP_REVERSION_OFFSET` | 0.03 | Buy $0.03 below mid on pump detection |
+| `MAX_SELL_ATTEMPTS_PER_CYCLE` | 2 | Max sell HTTP calls per 5s cycle (caps RUNTIME) |
+| `MAX_CONSECUTIVE_SELL_FAILURES` | 20 | After this many failures, stop trying — wait for auto-settle |
 

@@ -757,10 +757,10 @@ class PolymarketClient:
             log.debug("get_wallet_usdc_balance: %s", e)
             return None
 
-    async def get_conditional_token_balance(self, token_id: str) -> Optional[int]:
+    async def get_conditional_token_balance(self, token_id: str) -> Optional[float]:
         """Query on-chain ERC-1155 balanceOf for a conditional token via Polygon RPC.
 
-        Returns the number of shares held on-chain (integer), or None on error.
+        Returns shares (float), not raw micro-units. 1 share = 1e6 on-chain units.
         This is authoritative — unlike the positions API which may be cached/stale.
         """
         if not Config.POLYGON_RPC_URL or not token_id:
@@ -797,9 +797,10 @@ class PolymarketClient:
             raw_hex = (resp or {}).get("result", "0x0")
             if not isinstance(raw_hex, str) or not raw_hex.startswith("0x"):
                 return None
-            balance = int(raw_hex, 16)
-            log.info("onchain_ctf_balance: token=%s balance=%d", str(token_id)[:16], balance)
-            return balance
+            balance_raw = int(raw_hex, 16)
+            balance_shares = balance_raw / 1_000_000.0
+            log.info("onchain_ctf_balance: token=%s raw=%d shares=%.2f", str(token_id)[:16], balance_raw, balance_shares)
+            return balance_shares
         except Exception as e:
             log.warning("get_conditional_token_balance: %s", e)
             return None

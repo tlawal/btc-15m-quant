@@ -1521,6 +1521,8 @@ async def get_metrics():
                 "slippage": getattr(t, "slippage", None),
                 "size": getattr(t, "size", None),
                 "tx_hash": getattr(t, "tx_hash", None),
+                "exit_reason": getattr(t, "exit_reason", None),
+                "partial_exits": getattr(t, "partial_exits", []),
             }
             for t in state.trade_history[-10:]
         ]
