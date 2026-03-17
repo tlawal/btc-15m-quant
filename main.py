@@ -612,7 +612,7 @@ class Engine:
                                 "STARTUP_ONCHAIN_DESYNC: inherited size=%.2f but on-chain=%.2f — adjusting",
                                 self.state.held_position.size, onchain_bal,
                             )
-                            self.state.held_position.size = int(onchain_bal)
+                            self.state.held_position.size = math.floor(onchain_bal * 10000) / 10000
                         else:
                             log.info(
                                 "STARTUP_ONCHAIN_OK: %s size=%.2f on-chain=%.2f",
@@ -2364,10 +2364,12 @@ class Engine:
         try:
             onchain_bal = await self.pm.get_conditional_token_balance(pos.token_id)
             if onchain_bal is not None:
-                onchain_shares = int(onchain_bal)  # floor — on-chain is always slightly less than nominal
+                # Floor to 4 decimal places — CLOB allows 4dp taker amounts.
+                # int() was too aggressive (6.9944 → 6); 4dp floor gives 6.9944 which is valid.
+                onchain_shares = math.floor(onchain_bal * 10000) / 10000
                 _onchain_floor = onchain_shares
-                if onchain_shares < 1:
-                    log.warning("ONCHAIN_DESYNC: on-chain balance=%.2f but bot state=%.2f — clearing position", onchain_bal, pos.size)
+                if onchain_shares < 0.0001:
+                    log.warning("ONCHAIN_DESYNC: on-chain balance=%.4f but bot state=%.2f — clearing position", onchain_bal, pos.size)
                     # Position doesn't exist on-chain — clear it
                     for tr in reversed(self.state.trade_history):
                         if tr.side == pos.side and tr.outcome == "OPEN":
@@ -2379,9 +2381,9 @@ class Engine:
                             break
                     self.state.held_position = HeldPosition()
                     return True
-                elif onchain_shares < actual_size:
-                    log.warning("ONCHAIN_DESYNC: bot state=%.2f on-chain=%.2f (floored=%d) — using on-chain", actual_size, onchain_bal, onchain_shares)
-                    actual_size = float(onchain_shares)
+                elif onchain_shares < actual_size - 0.01:
+                    log.warning("ONCHAIN_DESYNC: bot state=%.2f on-chain=%.4f — using on-chain", actual_size, onchain_bal)
+                    actual_size = onchain_shares
                     pos.size = actual_size
         except Exception as _chain_err:
             log.warning("on-chain balance check failed: %s — falling back to API", _chain_err)
@@ -2825,6 +2827,19 @@ class Engine:
             and sig.direction != "NEUTRAL"
             and not _has_fatal
         )
+        # Streak posterior boost: after 2+ consecutive losses, require higher conviction.
+        # Prevents the bot from entering marginal trades while already in a hole.
+        _streak_boost = getattr(Config, "STREAK_POSTERIOR_MIN_BOOST", 0.05)
+        if self.state.loss_streak >= 2 and not sig.monster_signal:
+            _streak_min_post = 0.80 + _streak_boost
+            if _best_posterior < _streak_min_post:
+                log.info(
+                    "STREAK_POSTERIOR_BLOCK: posterior=%.3f < %.3f (loss_streak=%d, boost=%.2f) — skipping",
+                    _best_posterior, _streak_min_post, self.state.loss_streak, _streak_boost,
+                )
+                _entry_skipped("streak_posterior_too_low", posterior=_best_posterior, required=_streak_min_post, streak=self.state.loss_streak)
+                return
+
         if _override_active:
             log.info(
                 f"LOW_BAL_NEAR_CERTAIN_OVERRIDE: posterior={_best_posterior:.4f} "
@@ -2911,6 +2926,17 @@ class Engine:
 
         if entry_px >= 0.98:
             _entry_skipped("entry_price_too_high", entry_px=entry_px, side=side_name)
+            return
+
+        # Block high-price GTC entries (tiny upside, huge downside; any adverse exit tick = full loss)
+        _max_gtc_price = getattr(Config, "MAX_ENTRY_PRICE_GTC", 0.92)
+        if entry_px > _max_gtc_price and not _use_fok and not sig.monster_signal:
+            log.info(
+                "ENTRY_PRICE_TOO_HIGH_GTC: entry_px=%.2f > MAX_ENTRY_PRICE_GTC=%.2f — skipping "
+                "(only %.1f%% upside remaining; use FOK/monster for high-price entries)",
+                entry_px, _max_gtc_price, (1.0 - entry_px) * 100,
+            )
+            _entry_skipped("entry_price_too_high_gtc", entry_px=entry_px, max_gtc=_max_gtc_price)
             return
 
         # Size (FIX #8: Kelly with riskPct floor)

@@ -1117,6 +1117,19 @@ def compute_signals(
     elif res.abs_score < res.min_score and not res.monster_signal:
         gates.append(f"score_low={res.abs_score:.2f}_req={res.min_score:.1f}")
 
+    # Score stability gate: require score to be above threshold for 2+ consecutive cycles.
+    # A score that was below threshold last cycle (oscillating signal) has IC ≈ 0 — don't trade.
+    # Exempts monster signals and cases where prev_cycle_score is unavailable.
+    _stability_cycles = getattr(Config, "SCORE_STABILITY_MIN_CYCLES", 2)
+    if (
+        _stability_cycles >= 2
+        and not res.monster_signal
+        and state.prev_cycle_score is not None
+        and abs(state.prev_cycle_score) < res.min_score
+        and res.abs_score >= res.min_score  # current is above, prev was below
+    ):
+        gates.append(f"score_unstable=prev_{state.prev_cycle_score:.2f}_curr_{res.signed_score:.2f}")
+
     # Early window guard
     early_rem_threshold = (Config.WINDOW_SEC / 60.0) - Config.EARLY_WINDOW_GUARD_MIN
     if minutes_remaining > early_rem_threshold and not res.monster_signal:

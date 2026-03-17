@@ -187,16 +187,24 @@ def evaluate_exit(
 
     # 1d. Strike distance exceeded — migrated from monitor_and_exit_open_positions
     # When BTC has moved far from strike and position is losing, cut losses.
+    # Same min-hold grace as VOL_HARD_STOP — transient post-entry impact can trigger this falsely.
     if (
         distance is not None and atr14 is not None and atr14 > 0
         and abs(distance) > 0.6 * atr14
         and unrealized_pct < -0.05
     ):
-        log.warning(
-            "STRIKE_DISTANCE_EXCEEDED: distance=%.1f > 0.6*ATR=%.1f, unrealized=%.1f%% — exiting",
-            abs(distance), 0.6 * atr14, unrealized_pct * 100,
-        )
-        return _exit("STRIKE_DISTANCE_EXCEEDED")
+        if hold_seconds < _min_hold:
+            log.info(
+                "STRIKE_DISTANCE_SUPPRESSED: distance=%.1f > 0.6*ATR=%.1f unrealized=%.1f%% "
+                "but hold_seconds=%.0f < %ds — suppressing (transient impact)",
+                abs(distance), 0.6 * atr14, unrealized_pct * 100, hold_seconds, _min_hold,
+            )
+        else:
+            log.warning(
+                "STRIKE_DISTANCE_EXCEEDED: distance=%.1f > 0.6*ATR=%.1f, unrealized=%.1f%% — exiting",
+                abs(distance), 0.6 * atr14, unrealized_pct * 100,
+            )
+            return _exit("STRIKE_DISTANCE_EXCEEDED")
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 1.5: MAE-CONDITIONED EXITS
