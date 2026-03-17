@@ -794,10 +794,9 @@ class Engine:
         mins_into_window = (now_ts - win_start) / 60.0
         if (
             self.state.unclaimed_usdc > 0
-            and 2.0 <= mins_into_window <= 4.0
+            and 2.0 <= mins_into_window <= 8.0
             and self._last_early_claim_window != win_start
         ):
-            self._last_early_claim_window = win_start
             log.info(f"EARLY_CLAIM: ${self.state.unclaimed_usdc:.2f} unclaimed, {mins_into_window:.1f}min into window — attempting claim")
             try:
                 claimed = await self.pm.redeem_winning_positions()
@@ -805,6 +804,9 @@ class Engine:
                     log.info(f"✅ EARLY_CLAIM SUCCESS: ${claimed:.2f}")
                     self._record_redemption(claimed)
                     self.state.unclaimed_usdc = 0.0
+                    self._last_early_claim_window = win_start  # only lock out once TX confirmed
+                else:
+                    log.info("EARLY_CLAIM: TX submitted (async) — will retry next cycle")
             except Exception as _eclaim_err:
                 log.warning(f"EARLY_CLAIM failed: {_eclaim_err}")
         
@@ -2190,7 +2192,11 @@ class Engine:
                     except Exception:
                         pass
 
-                position_won = settle_px is not None and settle_px >= 0.50
+                # If settle_px is None but unclaimed_usdc > 0, the market resolved in our favour
+                # (redemption is pending) — treat as WIN rather than falsely recording LOSS.
+                position_won = (settle_px is not None and settle_px >= 0.50) or (
+                    settle_px is None and self.state.unclaimed_usdc > 0.01
+                )
 
                 for tr in reversed(self.state.trade_history):
                     if tr.side == pos.side and tr.outcome == "OPEN":
