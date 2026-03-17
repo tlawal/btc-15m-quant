@@ -314,6 +314,10 @@
             <button id="mute-toggle" onclick="toggleMute()" title="Toggle audio alerts" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text);font-size:1rem;line-height:1;transition:border-color 0.2s">
                 <span id="mute-icon">🔔</span>
             </button>
+            <button id="notif-btn" onclick="requestNotifPerm()" title="Allow notifications" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text);font-size:1rem;line-height:1">
+                <span id="notif-icon">🔕</span>
+            </button>
+            <button onclick="handleEvent({event_type:'trade_entry',message:'Test entry @ 0.75'})" title="Test alert" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 6px;cursor:pointer;color:var(--text);font-size:0.65rem;line-height:1">TEST</button>
             <button id="theme-toggle" onclick="toggleTheme()" title="Toggle light/dark theme" style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text);font-size:1rem;line-height:1;transition:border-color 0.2s">
                 <span id="theme-icon">☀️</span>
             </button>
@@ -1989,8 +1993,8 @@ function unlockAudio() {
     if (_audioCtx.state === 'suspended') _audioCtx.resume().then(() => { _audioUnlocked = true; });
     else _audioUnlocked = true;
 }
-document.addEventListener('click', unlockAudio, { once: true });
-document.addEventListener('touchstart', unlockAudio, { once: true });
+document.addEventListener('click', unlockAudio);
+document.addEventListener('touchstart', unlockAudio);
 
 const TONES = {
     entry: { freq: [880, 1100], dur: 0.15, type: 'sine', gap: 0.08 },
@@ -2056,6 +2060,8 @@ function handleEvent(evt) {
     }
     // Audio alert
     if (cfg.tone && !_audioMuted) playTone(cfg.tone);
+    // In-app toast
+    addToast(cfg.label, evt.message);
     // Haptic feedback
     if (navigator.vibrate) {
         if (['system_halt','kill_switch'].includes(evt.event_type)) navigator.vibrate([300,100,300]);
@@ -2063,12 +2069,30 @@ function handleEvent(evt) {
     }
 }
 
-// Request notification permission on first user interaction
-document.addEventListener('click', () => {
-    if ('Notification' in window && Notification.permission === 'default') {
-        Notification.requestPermission();
-    }
-}, { once: true });
+function requestNotifPerm() {
+    if (!('Notification' in window)) return;
+    Notification.requestPermission().then(p => {
+        if ($('notif-icon')) $('notif-icon').textContent = p === 'granted' ? '🔔' : '🔕';
+        if (p !== 'default' && $('notif-btn')) $('notif-btn').title = p === 'granted' ? 'Notifications enabled' : 'Notifications blocked';
+    });
+}
+(function() {
+    if (!('Notification' in window) || !$('notif-btn')) return;
+    const p = Notification.permission;
+    if ($('notif-icon')) $('notif-icon').textContent = p === 'granted' ? '🔔' : '🔕';
+    if (p === 'granted' && $('notif-btn')) $('notif-btn').title = 'Notifications enabled';
+})();
+
+function addToast(label, message) {
+    const feed = document.getElementById('event-feed');
+    if (!feed) return;
+    const t = document.createElement('div');
+    t.style.cssText = 'background:rgba(15,23,42,0.95);border:1px solid #334155;border-radius:8px;padding:8px 12px;font-size:0.75rem;color:#e2e8f0;pointer-events:auto;box-shadow:0 4px 12px rgba(0,0,0,0.5)';
+    t.innerHTML = '<span style="color:#38bdf8;font-weight:700">' + label + '</span> ' + message;
+    feed.appendChild(t);
+    if (feed.children.length > 5) feed.removeChild(feed.firstChild);
+    setTimeout(() => { t.style.transition = 'opacity 0.5s'; t.style.opacity = '0'; setTimeout(() => t.remove(), 500); }, 5000);
+}
 
 // ── WebSocket event listener (alongside existing polling) ───────────────────
 function connectEventWS() {
@@ -2089,5 +2113,6 @@ function connectEventWS() {
 }
 connectEventWS();
 </script>
+<div id="event-feed" style="position:fixed;bottom:16px;right:16px;z-index:9999;display:flex;flex-direction:column-reverse;gap:6px;max-width:280px;pointer-events:none"></div>
 </body>
 </html>
