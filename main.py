@@ -3146,6 +3146,13 @@ class Engine:
             _entry_skipped("entry_order_failed", entry_px=entry_px, shares=shares)
             return
 
+        # Phase 4 (P4 Audit Fix): Proactively approve the token for future selling
+        # to prevent trailing stop allowance failures 
+        try:
+            asyncio.create_task(self.pm._ensure_conditional_allowance(token_id, shares))
+        except Exception as e:
+            log.debug(f"Failed to spawn proactive allowance task: {e}")
+
         # Phase 3: record as PENDING and track order_id
         self.state.held_position = HeldPosition(
             side               = side_name,

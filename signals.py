@@ -925,6 +925,13 @@ def compute_signals(
     # ── Skip gates ────────────────────────────────────────────────────────────
     gates = []
 
+    # Global distance gate (ATR-scaled)
+    _min_dist_atr_mult = float(getattr(Config, "MIN_ENTRY_DISTANCE_ATR_MULT", 0.25))
+    if indic.atr14 is not None and indic.atr14 > 0 and res.distance is not None:
+        min_required_dist = _min_dist_atr_mult * indic.atr14
+        if abs(res.distance) < min_required_dist and not res.monster_signal:
+            gates.append(f"distance_too_close={abs(res.distance):.1f}_req={min_required_dist:.1f}")
+
     # ADX filter
     if indic.adx14 is not None:
         if indic.adx14 < Config.ADX_TREND_THRESHOLD and minutes_remaining > 5.0 and not res.monster_signal:
@@ -978,7 +985,11 @@ def compute_signals(
     # Ref: Tetlock (2004) — PM prices overshoot then revert; Hanson (2003) — LMSR implies predictable convergence.
     _conv_posterior_min = float(getattr(Config, "CONVERGENCE_GATE_POSTERIOR_MIN", 0.82))
     _conv_gap_min       = float(getattr(Config, "CONVERGENCE_GATE_GAP_MIN", 0.12))
-    _conv_dist_min      = float(getattr(Config, "LATE_CONVICTION_DISTANCE", 30.0))
+    _conv_dist_atr_mult = float(getattr(Config, "LATE_CONVICTION_DISTANCE_ATR_MULT", 0.25))
+    if indic.atr14 and indic.atr14 > 0:
+        _conv_dist_min = _conv_dist_atr_mult * indic.atr14
+    else:
+        _conv_dist_min = float(getattr(Config, "LATE_CONVICTION_DISTANCE", 40.0))
     _market_px          = yes_mid if res.direction == "UP" else (no_mid if res.direction == "DOWN" else None)
     _model_market_gap   = abs(chosen_posterior - (_market_px or chosen_posterior))
     _convergence_snipe  = (
@@ -1084,14 +1095,19 @@ def compute_signals(
     # When BTC is clearly on one side of strike with high posterior near expiry,
     # technical scores (EMA, MACD) are lagging 5m data and the market has repriced.
     # Instead of fully suppressing the score gate, we:
-    #   1. Relax the score threshold from 2.5 → 0.5 (just need directional agreement)
+    #   1. Relax the score threshold from 2.5 → LATE_CONVICTION_MIN_SCORE
     #   2. Bolster the score with late-window micro signals (OBI, CVD, OBV divergence)
     #   3. Relax the edge gate
+    if indic.atr14 and indic.atr14 > 0:
+        _late_dist_req = float(getattr(Config, "LATE_CONVICTION_DISTANCE_ATR_MULT", 0.25)) * indic.atr14
+    else:
+        _late_dist_req = Config.LATE_CONVICTION_DISTANCE
+
     is_late_conviction = (
         minutes_remaining <= Config.LATE_CONVICTION_MIN_REM
         and best_posterior >= Config.LATE_CONVICTION_POSTERIOR
         and res.distance is not None
-        and abs(res.distance) >= Config.LATE_CONVICTION_DISTANCE
+        and abs(res.distance) >= _late_dist_req
     )
 
     # Late-conviction micro bolster: sum of confirming flow/micro signals.
@@ -1129,10 +1145,10 @@ def compute_signals(
             f"→ score_req relaxed to 0.5, edge relaxed to {Config.LATE_CONVICTION_EDGE:.3f}"
         )
 
-    # Score gate — relaxed for late-conviction (min_score 2.5 → 0.5 + micro bolster)
+    # Score gate — relaxed for late-conviction
     if is_late_conviction:
         late_effective_score = res.abs_score + late_micro_boost
-        late_min_score = 0.5  # just need basic directional signal + micro confirmation
+        late_min_score = float(getattr(Config, "LATE_CONVICTION_MIN_SCORE", 1.25))
         if late_effective_score < late_min_score:
             gates.append(f"score_low={late_effective_score:.2f}_req={late_min_score:.1f}_late")
     elif res.abs_score < res.min_score and not res.monster_signal:

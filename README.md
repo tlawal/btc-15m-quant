@@ -369,6 +369,9 @@ python main.py --reset
 | `SLIPPAGE_BUFFER_PCT` | 0.008 | Execution haircut on sizing (80bps) |
 | `LATE_CONVICTION_POSTERIOR` | 0.80 | Min posterior for late-window sniping |
 | `LATE_CONVICTION_DISTANCE` | 40.0 | Min BTC distance from strike for late sniping |
+| `LATE_CONVICTION_DISTANCE_ATR_MULT` | 0.25 | Dynamic ATR-scaled fallback for late sniping distance |
+| `LATE_CONVICTION_MIN_SCORE` | 1.25 | Strict minimum score floor for late sniping overrides |
+| `MIN_ENTRY_DISTANCE_ATR_MULT` | 0.25 | Global ATR-scaled distance requirement for entry |
 | `BB_SQUEEZE_NORMAL` | 0.0030 | BB squeeze gate threshold (normal regime) |
 | `DAILY_LOSS_LIMIT_PCT` | 0.10 | Daily loss limit as fraction of session start balance |
 | `LATE_WINDOW_FOK_MIN_REM` | 4.0 | Force FOK (not GTC) for entries < 4 min remaining |
