@@ -64,6 +64,62 @@ class EventType(str, Enum):
 
 _event_buffer: collections.deque = collections.deque(maxlen=50)
 
+# ── VAPID / Web Push ──────────────────────────────────────────────────────────
+import base64 as _b64
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_VAPID_KEY_FILE = os.path.join(_HERE, "vapid_keys.json")
+_VAPID_CLAIMS = {"sub": "mailto:admin@btcquant.local"}
+_push_subscriptions: dict = {}  # endpoint → subscription dict
+
+def _load_or_create_vapid_keys() -> tuple[str, str]:
+    priv_env = os.environ.get("VAPID_PRIVATE_KEY", "")
+    pub_env  = os.environ.get("VAPID_PUBLIC_KEY", "")
+    if priv_env and pub_env:
+        return priv_env, pub_env
+    if os.path.exists(_VAPID_KEY_FILE):
+        with open(_VAPID_KEY_FILE) as f:
+            d = json.load(f)
+        return d["private"], d["public"]
+    try:
+        from pywebpush import Vapid
+        v = Vapid()
+        v.generate_keys()
+        priv = _b64.urlsafe_b64encode(v.private_key.private_bytes_raw()).rstrip(b'=').decode()
+        pub  = _b64.urlsafe_b64encode(v.public_key.public_bytes_raw()).rstrip(b'=').decode()
+        with open(_VAPID_KEY_FILE, "w") as f:
+            json.dump({"private": priv, "public": pub}, f)
+        log.info("VAPID keys generated → %s", _VAPID_KEY_FILE)
+        return priv, pub
+    except Exception:
+        log.warning("pywebpush not available — Web Push disabled")
+        return "", ""
+
+_VAPID_PRIVATE, _VAPID_PUBLIC = _load_or_create_vapid_keys()
+
+async def _send_web_push(evt: dict):
+    if not _VAPID_PRIVATE or not _push_subscriptions:
+        return
+    try:
+        from pywebpush import webpush, WebPushException
+    except ImportError:
+        return
+    payload = json.dumps({"title": f"BTC Quant: {evt['event_type'].upper()}", "body": evt["message"], "tag": evt["event_type"]})
+    dead = []
+    for endpoint, sub in list(_push_subscriptions.items()):
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda s=sub: webpush(subscription_info=s, data=payload,
+                                      vapid_private_key=_VAPID_PRIVATE, vapid_claims=_VAPID_CLAIMS)
+            )
+        except Exception as ex:
+            resp = getattr(ex, "response", None)
+            if resp is not None and getattr(resp, "status_code", 0) in (404, 410):
+                dead.append(endpoint)
+    for ep in dead:
+        _push_subscriptions.pop(ep, None)
+
 async def emit_event(event_type: EventType, message: str, data: dict = None):
     """Emit a typed event to all WS clients and buffer for late joiners."""
     evt = {
@@ -75,8 +131,7 @@ async def emit_event(event_type: EventType, message: str, data: dict = None):
     }
     _event_buffer.appendleft(evt)
     await ws_manager.broadcast(evt)
-
-_HERE = os.path.dirname(os.path.abspath(__file__))
+    asyncio.create_task(_send_web_push(evt))
 _templates_dir = os.path.join(_HERE, "templates")
 templates = Jinja2Templates(directory=_templates_dir)
 
@@ -1600,6 +1655,23 @@ async def broadcast_cycle_update(data: dict):
 async def get_events(limit: int = 50):
     """Return recent events for clients that missed WS broadcasts."""
     return list(_event_buffer)[:limit]
+
+
+@app.get("/api/push/vapid-public-key")
+async def push_vapid_public_key():
+    return {"key": _VAPID_PUBLIC}
+
+@app.post("/api/push/subscribe")
+async def push_subscribe(request: Request):
+    sub = await request.json()
+    _push_subscriptions[sub["endpoint"]] = sub
+    return {"ok": True, "count": len(_push_subscriptions)}
+
+@app.delete("/api/push/subscribe")
+async def push_unsubscribe(request: Request):
+    sub = await request.json()
+    _push_subscriptions.pop(sub.get("endpoint", ""), None)
+    return {"ok": True}
 
 
 # ── Phase 5 #26: Per-signal accuracy metrics (7-day rolling) ─────────────────

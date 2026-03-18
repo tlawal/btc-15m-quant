@@ -1998,7 +1998,7 @@ document.addEventListener('click', unlockAudio);
 document.addEventListener('touchstart', unlockAudio);
 
 const TONES = {
-    entry: { freq: [880, 1100], dur: 0.15, type: 'sine', gap: 0.08 },
+    entry: { freq: [659, 880, 1100], dur: 0.35, type: 'sine', gap: 0.05, gain: 0.35 },
     exit:  { freq: [660, 440],  dur: 0.12, type: 'sine', gap: 0.08 },
     halt:  { freq: [220, 220, 220], dur: 0.3, type: 'square', gap: 0.15 },
     error: { freq: [330],      dur: 0.4,  type: 'sawtooth', gap: 0 },
@@ -2011,7 +2011,7 @@ function playTone(name) {
     cfg.freq.forEach(f => {
         const osc = _audioCtx.createOscillator(), gain = _audioCtx.createGain();
         osc.type = cfg.type; osc.frequency.value = f;
-        gain.gain.setValueAtTime(0.15, t);
+        gain.gain.setValueAtTime(cfg.gain || 0.15, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + cfg.dur);
         osc.connect(gain).connect(_audioCtx.destination);
         osc.start(t); osc.stop(t + cfg.dur);
@@ -2070,13 +2070,43 @@ function handleEvent(evt) {
     }
 }
 
-function requestNotifPerm() {
+async function requestNotifPerm() {
     if (!('Notification' in window)) return;
-    Notification.requestPermission().then(p => {
-        if ($('notif-icon')) $('notif-icon').textContent = p === 'granted' ? '🔔' : '🔕';
-        if (p !== 'default' && $('notif-btn')) $('notif-btn').title = p === 'granted' ? 'Notifications enabled' : 'Notifications blocked';
-    });
+    const p = await Notification.requestPermission();
+    if ($('notif-icon')) $('notif-icon').textContent = p === 'granted' ? '🔔' : '🔕';
+    if ($('notif-btn')) $('notif-btn').title = p === 'granted' ? 'Notifications enabled' : 'Notifications blocked';
+    if (p === 'granted') subscribePush();
 }
+
+async function subscribePush() {
+    if (!('PushManager' in window)) return;
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) {
+            const resp = await fetch('/api/push/vapid-public-key');
+            const { key } = await resp.json();
+            if (!key) return;
+            sub = await reg.pushManager.subscribe({
+                userVisibleOnly: true,
+                applicationServerKey: _urlB64ToUint8(key),
+            });
+        }
+        await fetch('/api/push/subscribe', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(sub.toJSON()) });
+    } catch(e) { console.warn('Push subscribe failed:', e); }
+}
+
+function _urlB64ToUint8(b64) {
+    const pad = '='.repeat((4 - b64.length % 4) % 4);
+    const raw = atob((b64 + pad).replace(/-/g,'+').replace(/_/g,'/'));
+    return new Uint8Array([...raw].map(c => c.charCodeAt(0)));
+}
+
+// Auto-subscribe if permission already granted (e.g. page reload after granting)
+if ('Notification' in window && Notification.permission === 'granted') {
+    navigator.serviceWorker && navigator.serviceWorker.ready.then(() => subscribePush());
+}
+
 (function() {
     if (!('Notification' in window) || !$('notif-btn')) return;
     const p = Notification.permission;
