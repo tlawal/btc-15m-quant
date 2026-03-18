@@ -130,13 +130,26 @@ class Config:
     MIN_SELL_SIZE                  = 0.05   # Shares — below this CLOB rejects; write off as dust
 
     # ── Entry protection gates ────────────────────────────────────────────────
-    # BTC momentum velocity gate (Fix #4): block entry when BTC surges against trade direction.
+    # BTC momentum velocity gate: block entry when BTC surges against trade direction.
     # Threshold in ATR-normalized units over 15s (3 cycles × 5s).
     MOMENTUM_GATE_ATR_THRESHOLD    = 0.25   # e.g. 0.25 = BTC moved 25% of ATR in 15s adversely
-    # Polymarket LOB adverse imbalance gate (Fix #11): heavy ask side = distribution signal.
+    # Polymarket LOB adverse imbalance gate: heavy ask side = distribution signal.
     PM_LOB_ADVERSE_THRESHOLD       = 0.80   # ask_size / total_book > this = adversely imbalanced
-    # Cross-asset funding rate gate (Fix #13): positive funding opposes DOWN trade (bullish bias).
+    # Cross-asset funding rate gate: positive funding opposes DOWN trade (bullish bias).
     FUNDING_RATE_GATE_THRESHOLD    = 0.0002 # ~0.02% per 8h — strong directional funding bias
+    # PM price surge gate: block entry if target side surged >X% in one cycle (convergence consumed).
+    PM_PRICE_SURGE_GATE            = 0.12   # 12% single-cycle surge = opportunity already passed
+    # Convergence snipe: bypass not_one_sided when model leads market by >= gap and BTC positioned.
+    CONVERGENCE_GATE_POSTERIOR_MIN = 0.82   # minimum posterior to allow convergence bypass
+    CONVERGENCE_GATE_GAP_MIN       = 0.12   # minimum model-market price gap to trigger snipe
+    # Minimum minutes remaining for entry: 3.0 for normal, 2.0 for near-certain (post >= 0.90).
+    MIN_ENTRY_MINUTES_REM          = 3.0    # raised from 2.0 — late entries have no recovery time
+    # Sell escalation: market_sell after N consecutive 400-balance errors (was 10 — too slow).
+    ALLOWANCE_FAIL_MARKET_ESCALATION = 2    # escalate to market_sell after 2 failures
+    # Late-window position sizing: 50% reduction for entries with < 3 min remaining (non-monster).
+    LATE_WINDOW_SIZE_MULTIPLIER    = 0.50   # Kelly calibrated for 15m; at <3m variance is maximal
+    # Cycle latency watchdog: skip sell if cycle has been running longer than this to avoid collisions.
+    CYCLE_LAG_SELL_SKIP_SEC        = 2.5    # 2.5s = half of 5s baseline cycle
 
     # ── Pump Reversion Entry ────────────────────────────────────────────────
     PUMP_REVERSION_THRESHOLD       = 0.05   # 5% single-cycle pump triggers limit-below entry

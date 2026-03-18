@@ -132,13 +132,28 @@ def evaluate_exit(
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 0: ABSOLUTE HARD STOP — unconditional circuit breaker, no gates
     # At -25% the position is unrecoverable on a 15m binary; cut always.
+    # Exception: for late-window entries (< 3 min remaining at entry) within the first 60s of holding,
+    # binary price swings of ±30% are CLOB noise, not outcome-probability change.
+    # Kelly (1956) + Thorp (2006): at < 3 min, variance is maximum — don't cut noise as signal.
     # ══════════════════════════════════════════════════════════════════════════
     if unrealized_pct < -Config.HARD_STOP_PCT:
-        log.warning(
-            "HARD_STOP: unrealized=%.1f%% breached -%.1f%% — unconditional exit",
-            unrealized_pct * 100, Config.HARD_STOP_PCT * 100,
+        _suppress_hard_stop = (
+            entry_min_rem is not None
+            and entry_min_rem < 3.0
+            and hold_seconds < 60
+            and posterior >= 0.65
         )
-        return _exit("HARD_STOP")
+        if _suppress_hard_stop:
+            log.info(
+                "HARD_STOP_LATE_SUPPRESSED: unrealized=%.1f%% but entry_min_rem=%.1f<3.0 hold=%ds<60s posterior=%.3f≥0.65 — noise, not signal",
+                unrealized_pct * 100, entry_min_rem, hold_seconds, posterior,
+            )
+        else:
+            log.warning(
+                "HARD_STOP: unrealized=%.1f%% breached -%.1f%% — unconditional exit",
+                unrealized_pct * 100, Config.HARD_STOP_PCT * 100,
+            )
+            return _exit("HARD_STOP")
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 1: HARD CIRCUIT BREAKERS — bypass ALL posterior gating

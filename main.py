@@ -724,6 +724,7 @@ class Engine:
         _crash_streak = 0
         while self._running:
             t0 = time.monotonic()
+            self._cycle_t0 = t0  # available to _execute_exit for latency watchdog
             try:
                 await self._cycle()
                 _crash_streak = 0
@@ -2216,14 +2217,16 @@ class Engine:
                         ep = tr.entry_price or pos.entry_price or pos.avg_entry_price or 0.5
                         # Blended PnL: weight partial exits already filled + remaining at settlement.
                         # Prevents AUTO_SETTLE from overwriting pnl=-1.0 when most shares were sold.
+                        # Use tr.size (immutable entry fill size) not pos.size (adjusted by reconciliation).
+                        _entry_size        = tr.size or pos.size or 0
                         _partial_recovered = sum(p["price"] * p["size"] for p in pos.partial_exits)
                         _partial_size      = sum(p["size"] for p in pos.partial_exits)
-                        _remaining_size    = max(0.0, (pos.size or 0) - _partial_size)
-                        _total_cost        = ep * (pos.size or 0) if ep > 0 else 0.0
+                        _remaining_size    = max(0.0, _entry_size - _partial_size)
+                        _total_cost        = ep * _entry_size if ep > 0 else 0.0
                         if position_won:
                             _settle_recovered  = _remaining_size * 1.0
                             _total_recovered   = _partial_recovered + _settle_recovered
-                            _blended_exit_px   = _total_recovered / (pos.size or 1)
+                            _blended_exit_px   = _total_recovered / _entry_size if _entry_size else 0.0
                             _blended_pnl       = (_total_recovered / _total_cost - 1.0) if _total_cost > 0 else 0.0
                             profit_usd         = _remaining_size * (1.0 - ep)  # only count unsold shares
                             tr.exit_price = round(_blended_exit_px, 4)
@@ -2247,7 +2250,7 @@ class Engine:
                             )
                         else:
                             # Remaining shares expired at $0; partial exits already booked separately.
-                            _blended_exit_px   = _partial_recovered / (pos.size or 1)
+                            _blended_exit_px   = _partial_recovered / _entry_size if _entry_size else 0.0
                             _blended_pnl       = (_partial_recovered / _total_cost - 1.0) if _total_cost > 0 else -1.0
                             loss_usd           = _remaining_size * ep  # only count unsold shares lost
                             tr.exit_price = round(_blended_exit_px, 4)
@@ -2523,6 +2526,19 @@ class Engine:
             log.info(f"PAPER EXIT: {pos.side} reason={reason} pnl={pnl_pct*100:.2f}% sell_size={sell_size}")
             return True
 
+        # Cycle latency watchdog: if this cycle has been running too long, skip sell to avoid
+        # stale concurrent-order collisions (nonce collision → 400 allowance errors).
+        _cycle_t0 = getattr(self, "_cycle_t0", None)
+        _cycle_lag_limit = getattr(Config, "CYCLE_LAG_SELL_SKIP_SEC", 2.5)
+        if _cycle_t0 is not None:
+            _cycle_elapsed = time.monotonic() - _cycle_t0
+            if _cycle_elapsed > _cycle_lag_limit:
+                log.warning(
+                    "CYCLE_LAG_SELL_SKIP: cycle_elapsed=%.2fs > %.1fs — skipping sell to avoid order collision, will retry next cycle",
+                    _cycle_elapsed, _cycle_lag_limit,
+                )
+                return False
+
         # Cancel open limit orders first
         if self.state.last_condition_id:
             for oid in await self.pm.get_open_orders(self.state.last_condition_id):
@@ -2568,8 +2584,9 @@ class Engine:
                 return False
 
             # Escalation (1 extra attempt per cycle — total 2 attempts max):
-            # After 3+ failures → half position size; after 10+ → market_sell
-            if pos.consecutive_sell_failures >= 10:
+            # After 3+ failures → half position size; after ALLOWANCE_FAIL_MARKET_ESCALATION+ → market_sell
+            _mkt_escalate = getattr(Config, "ALLOWANCE_FAIL_MARKET_ESCALATION", 2)
+            if pos.consecutive_sell_failures >= _mkt_escalate:
                 log.critical(f"SELL_ESCALATION_MARKET: {pos.consecutive_sell_failures} failures — trying market_sell")
                 order_id = await self.pm.market_sell(pos.token_id, sell_size)
                 if order_id:
@@ -2752,8 +2769,14 @@ class Engine:
             return
 
         # ── Phase 3: Time-to-Expiry Gate ────────────────────────────────────────
-        if min_rem < 2.0 and not sig.monster_signal:
-            log.debug(f"Entry blocked: Time to expiry ({min_rem:.1f}m) < 2.0m")
+        # Require >= 3.0 min for standard signals, >= 2.0 min for near-certain (post >= 0.90),
+        # >= 2.0 min for monster signals. At < 3 min, a BTC reversal has no recovery time.
+        _min_entry_min_rem = float(getattr(Config, "MIN_ENTRY_MINUTES_REM", 3.0))
+        _sig_posterior = max(sig.posterior_final_up or 0, sig.posterior_final_down or 0)
+        _near_certain = _sig_posterior >= 0.90
+        _effective_min_rem = 2.0 if (sig.monster_signal or _near_certain) else _min_entry_min_rem
+        if min_rem < _effective_min_rem and not sig.monster_signal:
+            log.debug(f"Entry blocked: Time to expiry ({min_rem:.1f}m) < {_effective_min_rem:.1f}m")
             _entry_skipped("time_to_expiry", min_rem=float(min_rem) if min_rem is not None else None)
             return
 
@@ -3009,6 +3032,13 @@ class Engine:
         )
         if getattr(self.state, "daily_loss_soft_scale", 1.0) < 1.0:
             position_usd *= self.state.daily_loss_soft_scale
+        # Late-window size reduction: at < 3 min remaining (non-monster), binary outcome variance
+        # is at maximum — Kelly is calibrated for full 15-min windows. Apply 50% haircut.
+        # Ref: Kelly (1956) + Thorp (2006) — fractional Kelly for high-variance binary payoffs.
+        _late_size_mult = float(getattr(Config, "LATE_WINDOW_SIZE_MULTIPLIER", 0.50))
+        if min_rem is not None and min_rem < 3.0 and not sig.monster_signal:
+            position_usd *= _late_size_mult
+            log.info(f"LATE_WINDOW_SIZE: min_rem={min_rem:.1f}<3.0 → size × {_late_size_mult:.2f} = ${position_usd:.2f}")
         if not position_usd:
             log.info(f"Position size below minimum (bal={balance:.2f})")
             _entry_skipped("position_size_below_min", balance=balance, entry_px=entry_px)

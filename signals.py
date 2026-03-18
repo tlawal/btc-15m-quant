@@ -972,9 +972,30 @@ def compute_signals(
         )
     )
     _one_sided_confirmed = _one_sided and one_sided_cycles >= Config.ONE_SIDED_CONFIRM_CYCLES
-    if not _one_sided_confirmed and chosen_posterior < 0.95 and not res.monster_signal:
+    # Convergence snipe bypass: when the model leads the market price by a large gap,
+    # entering early captures the convergence move before the market catches up.
+    # Bypass not_one_sided when: posterior >= 0.82 AND model-market gap >= 12pp AND BTC clearly positioned.
+    # Ref: Tetlock (2004) — PM prices overshoot then revert; Hanson (2003) — LMSR implies predictable convergence.
+    _conv_posterior_min = float(getattr(Config, "CONVERGENCE_GATE_POSTERIOR_MIN", 0.82))
+    _conv_gap_min       = float(getattr(Config, "CONVERGENCE_GATE_GAP_MIN", 0.12))
+    _conv_dist_min      = float(getattr(Config, "LATE_CONVICTION_DISTANCE", 30.0))
+    _market_px          = yes_mid if res.direction == "UP" else (no_mid if res.direction == "DOWN" else None)
+    _model_market_gap   = abs(chosen_posterior - (_market_px or chosen_posterior))
+    _convergence_snipe  = (
+        not res.monster_signal
+        and chosen_posterior >= _conv_posterior_min
+        and _model_market_gap >= _conv_gap_min
+        and res.distance is not None
+        and abs(res.distance) >= _conv_dist_min
+    )
+    if not _one_sided_confirmed and chosen_posterior < 0.95 and not res.monster_signal and not _convergence_snipe:
         side_px = yes_mid if res.direction == "UP" else no_mid
         gates.append(f"not_one_sided={res.direction}_px={side_px:.2f}_need>=0.75_cycles={one_sided_cycles}")
+    elif _convergence_snipe and not _one_sided_confirmed:
+        log.info(
+            "convergence_snipe: bypassing not_one_sided — posterior=%.3f market_px=%.2f gap=%.2f dist=%.1f",
+            chosen_posterior, _market_px or 0, _model_market_gap, abs(res.distance or 0),
+        )
 
     # DYNAMIC EDGE + MONSTER OVERRIDE
     market_price = yes_mid if res.direction == "UP" else (no_mid if res.direction == "DOWN" else None)
@@ -1191,6 +1212,21 @@ def compute_signals(
         _funding_thresh = float(getattr(Config, "FUNDING_RATE_GATE_THRESHOLD", 0.0002))
         if _funding_adverse > _funding_thresh:
             gates.append(f"funding_rate_adverse={funding_rate:+.5f}")
+
+    # PM price surge gate: block entry if the target side has surged > PM_PRICE_SURGE_GATE since last cycle.
+    # A >12% move in one 5-second cycle means the convergence opportunity has already been consumed —
+    # entering now buys the post-convergence peak, not the mispricing.
+    # Ref: complementary to convergence_snipe — enter EARLY (at gap), block LATE (after surge consumed).
+    _prev_mid = getattr(state, "prev_cycle_mid", None)
+    _cur_side_mid = yes_mid if res.direction == "UP" else (no_mid if res.direction == "DOWN" else None)
+    if (
+        _prev_mid is not None and _cur_side_mid is not None and _prev_mid > 0
+        and not res.monster_signal and not _convergence_snipe
+    ):
+        _pm_surge_pct = (_cur_side_mid - _prev_mid) / _prev_mid
+        _pm_surge_thresh = float(getattr(Config, "PM_PRICE_SURGE_GATE", 0.12))
+        if _pm_surge_pct > _pm_surge_thresh:
+            gates.append(f"pm_price_surge={_pm_surge_pct*100:.1f}%_prev={_prev_mid:.2f}_cur={_cur_side_mid:.2f}")
 
     res.skip_gates = gates
 
