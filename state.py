@@ -497,3 +497,15 @@ class StateManager:
             await self.save(self._state)
             
         return metrics
+
+    async def recompute_total_pnl(self, state: EngineState):
+        """Recalculate total_pnl_usd from closed_trades table if state count gets out of sync."""
+        async with self._session_factory() as session:
+            try:
+                result = await session.execute(text("SELECT SUM(pnl_usd) FROM closed_trades"))
+                total = result.scalar() or 0.0
+                state.total_pnl_usd = round(total, 4)
+                await self.save(state)
+                log.info(f"Recomputed total_pnl_usd from DB: ${state.total_pnl_usd:.2f}")
+            except Exception as e:
+                log.error(f"Failed to recompute total PNL: {e}")

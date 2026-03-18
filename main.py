@@ -559,6 +559,8 @@ class Engine:
             async with asyncio.timeout(20):
                 self.state = await self.state_mgr.load()
                 self.optimizer.state = self.state
+                # Sync total PNL from database trades to ensure dashboard is always accurate
+                await self.state_mgr.recompute_total_pnl(self.state)
         except asyncio.TimeoutError:
             log.error("CRITICAL: Database load/migration timed out!")
             # Fallback to empty state if possible, though this is risky
@@ -2420,78 +2422,96 @@ class Engine:
         # Compute sell size — verify against actual Polymarket position to avoid overselling
         actual_size = pos.size
         _onchain_floor = None  # floored on-chain balance for sell_size cap
+        _verified_zero = False # True if we are certain on-chain balance is 0
 
         # Primary: on-chain ERC-1155 balance (authoritative, not cached)
         try:
             onchain_bal = await self.pm.get_conditional_token_balance(pos.token_id)
             if onchain_bal is not None:
-                # Floor to 4 decimal places — CLOB allows 4dp taker amounts.
-                # int() was too aggressive (6.9944 → 6); 4dp floor gives 6.9944 which is valid.
+                # Floor to 4 decimal places
                 onchain_shares = math.floor(onchain_bal * 10000) / 10000
                 _onchain_floor = onchain_shares
-                if onchain_shares < 0.0001:
-                    log.warning("ONCHAIN_DESYNC: on-chain balance=%.4f but bot state=%.2f — clearing position", onchain_bal, pos.size)
-                    # Position doesn't exist on-chain — clear it
-                    for tr in reversed(self.state.trade_history):
-                        if tr.side == pos.side and tr.outcome == "OPEN":
-                            tr.exit_price = 0.0
-                            tr.pnl = -1.0
-                            tr.outcome = "LOSS"
-                            tr.exit_reason = "ONCHAIN_DESYNC"
-                            tr.partial_exits = list(pos.partial_exits)
-                            break
-                    self.state.held_position = HeldPosition()
-                    return True
-                elif onchain_shares < actual_size - 0.01:
-                    log.warning("ONCHAIN_DESYNC: bot state=%.2f on-chain=%.4f — using on-chain", actual_size, onchain_bal)
+                
+                missing_shares = actual_size - onchain_shares
+                if missing_shares > 0.01:
+                    log.warning("ONCHAIN_DESYNC: bot state=%.4f on-chain=%.4f — auto-recovering missing shares as EXTERNAL_EXIT", actual_size, onchain_bal)
+                    _ent_px = pos.avg_entry_price or pos.entry_price or 0.5
+                    pos.partial_exits.append({
+                        "size": missing_shares,
+                        "price": current_px,
+                        "reason": "EXTERNAL_EXIT",
+                        "ts": int(time.time()),
+                        "pnl_pct": (current_px - _ent_px) / _ent_px if _ent_px > 0 else 0.0
+                    })
                     actual_size = onchain_shares
                     pos.size = actual_size
+
+                if onchain_shares < 0.0001:
+                    _verified_zero = True
         except Exception as _chain_err:
             log.warning("on-chain balance check failed: %s — falling back to API", _chain_err)
 
-        # Fallback: positions API (may be stale/cached)
-        try:
-            live_positions = await self.pm.get_positions()
-            for p in (live_positions or []):
-                if str((p or {}).get("asset")) == str(pos.token_id):
-                    api_size = float((p or {}).get("size") or 0.0)
-                    if api_size != pos.size:
-                        log.warning(f"EXIT SIZE MISMATCH: state={pos.size} api={api_size} — using min(state, api)")
-                        actual_size = min(actual_size, api_size) if api_size > 0 else actual_size
-                        pos.size = actual_size
-                    break
-        except Exception as _sz_err:
-            log.warning(f"Failed to verify position size: {_sz_err}")
+        # Fallback: positions API (may be stale/cached) — skip if we definitively know on-chain is 0
+        if not _verified_zero:
+            try:
+                live_positions = await self.pm.get_positions()
+                for p in (live_positions or []):
+                    if str((p or {}).get("asset")) == str(pos.token_id):
+                        api_size = float((p or {}).get("size") or 0.0)
+                        if api_size != pos.size:
+                            log.warning(f"EXIT SIZE MISMATCH: state={pos.size} api={api_size} — using min(state, api)")
+                            actual_size = min(actual_size, api_size) if api_size > 0 else actual_size
+                            pos.size = actual_size
+                        break
+            except Exception as _sz_err:
+                log.warning(f"Failed to verify position size: {_sz_err}")
 
-        if actual_size <= 0:
-            # Both sources returned 0 — fall back to state size rather than clearing.
-            log.warning("EXIT: all balance sources returned 0 — using state size as fallback")
+        if actual_size <= 0 and not _verified_zero:
+            # Both sources returned 0 due to API errors — fall back to state size
+            log.warning("EXIT: all balance sources returned 0 (API error) — using state size as fallback")
             actual_size = pos.size
 
         sell_size = actual_size if partial_pct >= 1.0 else max(1, int(actual_size * partial_pct))
         # Clamp to actual available
         sell_size = min(sell_size, actual_size)
-        # Hard cap: never sell more than floored on-chain balance (Polymarket mints ~0.2-0.6% fewer tokens)
         if _onchain_floor is not None and _onchain_floor > 0:
             sell_size = min(sell_size, _onchain_floor)
 
         # Dust guard: CLOB rejects orders below ~0.05 shares with 400 balance/allowance errors.
-        # Write off the dust and clear the position rather than burning consecutive-failure slots.
         _min_sell = getattr(Config, "MIN_SELL_SIZE", 0.05)
         if sell_size < _min_sell:
-            log.warning(
-                "DUST_SKIP: sell_size=%.4f < MIN_SELL_SIZE=%.2f — dust write-off, clearing position",
-                sell_size, _min_sell,
-            )
+            if not _verified_zero:
+                log.warning(
+                    "DUST_SKIP: sell_size=%.4f < MIN_SELL_SIZE=%.2f — dust write-off, clearing position",
+                    sell_size, _min_sell,
+                )
             for tr in reversed(self.state.trade_history):
                 if tr.side == pos.side and tr.outcome == "OPEN":
                     _dust_partial_rec = sum(p["price"] * p["size"] for p in pos.partial_exits)
                     _dust_total_cost  = entry_px * (tr.size or pos.size or 0) if entry_px > 0 else 0.0
+                    
                     tr.exit_price  = round(_dust_partial_rec / (tr.size or pos.size or 1), 4) if (tr.size or pos.size) else 0.0
                     tr.pnl         = (_dust_partial_rec / _dust_total_cost - 1.0) if _dust_total_cost > 0 else -1.0
-                    tr.outcome     = "LOSS"
-                    tr.exit_reason = "DUST_WRITEOFF"
+                    tr.outcome     = "WIN" if tr.pnl > 0 else "LOSS"
+                    tr.exit_reason = "EXTERNAL_EXIT" if _verified_zero else "DUST_WRITEOFF"
                     tr.partial_exits = list(pos.partial_exits)
+
+                    # Fix: update cumulative state PNL so dashboard matches trade results
+                    _pnl_usd = _dust_partial_rec - _dust_total_cost
+                    self.state.total_pnl_usd += _pnl_usd
+                    
+                    # Record to DB
+                    if self.state_mgr:
+                        asyncio.create_task(self.state_mgr.record_closed_trade(
+                            ts=int(time.time()),
+                            market_slug=self.state.last_market_slug or "unknown",
+                            size=tr.size or 0,
+                            entry_price=entry_px,
+                            exit_price=tr.exit_price,
+                            pnl_usd=_pnl_usd,
+                            outcome_win=1 if tr.outcome == "WIN" else 0,
+                            regime=getattr(self.state, "entry_regime", None),
+                        ))
                     break
             self.state.held_position = HeldPosition()
             return True
