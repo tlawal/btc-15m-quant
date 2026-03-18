@@ -2974,6 +2974,10 @@ class Engine:
             _entry_skipped("entry_price_too_high", entry_px=entry_px, side=side_name)
             return
 
+        # Determine order type early — needed by the GTC price cap check below and by order placement.
+        # FOK for monster signals or late-window entries (Budish, Cramton & Shim 2015).
+        _use_fok = sig.monster_signal or (min_rem is not None and min_rem < Config.LATE_WINDOW_FOK_MIN_REM)
+
         # Block high-price GTC entries (tiny upside, huge downside; any adverse exit tick = full loss)
         _max_gtc_price = getattr(Config, "MAX_ENTRY_PRICE_GTC", 0.92)
         if entry_px > _max_gtc_price and not _use_fok and not sig.monster_signal:
@@ -3069,9 +3073,6 @@ class Engine:
         await self.state_mgr.save(self.state)
 
         # Place order (nonce=0 lets the CLOB API auto-assign)
-        # Force FOK for late-window entries to avoid stale GTC fills
-        # (Budish, Cramton & Shim 2015: sniping intensifies near discrete-time events)
-        _use_fok = sig.monster_signal or (min_rem is not None and min_rem < Config.LATE_WINDOW_FOK_MIN_REM)
         if _use_fok:
             order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="FOK")
         else:
