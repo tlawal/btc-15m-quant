@@ -2109,7 +2109,29 @@ class Engine:
                 and (pos.market_expiry - time.time()) <= 0
             )
             if pos_expired:
-                log.warning(f"EXIT: is_pending on EXPIRED market — force-clearing pending to allow auto-settle")
+                log.warning("EXIT: is_pending on EXPIRED market — checking fill status before cancel")
+                # Check if the pending exit order already filled on the CLOB before cancelling.
+                # If it did, record the fill in partial_exits so AUTO_SETTLE computes correct PnL.
+                # Without this, AUTO_SETTLE sees partial_exits=[] and records -100% even on a win.
+                if pos.order_id and pos.exit_reason:
+                    try:
+                        _exp_status = await self.pm.get_order_status(str(pos.order_id))
+                        _exp_matched = float((_exp_status or {}).get("size_matched", 0))
+                        if _exp_matched > 0:
+                            _exp_price = float((_exp_status or {}).get("price", 0)) or pos.intended_exit_price or 0
+                            log.info(
+                                "EXIT: expired-market order already filled %.2f shares @ %.3f — recording before auto-settle",
+                                _exp_matched, _exp_price,
+                            )
+                            pos.partial_exits.append({
+                                "size": _exp_matched,
+                                "price": _exp_price,
+                                "reason": pos.exit_reason,
+                                "ts": int(time.time()),
+                            })
+                            pos.size = max(0, pos.size - _exp_matched)
+                    except Exception as _exp_err:
+                        log.warning("EXIT: failed to check expired order fill status: %s", _exp_err)
                 try:
                     if pos.order_id:
                         await self.pm.cancel_order(str(pos.order_id))
@@ -2223,6 +2245,17 @@ class Engine:
                         _partial_size      = sum(p["size"] for p in pos.partial_exits)
                         _remaining_size    = max(0.0, _entry_size - _partial_size)
                         _total_cost        = ep * _entry_size if ep > 0 else 0.0
+                        # Safety override: if all shares were already sold at a profit, force WIN
+                        # regardless of settle_px availability. Handles the pos_expired race condition
+                        # where fill was confirmed on CLOB but settle_px is unavailable post-expiry.
+                        if (not position_won and _partial_size >= _entry_size * 0.99
+                                and _total_cost > 0 and _partial_recovered >= _total_cost):
+                            position_won = True
+                            log.info(
+                                "AUTO_SETTLE: all shares exited at profit — forcing WIN "
+                                "(partial_size=%.2f entry_size=%.2f recovered=%.3f cost=%.3f)",
+                                _partial_size, _entry_size, _partial_recovered, _total_cost,
+                            )
                         if position_won:
                             _settle_recovered  = _remaining_size * 1.0
                             _total_recovered   = _partial_recovered + _settle_recovered
