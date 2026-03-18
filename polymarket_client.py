@@ -1435,10 +1435,13 @@ class PolymarketClient:
     def smart_entry_price(
         bid: Optional[float], ask: Optional[float], tick: float = 0.01,
         aggressive: bool = False, pump_detected: bool = False, mid: Optional[float] = None,
+        conservative: bool = False,
     ) -> Optional[float]:
         """
         aggressive=True  (FOK): use ask to guarantee immediate fill.
-        aggressive=False (GTC): bid+tick for passive queue entry.
+        aggressive=False (GTC/Maker): 
+           - if conservative=True: bid (queue behind/at existing bid)
+           - if conservative=False: bid + tick (join/create best bid)
         pump_detected=True: buy below mid to capture overshoot reversion
             (Tetlock 2004, Avellaneda & Stoikov 2008).
         Falls back to ask if no bid available.
@@ -1452,6 +1455,14 @@ class PolymarketClient:
             reversion_px = round(max(mid - offset, bid or 0.01), 2)
             return round(min(reversion_px, 0.98), 2)
         if bid is not None and ask is not None:
+            if conservative:
+                # Bidding at the current best bid instead of jumping ahead of it.
+                # To be even more conservative (2-3 ticks), we use an offset.
+                offset = float(getattr(Config, "CONSERVATIVE_ENTRY_OFFSET", 0.01) or 0.01)
+                smart_px = round(bid - offset, 2)
+                return round(max(0.01, min(smart_px, ask - tick, 0.98)), 2)
+            
+            # Default: be a slightly aggressive maker (bid + tick) to join best bid
             smart_px = round(bid + tick, 2)
             return round(min(smart_px, ask, 0.98), 2)
         return round(min(ask, 0.98), 2) if ask is not None else None

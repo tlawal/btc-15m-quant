@@ -3019,12 +3019,16 @@ class Engine:
                     _cycle_pump_pct * 100, self.state.prev_cycle_mid, _current_mid,
                 )
         _aggressive = sig.monster_signal
+        # Phase 8: Use conservative bidding for non-monster entries (Fix #8)
+        _conservative = not _aggressive
+
         if sig.direction == "UP":
             token_id  = market_info.yes_token_id
             side_name = "YES"
             entry_px  = self.pm.smart_entry_price(
                 ob.yes_bid, ob.yes_ask, aggressive=_aggressive,
                 pump_detected=_pump_detected, mid=ob.yes_mid,
+                conservative=_conservative,
             )
             if entry_px is None and ob.yes_mid:
                 entry_px = round(min(ob.yes_mid + 0.01, 0.99), 2)
@@ -3036,6 +3040,7 @@ class Engine:
             entry_px  = self.pm.smart_entry_price(
                 ob.no_bid, ob.no_ask, aggressive=_aggressive,
                 pump_detected=_pump_detected, mid=ob.no_mid,
+                conservative=_conservative,
             )
             if entry_px is None and ob.no_mid:
                 entry_px = round(min(ob.no_mid + 0.01, 0.99), 2)
@@ -3049,6 +3054,19 @@ class Engine:
         if entry_px >= 0.98:
             _entry_skipped("entry_price_too_high", entry_px=entry_px, side=side_name)
             return
+
+        # Phase 8: Strict Edge Gate (Fix #8)
+        # Block entry if target_edge is negative, regardless of score (unless monster)
+        _target_edge = sig.edge_up if sig.direction == "UP" else sig.edge_down
+        if getattr(Config, "STRICT_EDGE_GATE_ENABLED", True) and not sig.monster_signal:
+            if _target_edge is not None and _target_edge <= 0.0:
+                log.info(
+                    "STRICT_EDGE_GATE: edge=%.4f <= 0 — skipping. "
+                    "(Technical score %0.2f is high, but price %0.2f > posterior %0.2f)",
+                    _target_edge, sig.signed_score, entry_px, posterior
+                )
+                _entry_skipped("strict_edge_gate", edge=_target_edge, score=sig.signed_score)
+                return
 
         # Determine order type early — needed by the GTC price cap check below and by order placement.
         # FOK for monster signals or late-window entries (Budish, Cramton & Shim 2015).

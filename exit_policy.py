@@ -567,8 +567,13 @@ def evaluate_exit(
 
     if microstructure_trigger:
         # Apply time-decay multiplier: divide thresholds by td_mult to make them tighter
-        _ofi_thresh = Config.EXIT_DEEP_OFI_REV_THRESH / td_mult
-        _cvd_thresh = Config.EXIT_CVD_VEL_REV_THRESH / td_mult
+        # Phase 8: Reduce sensitivity during early trade phase (Fix premature exits)
+        mid_window_factor = 1.0
+        if minutes_remaining > 5.0:
+            mid_window_factor = getattr(Config, "MICRO_EXIT_MID_WINDOW_SENSITIVITY", 2.0)
+            
+        _ofi_thresh = (Config.EXIT_DEEP_OFI_REV_THRESH * mid_window_factor) / td_mult
+        _cvd_thresh = (Config.EXIT_CVD_VEL_REV_THRESH * mid_window_factor) / td_mult
 
         ofi_rev = abs(deep_ofi) > 0 and (
             (held_side == "YES" and deep_ofi < -_ofi_thresh) or

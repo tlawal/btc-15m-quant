@@ -95,9 +95,20 @@ class Config:
     STOP_LOSS_PERSIST_SECONDS  = 12
     STOP_LOSS_COOLDOWN_SECONDS = 120
 
+    # ── Entry Strategy ────────────────────────────────────────────────────────
+    CONSERVATIVE_ENTRY_OFFSET  = 0.02     # 2-tick discount on standard entries (Fix #8)
+    STRICT_EDGE_GATE_ENABLED   = True     # block entries if target_edge <= 0 (unless monster)
+    
     # ── Exit parameters ───────────────────────────────────────────────────────
     TAKE_PROFIT_PRICE          = 0.99
     SLIPPAGE_BUFFER_PCT        = 0.008    # Phase 6: 80bps execution buffer
+    
+    # ── Micro-Exit Sensitivity Shaping (Fix #8) ──────────────────────────────
+    # Factor to multiply microstructure thresholds (OFI/CVD) during early trade phase.
+    # Higher value = HIGHER thresholds = LESS sensitive (harder to trigger).
+    # We use 2.0 to make thresholds 2x harder to trigger when > 5 min remain.
+    # This prevents 'paper-handing' on minor noise while the trade has time to run.
+    MICRO_EXIT_MID_WINDOW_SENSITIVITY = 2.0
     MAX_DRAWDOWN_PCT           = 0.15    # Widened: let winners run, TRAIL_PRICE_STOP handles profit protection
     HARD_STOP_PCT              = 0.25    # HARD unconditional circuit breaker — no posterior gate.
                                           # Trailing guard held a -65% loss when posterior lagged price.
