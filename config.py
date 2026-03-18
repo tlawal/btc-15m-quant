@@ -120,7 +120,7 @@ class Config:
     LATE_WINDOW_FOK_MIN_REM        = 4.0    # Force FOK (not GTC) for entries < 4 min remaining
     ONE_SIDED_CONFIRM_CYCLES       = 2      # Require 2+ consecutive cycles of one-sided clearance
     MIN_HOLD_BEFORE_DRAWDOWN_SEC   = 60     # Don't fire FORCED_DRAWDOWN / VOL_HARD_STOP / STRIKE_DISTANCE in first 60s
-    SCORE_STABILITY_MIN_CYCLES     = 2      # Require score above threshold for 2+ consecutive cycles (IC stability gate)
+    SCORE_STABILITY_MIN_CYCLES     = 3      # Require score above threshold for 3+ consecutive cycles (IC stability gate)
     MAX_ENTRY_PRICE_GTC            = 0.92   # Block GTC entries above this price (tiny upside, huge downside risk)
     STREAK_POSTERIOR_MIN_BOOST     = 0.05   # Extra posterior required after 2+ consecutive losses
 
@@ -163,6 +163,10 @@ class Config:
     TRAIL_MAX_POST_DROP        = 0.12     # cap (widest) trailing width
     TRAIL_ARM_MIN_PROFIT_PCT   = 0.015    # only arm trailing after at least +1.5% unrealized
     TRAIL_MIN_HOLD_SEC         = 30.0     # minimum hold before trailing can trigger
+
+    # ── Price-Based Trailing Stop ─────────────────────────────────────────────
+    TRAIL_PRICE_ACTIVATION_PCT = 0.05     # arm the trailing stop when in 5% profit
+    TRAIL_PRICE_DISTANCE_PCT   = 0.10     # trail 10% behind highest price
 
     # ── Tiered Take-Profit (percentage from entry) ─────────────────────────
     TP1_PCT                    = 0.05     # +5% → sell 1/3 (or full if partial disabled)

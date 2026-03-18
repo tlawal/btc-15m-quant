@@ -253,6 +253,23 @@ def evaluate_exit(
                 return _exit("MAE_LATE_RECOVERY")
 
     # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 1.8: PRICE-BASED TRAILING STOP
+    # Locks in profits if price drops significantly from the highest recorded peak.
+    # ══════════════════════════════════════════════════════════════════════════
+    _trail_active = getattr(Config, "TRAIL_PRICE_ACTIVATION_PCT", 0.05)
+    _trail_dist   = getattr(Config, "TRAIL_PRICE_DISTANCE_PCT", 0.10)
+    
+    if mfe_pct >= _trail_active:
+        highest_price = entry_price * (1.0 + mfe_pct)
+        trail_trigger_price = highest_price * (1.0 - _trail_dist)
+        if current_price <= trail_trigger_price:
+            log.info(
+                "TRAIL_PRICE_STOP: mfe=%.1f%%, price=%.3f fell %.1f%% from peak=%.3f — protecting profit",
+                mfe_pct * 100, current_price, _trail_dist * 100, highest_price
+            )
+            return _exit("TRAIL_PRICE_STOP", use_maker=use_maker)
+
+    # ══════════════════════════════════════════════════════════════════════════
     # LAYER 2: TIERED TAKE-PROFITS (Req #1)
     # ══════════════════════════════════════════════════════════════════════════
 

@@ -33,6 +33,7 @@ utils.py             — Logging, Telegram alerts, formatting
 ### Signal Engine
 - **Bayesian posterior blending** — logit-space signal weight (0.5), time-decay curve
 - **Belief-vol sigma_B** — rolling 3-min belief volatility regresses posterior toward 0.5 in high-noise regimes (capped at 1.15–1.30)
+- **Noise Debouncing & Hysteresis** — Requires the ML model to hold a confirmed directional score for 3+ consecutive cycles (9 to 15 seconds) before entry; instantly rejects transient fakeouts.
 - **EMA score smoothing** — `signed_score = 0.6 * raw + 0.4 * prev` to reduce single-cycle noise
 - **Group-max scoring** — 4 signal groups (Trend, Momentum, Flow, Microstructure) each contribute only their strongest member; prevents correlated feature inflation; raw score capped at ±8.0
 - **Microstructure signals** — TOB imbalance, CVD velocity, deep OFI (10-level), VPIN proxy
@@ -61,6 +62,7 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 
 **Hard circuit breakers — always fire regardless of model state:**
 
+- **TRAIL_PRICE_STOP** — Dynamic trailing stop triggered when trade reaches +5% profit, unconditionally locking in gains if price sheds 10% from the highest recorded peak (MFE tracker). Protects winning trades from falling back down to the -25% hard stop.
 - **STRIKE_DISTANCE_EXCEEDED** — fires when `|btc_price - strike| > multiplier × ATR14` while losing (unrealized < -5%). Multiplier is ATR-adaptive: **0.40×** in high-vol regime (ATR > 200), **0.60×** normal, **0.80×** low-vol. Tighter threshold in fast-moving regimes; wider room in quiet ones. Ref: Avellaneda & Stoikov (2008).
 
 **Soft exits (60s minimum hold gate):**
@@ -130,6 +132,7 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Sell failure diagnostics** — on sell failure, logs `SELL_FAIL_DEBUG` with positions-API response and on-chain balance side-by-side for root cause analysis.
 - **Full-position sell rounding** — `limit_sell` uses `round(size)` (nearest integer) instead of `int(size)` (floor) for sizes > 1 share. `int(6.9905)` silently dropped 0.9905 shares per partial exit, leaving a rump that then triggered a separate HARD_STOP exit at a worse price.
 - **Dust write-off guard** — if `sell_size < MIN_SELL_SIZE (0.05 shares)` after all on-chain/API clamping, the position is written off as `DUST_WRITEOFF` with blended PnL rather than placing an order that will fail with a 400 allowance error.
+- **Fractional Dust Eradication** — `pos.size` subtractions on partial fills are strictly subjected to `math.floor(size * 10000) / 10000`, matching Polymarket's token precision limit natively and completely neutralizing recursive `DUST_SKIP` 82,000% PNL UI math bugs.
 - **Blended PnL on auto-settle** — `AUTO_SETTLE_WIN` and `AUTO_SETTLE_LOSS` now compute `blended_exit_price` and `blended_pnl` weighted across all partial exits plus the remaining shares at settlement ($1.00 or $0.00). Previously, auto-settle overwrote `pnl = -1.0` even when 90%+ of the position had already been sold at recovery prices, causing the dashboard to show -100% instead of the real ~-15%.
 - **Slippage tracking** — actual fill price vs intended price logged per trade; warns if > 1%
 - **Market quality filter** — skips cycle if spreads > 8%, book depth < 20 USDC, or klines > 5 min stale

@@ -1745,7 +1745,7 @@ class Engine:
                         kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
                     )
 
-                    pos.size = remaining
+                    pos.size = math.floor(remaining * 10000) / 10000
                     pos.is_pending = False
                     pos.exit_reason = None
                     pos.order_id = None
@@ -2129,7 +2129,7 @@ class Engine:
                                 "reason": pos.exit_reason,
                                 "ts": int(time.time()),
                             })
-                            pos.size = max(0, pos.size - _exp_matched)
+                            pos.size = math.floor(max(0, pos.size - _exp_matched) * 10000) / 10000
                     except Exception as _exp_err:
                         log.warning("EXIT: failed to check expired order fill status: %s", _exp_err)
                 try:
@@ -2170,7 +2170,7 @@ class Engine:
                                             "reason": pos.exit_reason or "HARD_STOP_PARTIAL",
                                             "ts": int(time.time()),
                                         })
-                                        pos.size = max(0, pos.size - _matched)
+                                        pos.size = math.floor(max(0, pos.size - _matched) * 10000) / 10000
                                 except Exception as _fill_err:
                                     log.warning("HARD_STOP_BYPASS: failed to check fill status: %s", _fill_err)
                             try:
@@ -2486,8 +2486,8 @@ class Engine:
             for tr in reversed(self.state.trade_history):
                 if tr.side == pos.side and tr.outcome == "OPEN":
                     _dust_partial_rec = sum(p["price"] * p["size"] for p in pos.partial_exits)
-                    _dust_total_cost  = entry_px * (pos.size or 0) if entry_px > 0 else 0.0
-                    tr.exit_price  = round(_dust_partial_rec / (pos.size or 1), 4) if pos.size else 0.0
+                    _dust_total_cost  = entry_px * (tr.size or pos.size or 0) if entry_px > 0 else 0.0
+                    tr.exit_price  = round(_dust_partial_rec / (tr.size or pos.size or 1), 4) if (tr.size or pos.size) else 0.0
                     tr.pnl         = (_dust_partial_rec / _dust_total_cost - 1.0) if _dust_total_cost > 0 else -1.0
                     tr.outcome     = "LOSS"
                     tr.exit_reason = "DUST_WRITEOFF"
