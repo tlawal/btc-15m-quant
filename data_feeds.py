@@ -13,6 +13,10 @@ from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from typing import Optional
 import aiohttp
+try:
+    import orjson as _json
+except ImportError:
+    import json as _json
 from config import Config
 
 log = logging.getLogger(__name__)
@@ -91,7 +95,6 @@ class BinanceCVDWebsocket:
     async def _run_forever(self):
         """Reconnect loop — tries Binance first, falls back to Bybit on repeated failure."""
         import websockets
-        import json as _json
         self.running = True
 
         BINANCE_URI = "wss://stream.binance.com:9443/ws/btcusdt@aggTrade"
@@ -107,7 +110,7 @@ class BinanceCVDWebsocket:
                         _binance_failures = 0
                         while self.running:
                             msg = await ws.recv()
-                            data = _json.loads(msg)
+                            data = __json.loads(msg)
                             # aggTrade schema: e, T, p, q, m (isBuyerMaker)
                             if data.get("e") == "aggTrade":
                                 trade_ts = int(data["T"])
@@ -130,10 +133,11 @@ class BinanceCVDWebsocket:
                 else:
                     async with websockets.connect(BYBIT_URI, ping_interval=20, ping_timeout=10) as ws:
                         log.info("Bybit CVD WebSocket connected (Binance fallback)")
-                        await ws.send(_json.dumps({"op": "subscribe", "args": ["publicTrade.BTCUSDT"]}))
+                        _sub = _json.dumps({"op": "subscribe", "args": ["publicTrade.BTCUSDT"]})
+                        await ws.send(_sub.decode() if isinstance(_sub, bytes) else _sub)
                         while self.running:
                             msg = await ws.recv()
-                            data = _json.loads(msg)
+                            data = __json.loads(msg)
                             if data.get("topic") == "publicTrade.BTCUSDT" and "data" in data:
                                 for trade in data["data"]:
                                     trade_ts = int(trade["T"])
@@ -218,8 +222,16 @@ class DataFeeds:
         self.last_kline_fetch_ts: int = 0  # unix ts of last successful kline fetch
 
     async def start(self):
+        connector = aiohttp.TCPConnector(
+            limit=20,
+            keepalive_timeout=30,
+            use_dns_cache=True,
+            ttl_dns_cache=300,
+            force_close=False,
+        )
         timeout = aiohttp.ClientTimeout(total=8)
         self._session = aiohttp.ClientSession(
+            connector=connector,
             timeout=timeout,
             headers={"User-Agent": "btc-15m-quant/1.0"},
         )
@@ -780,7 +792,6 @@ class DataFeeds:
                 log.warning(f"Fallback fetch failed ({alt}): {e}")
         return None
 import asyncio
-import json
 import logging
 import time
 
@@ -807,7 +818,7 @@ class BinanceKlineWebsocket:
                     log.info("Binance Kline WS connected")
                     while self.running:
                         msg = await ws.recv()
-                        data = json.loads(msg)
+                        data = _json.loads(msg)
                         if "k" in data:
                             k = data["k"]
                             candle = {
@@ -860,7 +871,7 @@ class BinanceFundingWebsocket:
                     log.info("Binance Funding WS connected")
                     while self.running:
                         msg = await ws.recv()
-                        data = json.loads(msg)
+                        data = _json.loads(msg)
                         if "r" in data:
                             self.funding_rate = float(data["r"])
             except asyncio.CancelledError:

@@ -6,7 +6,10 @@ On startup, load() returns the full state dict.
 save() updates individual keys atomically.
 """
 
-import json
+try:
+    import orjson as _json
+except ImportError:
+    import json as _json
 import os
 import logging
 import asyncio
@@ -22,6 +25,11 @@ from alembic import command
 from config import Config
 
 log = logging.getLogger(__name__)
+
+def _dumps_str(obj):
+    """JSON serialize to str (orjson returns bytes, stdlib returns str)."""
+    v = _json.dumps(obj)
+    return v.decode() if isinstance(v, bytes) else v
 
 
 # ── State schema as a dataclass ───────────────────────────────────────────────
@@ -277,7 +285,7 @@ class StateManager:
             result = await session.execute(
                 text("SELECT key, value FROM kv")
             )
-            rows = {row.key: json.loads(row.value) for row in result}
+            rows = {row.key: _json.loads(row.value) for row in result}
 
         state = EngineState()
         if not rows:
@@ -396,7 +404,7 @@ class StateManager:
                 for key, value in data.items():
                     await session.execute(
                         text("INSERT OR REPLACE INTO kv (key, value) VALUES (:k, :v)"),
-                        {"k": key, "v": json.dumps(value)}
+                        {"k": key, "v": _dumps_str(value)}
                     )
 
     def get_cached(self) -> Optional[EngineState]:
@@ -411,7 +419,7 @@ class StateManager:
                 ), {
                     "ts": ts, "slug": market_slug, "sz": size,
                     "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
-                    "regime": regime, "feats": json.dumps(features) if features else None, "kelly": kelly_fraction
+                    "regime": regime, "feats": _dumps_str(features) if features else None, "kelly": kelly_fraction
                 })
             except Exception:
                 # Fallback for pre-migration DB without regime/features/kelly columns

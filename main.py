@@ -12,10 +12,15 @@ BUILD_VERSION = "optimized"
 
 import asyncio
 import aiofiles
+try:
+    import orjson as _ojson
+except ImportError:
+    _ojson = None
 import json
 import logging
 import math
 import os
+import gc
 import signal
 import sys
 import time
@@ -735,10 +740,14 @@ class Engine:
                     log.critical(f"CRASH_LOOP: {_crash_streak} consecutive cycle failures — last: {e}")
             elapsed = time.monotonic() - t0
             sleep   = max(0.0, Config.LOOP_INTERVAL_SEC - elapsed)
+            # Run GC during sleep, not during hot cycle
+            gc.collect()
+            gc.enable()
             await asyncio.sleep(sleep)
         log.info(f"Main loop exited (_running=False). Crash streak at exit: {_crash_streak}")
 
     async def _cycle(self):
+        gc.disable()  # Prevent GC pauses during hot cycle
         start_time_ms = int(time.time() * 1000)
         now_ts        = int(time.time())
         win_start     = current_window_start(now_ts)
@@ -859,7 +868,6 @@ class Engine:
 
         if not market_info:
             log.warning("No market info available — skipping cycle")
-            await self.state_mgr.save(self.state)
             return
 
         await self.pm.set_active_market_assets(market_info.yes_token_id, market_info.no_token_id)
@@ -1023,17 +1031,14 @@ class Engine:
         btc_price = btc_price or self.state.prev_price or 0.0
         if btc_price == 0.0:
             log.warning("No BTC price available — skipping cycle")
-            await self.state_mgr.save(self.state)
             return
 
         # ── BTC price sanity check ────────────────────────────────────────────
         if btc_price < 10000 or btc_price > 500000:
             log.error(f"BTC price sanity check failed: {btc_price:.2f} — skipping cycle")
-            await self.state_mgr.save(self.state)
             return
         if indic.close and abs(indic.close - btc_price) / btc_price > 0.05:
             log.error(f"Indicator close ({indic.close:.2f}) diverged >5% from BTC price ({btc_price:.2f}) — skipping cycle")
-            await self.state_mgr.save(self.state)
             return
 
         # ── Real CVD: prefer WebSocket, fall back to REST ─────────────────────
@@ -1110,11 +1115,9 @@ class Engine:
         book_depth = (ob.total_bid_size or 0) + (ob.total_ask_size or 0)
         if spread_yes > 0.08 and spread_no > 0.08:
             log.debug(f"Market quality skip: spreads too wide (YES={spread_yes:.3f} NO={spread_no:.3f})")
-            await self.state_mgr.save(self.state)
             return
         if book_depth < 20:
             log.debug(f"Market quality skip: book too thin (depth={book_depth:.1f})")
-            await self.state_mgr.save(self.state)
             return
 
         # Kline staleness check
@@ -1122,7 +1125,6 @@ class Engine:
             last_candle_age_sec = (int(time.time() * 1000) - k5m[-1].ts_ms) / 1000
             if last_candle_age_sec > 300:
                 log.warning(f"Stale kline data: last candle is {last_candle_age_sec:.0f}s old — skipping cycle")
-                await self.state_mgr.save(self.state)
                 return
 
         # Phase 6: Institutional Signal Optimization
@@ -1480,31 +1482,42 @@ class Engine:
             asyncio.create_task(run_nightly_review(session=self.feeds.session))
             log.info(f"Nightly AI review triggered for {today_str}")
 
-        # ── Save state ────────────────────────────────────────────────────────
-        await self.state_mgr.save(self.state)
+        # ── Save state (fire-and-forget to avoid blocking next cycle) ─────────
+        asyncio.create_task(self._save_state_bg())
+
+    async def _save_state_bg(self):
+        """Background state save with error handling."""
+        try:
+            await self.state_mgr.save(self.state)
+        except Exception as e:
+            log.warning("Background state save failed: %s", e)
 
     # ── Strike resolution (FIX #2) ────────────────────────────────────────────
 
     async def _resolve_strike(self, win_start: int) -> dict:
         win_start_ms = win_start * 1000
 
-        # Priority 1: Binance 15m kline open
-        try:
+        # Race P1 (Binance 15m) and P2 (Coinbase 15m) in parallel
+        async def _p1():
             p = await self.feeds.get_binance_15m_open(win_start_ms)
-            if p:
-                return {"strike": p, "source": "binance_15m_open"}
-        except Exception as e:
-            log.debug(f"Strike P1 (Binance 15m) failed: {e}")
+            return ("binance_15m_open", p) if p else None
 
-        # Priority 2: Coinbase 15m candle open
-        try:
+        async def _p2():
             start_iso = window_start_iso(win_start)
             end_iso   = window_end_iso(win_start)
             p = await self.feeds.get_coinbase_15m_open(start_iso, end_iso)
-            if p:
-                return {"strike": p, "source": "coinbase_15m_open"}
+            return ("coinbase_15m_open", p) if p else None
+
+        try:
+            results = await asyncio.gather(
+                _p1(), _p2(), return_exceptions=True,
+            )
+            # Prefer Binance (P1) if both succeed
+            for r in results:
+                if r is not None and not isinstance(r, Exception):
+                    return {"strike": r[1], "source": r[0]}
         except Exception as e:
-            log.debug(f"Strike P2 (Coinbase 15m) failed: {e}")
+            log.debug(f"Strike P1/P2 race failed: {e}")
 
         # Priority 3: First 5m kline that overlaps the window start
         #   We already fetch 5m klines every cycle — use the one closest to window open
@@ -1525,8 +1538,6 @@ class Engine:
             return {"strike": self.state.prev_hl_mid, "source": "binance_mid_prev"}
 
         # Priority 5: REFUSED — never use live/current price as strike
-        # Live price contaminates the signal by removing the distance-from-open
-        # that the entire Bayesian framework depends on.
         log.error("All strike sources failed — cannot determine window open price")
         return {"strike": None, "source": "none"}
 
@@ -2073,7 +2084,8 @@ class Engine:
             # Write to /data if on Railway, otherwise local
             hb_path = "/data/heartbeat.json" if os.path.isdir("/data") else "heartbeat.json"
             async with aiofiles.open(hb_path, mode='w') as f:
-                await f.write(json.dumps(hb, indent=2, default=str))
+                _hb_bytes = (_ojson.dumps(hb, option=_ojson.OPT_INDENT_2, default=str) if _ojson else json.dumps(hb, indent=2, default=str).encode())
+                await f.write(_hb_bytes.decode())
         except Exception as e:
             log.error(f"Heartbeat write aborted: {e}", exc_info=True)
 
@@ -2553,6 +2565,7 @@ class Engine:
 
         # Reset failure counter on success
         pos.consecutive_sell_failures = 0
+        self.pm.invalidate_balance_cache()
 
         # Update TP tier flags for partial exits
         if reason == "TP1":
@@ -2604,8 +2617,6 @@ class Engine:
 
         def _entry_skipped(reason: str, **extra):
             try:
-                import json as _json
-
                 payload = {
                     "reason": reason,
                     "market_slug": getattr(market_info, "slug", None),
@@ -2619,7 +2630,8 @@ class Engine:
                     "gates": list(getattr(sig, "skip_gates", None) or []),
                 }
                 payload.update(extra)
-                log.info("ENTRY_SKIPPED %s", _json.dumps(payload, separators=(",", ":"), default=str))
+                _d = (_ojson or json).dumps(payload, default=str)
+                log.info("ENTRY_SKIPPED %s", _d.decode() if isinstance(_d, bytes) else _d)
             except Exception:
                 log.info(f"ENTRY_SKIPPED reason={reason}")
 
@@ -2852,7 +2864,6 @@ class Engine:
             return
 
         try:
-            import json as _json
             self.state.last_entry_telemetry = {
                 "ts": int(time.time()),
                 "market_slug": getattr(market_info, "slug", None),
@@ -2874,7 +2885,8 @@ class Engine:
                 "daily_loss_scale": getattr(self.state, "daily_loss_soft_scale", 1.0),
                 "daily_loss_reason": getattr(self.state, "trading_halted_reason", None),
             }
-            log.info("ENTRY_TELEMETRY %s", _json.dumps(self.state.last_entry_telemetry, separators=(",", ":"), default=str))
+            _d = (_ojson or json).dumps(self.state.last_entry_telemetry, default=str)
+            log.info("ENTRY_TELEMETRY %s", _d.decode() if isinstance(_d, bytes) else _d)
         except Exception:
             pass
 
@@ -3060,6 +3072,7 @@ class Engine:
         self.state.window_trade_count += 1
         self.state.daily_trade_count += 1
 
+        self.pm.invalidate_balance_cache()
         log.info(f"Order placed: {order_id} — waiting for fill confirmation.")
 
         # Record trade history
@@ -3159,7 +3172,8 @@ class Engine:
                 }
                 log_dir = "/data" if os.path.exists("/data") else "./logs"
                 async with aiofiles.open(f"{log_dir}/outcomes.jsonl", mode='a') as f:
-                    await f.write(json.dumps(outcome_data) + "\n")
+                    _d = (_ojson or json).dumps(outcome_data)
+                    await f.write((_d.decode() if isinstance(_d, bytes) else _d) + "\n")
                 log.info(f"Outcome logged for window {win_start}: BTC closed at {cand:.2f}")
 
                 # Record any expired out-of-the-money trades as losses in the DB
@@ -3232,4 +3246,9 @@ async def _main():
 
 
 if __name__ == "__main__":
+    try:
+        import uvloop
+        uvloop.install()
+    except ImportError:
+        pass
     asyncio.run(_main())

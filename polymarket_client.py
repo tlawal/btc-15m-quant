@@ -15,6 +15,10 @@ Handles:
 """
 
 import asyncio
+try:
+    import orjson as _json
+except ImportError:
+    import json as _json
 import json
 import logging
 import time
@@ -131,6 +135,13 @@ class PolymarketClient:
         self.ws_fallback_to_rest = 0
         self._last_book_source_log_ts = 0.0
 
+        # Balance/margin caching (avoid RPC every cycle)
+        self._cached_wallet_balance: Optional[float] = None
+        self._cached_wallet_balance_ts: float = 0.0
+        self._cached_margin: Optional[dict] = None
+        self._cached_margin_ts: float = 0.0
+        self._balance_cache_ttl: float = 30.0  # seconds
+
     def _warn_no_creds_once(self, caller: str):
         if self.can_trade or self._warned_missing_creds:
             return
@@ -141,7 +152,15 @@ class PolymarketClient:
         )
 
     async def start(self):
+        connector = aiohttp.TCPConnector(
+            limit=20,
+            keepalive_timeout=30,
+            use_dns_cache=True,
+            ttl_dns_cache=300,
+            force_close=False,
+        )
         self._session = aiohttp.ClientSession(
+            connector=connector,
             timeout=aiohttp.ClientTimeout(total=8),
             headers={"User-Agent": "btc-15m-quant/1.0"},
         )
@@ -659,8 +678,16 @@ class PolymarketClient:
             log.warning(f"get_balance: {e}")
             return None
 
-    async def get_margin(self) -> dict:
+    def invalidate_balance_cache(self):
+        """Force re-fetch on next cycle (call after trades/exits)."""
+        self._cached_wallet_balance_ts = 0.0
+        self._cached_margin_ts = 0.0
+
+    async def get_margin(self, force: bool = False) -> dict:
         """Return collateral info as {balance_usdc, allowance_usdc, available_usdc} when possible."""
+        now = time.time()
+        if not force and self._cached_margin is not None and (now - self._cached_margin_ts) < self._balance_cache_ttl:
+            return self._cached_margin
         if not self.can_trade:
             self._warn_no_creds_once("get_margin")
             return {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
@@ -699,24 +726,30 @@ class PolymarketClient:
             )
             if available is None:
                 available = bal
-            return {
+            result = {
                 "balance_usdc": bal,
                 "allowance_usdc": allowance,
                 "available_usdc": available,
             }
+            self._cached_margin = result
+            self._cached_margin_ts = time.time()
+            return result
         except asyncio.TimeoutError:
             log.warning("get_margin timed out (5s)")
-            return {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
+            return self._cached_margin or {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
         except Exception as e:
             log.warning(f"get_margin: {e}")
-            return {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
+            return self._cached_margin or {"balance_usdc": None, "allowance_usdc": None, "available_usdc": None}
 
-    async def get_wallet_usdc_balance(self) -> Optional[float]:
+    async def get_wallet_usdc_balance(self, force: bool = False) -> Optional[float]:
         """Fetch ERC20 USDC balance for the trading wallet directly from Polygon RPC.
 
         Checks both USDC.e (bridged, used by Polymarket) and native USDC,
-        returning the sum of both.
+        returning the sum of both. Cached for _balance_cache_ttl seconds.
         """
+        now = time.time()
+        if not force and self._cached_wallet_balance is not None and (now - self._cached_wallet_balance_ts) < self._balance_cache_ttl:
+            return self._cached_wallet_balance
         if not Config.POLYGON_RPC_URL:
             return None
         pk = Config.POLYMARKET_PRIVATE_KEY
@@ -736,26 +769,43 @@ class PolymarketClient:
                     "method": "eth_call",
                     "params": [{"to": token_addr.lower(), "data": data}, "latest"],
                 }
-                async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6)) as s:
-                    async with s.post(Config.POLYGON_RPC_URL, json=payload) as r:
+                # Reuse main session instead of creating a new one per call
+                _own_session = False
+                session = self._session
+                if session is None:
+                    session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=6))
+                    _own_session = True
+                try:
+                    async with session.post(Config.POLYGON_RPC_URL, json=payload, timeout=aiohttp.ClientTimeout(total=6)) as r:
                         if r.status != 200:
                             return 0.0
                         resp = await r.json()
-                raw_hex = (resp or {}).get("result", "0x0")
-                if not isinstance(raw_hex, str) or not raw_hex.startswith("0x"):
-                    return 0.0
-                return float(int(raw_hex, 16)) / 1_000_000.0
+                    raw_hex = (resp or {}).get("result", "0x0")
+                    if not isinstance(raw_hex, str) or not raw_hex.startswith("0x"):
+                        return 0.0
+                    return float(int(raw_hex, 16)) / 1_000_000.0
+                finally:
+                    if _own_session:
+                        await session.close()
 
-            # Check both USDC.e (bridged, Polymarket default) and native USDC
-            usdc_e = await _check_token(Config.POLYGON_USDC_ADDRESS)  # USDC.e
-            usdc_native = await _check_token(Config.POLYGON_USDC_NATIVE) if hasattr(Config, 'POLYGON_USDC_NATIVE') else 0.0
+            # Check both USDC.e (bridged, Polymarket default) and native USDC — in parallel
+            _tasks = [_check_token(Config.POLYGON_USDC_ADDRESS)]
+            if hasattr(Config, 'POLYGON_USDC_NATIVE'):
+                _tasks.append(_check_token(Config.POLYGON_USDC_NATIVE))
+            _results = await asyncio.gather(*_tasks, return_exceptions=True)
+            usdc_e = _results[0] if not isinstance(_results[0], Exception) else 0.0
+            usdc_native = _results[1] if len(_results) > 1 and not isinstance(_results[1], Exception) else 0.0
             total = usdc_e + usdc_native
             if total > 0:
                 log.info("wallet_usdc: USDC.e=$%.4f native=$%.4f total=$%.4f", usdc_e, usdc_native, total)
-            return total if total > 0 else None
+            result = total if total > 0 else None
+            if result is not None:
+                self._cached_wallet_balance = result
+                self._cached_wallet_balance_ts = time.time()
+            return result
         except Exception as e:
             log.debug("get_wallet_usdc_balance: %s", e)
-            return None
+            return self._cached_wallet_balance
 
     async def get_conditional_token_balance(self, token_id: str) -> Optional[float]:
         """Query on-chain ERC-1155 balanceOf for a conditional token via Polygon RPC.
@@ -1591,8 +1641,8 @@ def _parse_market_info(m: dict) -> Optional[MarketInfo]:
         raw_outcomes  = m.get("outcomes", "")
         if isinstance(raw_token_ids, str) and raw_token_ids:
             try:
-                token_ids = json.loads(raw_token_ids)
-                outcomes  = json.loads(raw_outcomes) if isinstance(raw_outcomes, str) else raw_outcomes
+                token_ids = _json.loads(raw_token_ids)
+                outcomes  = _json.loads(raw_outcomes) if isinstance(raw_outcomes, str) else raw_outcomes
                 for i, outcome in enumerate(outcomes or []):
                     ol = outcome.lower()
                     tid = token_ids[i] if i < len(token_ids) else None

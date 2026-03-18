@@ -1,5 +1,8 @@
 import asyncio
-import json
+try:
+    import orjson as _json
+except ImportError:
+    import json as _json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -164,13 +167,14 @@ class PolymarketMarketWSClient:
         if not ws:
             return
         try:
-            await ws.send(json.dumps(payload, separators=(",", ":")))
+            _d = _json.dumps(payload)
+            await ws.send(_d.decode() if isinstance(_d, bytes) else _d)
         except Exception as e:
             log.debug(f"Polymarket WS send failed: {e}")
 
     async def _handle_message(self, msg: str):
         try:
-            data = json.loads(msg)
+            data = _json.loads(msg)
         except Exception:
             return
 
