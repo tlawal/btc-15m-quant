@@ -127,6 +127,16 @@ class Config:
     # ── Sell Retry Limits ─────────────────────────────────────────────────────
     MAX_SELL_ATTEMPTS_PER_CYCLE    = 2      # Max sell attempts per 5s cycle (caps RUNTIME)
     MAX_CONSECUTIVE_SELL_FAILURES  = 20     # After this many, stop trying and let auto-settle
+    MIN_SELL_SIZE                  = 0.05   # Shares — below this CLOB rejects; write off as dust
+
+    # ── Entry protection gates ────────────────────────────────────────────────
+    # BTC momentum velocity gate (Fix #4): block entry when BTC surges against trade direction.
+    # Threshold in ATR-normalized units over 15s (3 cycles × 5s).
+    MOMENTUM_GATE_ATR_THRESHOLD    = 0.25   # e.g. 0.25 = BTC moved 25% of ATR in 15s adversely
+    # Polymarket LOB adverse imbalance gate (Fix #11): heavy ask side = distribution signal.
+    PM_LOB_ADVERSE_THRESHOLD       = 0.80   # ask_size / total_book > this = adversely imbalanced
+    # Cross-asset funding rate gate (Fix #13): positive funding opposes DOWN trade (bullish bias).
+    FUNDING_RATE_GATE_THRESHOLD    = 0.0002 # ~0.02% per 8h — strong directional funding bias
 
     # ── Pump Reversion Entry ────────────────────────────────────────────────
     PUMP_REVERSION_THRESHOLD       = 0.05   # 5% single-cycle pump triggers limit-below entry

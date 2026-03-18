@@ -1163,6 +1163,35 @@ def compute_signals(
     ):
         gates.append('outside_preferred_hours')
 
+    # BTC momentum velocity gate: block entry when BTC surges against trade direction in last 15s.
+    # Uses 3-cycle (15s at 5s/cycle) velocity in ATR-normalized units.
+    # Ref: Almgren & Chriss (2001) — adverse selection cost spikes when momentum opposes direction.
+    _prev_px3 = getattr(state, "prev_price3", None)
+    if _prev_px3 is not None and indic.atr14 is not None and indic.atr14 > 0 and not res.monster_signal:
+        _velocity_15s = (btc_price - _prev_px3) / indic.atr14  # signed, in ATR units
+        _mom_dir_sign = 1 if res.direction == "UP" else -1
+        _adverse_vel = -_mom_dir_sign * _velocity_15s           # positive = BTC moving against trade
+        _momentum_thresh = float(getattr(Config, "MOMENTUM_GATE_ATR_THRESHOLD", 0.25))
+        if _adverse_vel > _momentum_thresh:
+            gates.append(f"btc_momentum_adverse={_velocity_15s:+.3f}ATR/15s")
+
+    # Polymarket LOB adverse imbalance gate: heavy ask side = informed sellers distributing.
+    # Ref: Cont, Kukanov & Stoikov (2014) — LOB imbalance predicts short-term price direction.
+    if total_bid_size + total_ask_size > 0 and not res.monster_signal:
+        _pm_ask_ratio = total_ask_size / (total_bid_size + total_ask_size)
+        _pm_lob_thresh = float(getattr(Config, "PM_LOB_ADVERSE_THRESHOLD", 0.80))
+        if _pm_ask_ratio > _pm_lob_thresh:
+            gates.append(f"pm_lob_adverse_ask_ratio={_pm_ask_ratio:.2f}")
+
+    # Cross-asset funding rate gate: positive funding opposes a DOWN trade (bullish market bias).
+    # Ref: Liu & Tsyvinski (2021) — funding rate has 24h directional predictive power on BTC.
+    if funding_rate is not None and res.direction is not None and not res.monster_signal:
+        _f_dir_sign = 1 if res.direction == "UP" else -1
+        _funding_adverse = -_f_dir_sign * funding_rate  # positive = funding opposes our direction
+        _funding_thresh = float(getattr(Config, "FUNDING_RATE_GATE_THRESHOLD", 0.0002))
+        if _funding_adverse > _funding_thresh:
+            gates.append(f"funding_rate_adverse={funding_rate:+.5f}")
+
     res.skip_gates = gates
 
     # Structured gate evaluation log highlighting the primary blocking reason.

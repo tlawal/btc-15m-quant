@@ -2214,44 +2214,57 @@ class Engine:
                 for tr in reversed(self.state.trade_history):
                     if tr.side == pos.side and tr.outcome == "OPEN":
                         ep = tr.entry_price or pos.entry_price or pos.avg_entry_price or 0.5
+                        # Blended PnL: weight partial exits already filled + remaining at settlement.
+                        # Prevents AUTO_SETTLE from overwriting pnl=-1.0 when most shares were sold.
+                        _partial_recovered = sum(p["price"] * p["size"] for p in pos.partial_exits)
+                        _partial_size      = sum(p["size"] for p in pos.partial_exits)
+                        _remaining_size    = max(0.0, (pos.size or 0) - _partial_size)
+                        _total_cost        = ep * (pos.size or 0) if ep > 0 else 0.0
                         if position_won:
-                            tr.exit_price = 1.0
-                            tr.pnl = (1.0 - ep) / ep if ep > 0 else 0.0
+                            _settle_recovered  = _remaining_size * 1.0
+                            _total_recovered   = _partial_recovered + _settle_recovered
+                            _blended_exit_px   = _total_recovered / (pos.size or 1)
+                            _blended_pnl       = (_total_recovered / _total_cost - 1.0) if _total_cost > 0 else 0.0
+                            profit_usd         = _remaining_size * (1.0 - ep)  # only count unsold shares
+                            tr.exit_price = round(_blended_exit_px, 4)
+                            tr.pnl = _blended_pnl
                             tr.outcome = "WIN"
                             tr.exit_reason = "AUTO_SETTLE_WIN"
                             tr.partial_exits = list(pos.partial_exits)
                             self.state.total_wins += 1
                             self.state.loss_streak = 0
-                            profit_usd = (1.0 - ep) * (pos.size or 0)
                             self.state.total_pnl_usd += profit_usd
-                            log.info(f"AUTO_SETTLE_WIN: {pos.side} entry={ep:.3f} -> $1.00 pnl={tr.pnl*100:.1f}% settle_px={settle_px}")
+                            log.info(f"AUTO_SETTLE_WIN: {pos.side} entry={ep:.3f} blended_exit={tr.exit_price:.3f} pnl={tr.pnl*100:.1f}% remaining={_remaining_size:.4f} settle_px={settle_px}")
                             await self.state_mgr.record_closed_trade(
                                 ts=int(time.time()),
                                 market_slug=self.state.last_market_slug or "unknown",
                                 size=tr.size or pos.size or 0,
                                 entry_price=ep,
-                                exit_price=1.0,
+                                exit_price=round(_blended_exit_px, 4),
                                 pnl_usd=profit_usd,
                                 outcome_win=1,
                                 regime=getattr(self.state, "entry_regime", None),
                             )
                         else:
-                            tr.exit_price = 0.0
-                            tr.pnl = -1.0
+                            # Remaining shares expired at $0; partial exits already booked separately.
+                            _blended_exit_px   = _partial_recovered / (pos.size or 1)
+                            _blended_pnl       = (_partial_recovered / _total_cost - 1.0) if _total_cost > 0 else -1.0
+                            loss_usd           = _remaining_size * ep  # only count unsold shares lost
+                            tr.exit_price = round(_blended_exit_px, 4)
+                            tr.pnl = _blended_pnl
                             tr.outcome = "LOSS"
                             tr.exit_reason = "AUTO_SETTLE_LOSS"
                             tr.partial_exits = list(pos.partial_exits)
                             self.state.total_losses += 1
                             self.state.loss_streak += 1
-                            loss_usd = ep * (pos.size or 0)
                             self.state.total_pnl_usd -= loss_usd
-                            log.warning(f"AUTO_SETTLE_LOSS: {pos.side} entry={ep:.3f} -> $0.00 settle_px={settle_px} — position lost")
+                            log.warning(f"AUTO_SETTLE_LOSS: {pos.side} entry={ep:.3f} blended_exit={tr.exit_price:.3f} pnl={tr.pnl*100:.1f}% remaining={_remaining_size:.4f} settle_px={settle_px} — position lost")
                             await self.state_mgr.record_closed_trade(
                                 ts=int(time.time()),
                                 market_slug=self.state.last_market_slug or "unknown",
                                 size=tr.size or pos.size or 0,
                                 entry_price=ep,
-                                exit_price=0.0,
+                                exit_price=round(_blended_exit_px, 4),
                                 pnl_usd=-loss_usd,
                                 outcome_win=0,
                                 regime=getattr(self.state, "entry_regime", None),
@@ -2425,6 +2438,27 @@ class Engine:
         # Hard cap: never sell more than floored on-chain balance (Polymarket mints ~0.2-0.6% fewer tokens)
         if _onchain_floor is not None and _onchain_floor > 0:
             sell_size = min(sell_size, _onchain_floor)
+
+        # Dust guard: CLOB rejects orders below ~0.05 shares with 400 balance/allowance errors.
+        # Write off the dust and clear the position rather than burning consecutive-failure slots.
+        _min_sell = getattr(Config, "MIN_SELL_SIZE", 0.05)
+        if sell_size < _min_sell:
+            log.warning(
+                "DUST_SKIP: sell_size=%.4f < MIN_SELL_SIZE=%.2f — dust write-off, clearing position",
+                sell_size, _min_sell,
+            )
+            for tr in reversed(self.state.trade_history):
+                if tr.side == pos.side and tr.outcome == "OPEN":
+                    _dust_partial_rec = sum(p["price"] * p["size"] for p in pos.partial_exits)
+                    _dust_total_cost  = entry_px * (pos.size or 0) if entry_px > 0 else 0.0
+                    tr.exit_price  = round(_dust_partial_rec / (pos.size or 1), 4) if pos.size else 0.0
+                    tr.pnl         = (_dust_partial_rec / _dust_total_cost - 1.0) if _dust_total_cost > 0 else -1.0
+                    tr.outcome     = "LOSS"
+                    tr.exit_reason = "DUST_WRITEOFF"
+                    tr.partial_exits = list(pos.partial_exits)
+                    break
+            self.state.held_position = HeldPosition()
+            return True
 
         # Paper-trade mode: apply exits locally without touching Polymarket.
         if Config.PAPER_TRADE_ENABLED:

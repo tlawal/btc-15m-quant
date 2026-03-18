@@ -42,6 +42,9 @@ utils.py             — Logging, Telegram alerts, formatting
 - **Tier 1 signals** — Whale flow (Polymarket fills ≥$50), spread skew (NO/YES spread ratio), multi-window momentum
 - **Tier 2 signals** — Liquidation cascade (Binance forced orders), funding rate delta
 - **Regime-adaptive thresholds** — min score and required edge scale with 15m ATR (low/normal/high vol)
+- **BTC momentum velocity gate** — blocks entry when BTC moves > `MOMENTUM_GATE_ATR_THRESHOLD` (0.25) ATR in 15s against the trade direction, using `state.prev_price3` (3-cycle lookback). Prevents entering into an adverse momentum surge where posterior hasn't caught up yet. Ref: Almgren & Chriss (2001).
+- **Polymarket LOB adverse imbalance gate** — blocks entry when `ask_size / (bid_size + ask_size) > PM_LOB_ADVERSE_THRESHOLD` (0.80) on the PM book; heavy sell-side skew signals informed distribution. Ref: Cont, Kukanov & Stoikov (2014).
+- **Funding rate adverse gate** — blocks entry when the Binance perpetual funding rate opposes the trade direction by more than `FUNDING_RATE_GATE_THRESHOLD` (0.0002 = 0.02%/8h); positive funding = bulls in control, adverse for DOWN trades. Ref: Liu & Tsyvinski (2021).
 - **Monster signal** — requires BOTH `abs_score >= 8.0 AND posterior >= 0.90`; bypasses early-window guard, uses FOK at ask
 - **Late conviction sniping** — within last 3 min, `posterior >= 0.80` and `distance >= $40` suppresses score gate for near-certain OTM binaries
 - **Negative-edge block** — never sizes a position when model edge < 0, even on monster signals
@@ -58,6 +61,8 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 
 **Hard circuit breakers — always fire regardless of model state:**
 
+- **STRIKE_DISTANCE_EXCEEDED** — fires when `|btc_price - strike| > multiplier × ATR14` while losing (unrealized < -5%). Multiplier is ATR-adaptive: **0.40×** in high-vol regime (ATR > 200), **0.60×** normal, **0.80×** low-vol. Tighter threshold in fast-moving regimes; wider room in quiet ones. Ref: Avellaneda & Stoikov (2008).
+
 **Soft exits (60s minimum hold gate):**
 9. **ALPHA_DECAY** — score reversed by ≥ 7.0 vs entry
 10. **MOMENTUM_REVERSAL** — CVD flipped against position while losing and < 8 min remain
@@ -72,6 +77,10 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 - **Adverse OFI (Hawkes-style) strengthened** — `FORCED_ADVERSE_OFI` applies at ≤60s remaining with no posterior exemption when deep OFI reverses against the held side while losing.
 
 References:
+
+**Entry protection / adverse selection:**
+0. **Almgren, R. & Chriss, N. (2001). "Optimal Execution of Portfolio Transactions." _Journal of Risk_, 3(2), 5–39.** (adverse selection cost spikes when underlying momentum opposes position direction — basis for momentum velocity gate)
+0. **Liu, Y. & Tsyvinski, A. (2021). "Risks and Returns of Cryptocurrency." _Review of Financial Studies_, 34(6), 2689–2727.** (BTC perpetual funding rate has 24h directional predictive power — basis for funding rate gate)
 
 **Microstructure / adverse selection:**
 1. **Kyle, A. S. (1985). "Continuous Auctions and Insider Trading." _Econometrica_, 53(6), 1315–1335.**
@@ -119,6 +128,9 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **On-chain position reconciliation** — on startup and before every sell, queries on-chain ERC-1155 `balanceOf` (Gnosis CTF contract) to verify inherited position size is correct. Clears phantom positions (on-chain balance = 0) immediately. Catches stale Polymarket positions-API data that can cause futile sell loops.
 - **Sell retry cap** — limits sell attempts to `MAX_CONSECUTIVE_SELL_FAILURES` (default 20) total; after that, stops retrying and waits for auto-settle. Prevents 3+ minute loops of futile HTTP calls when shares don't exist on-chain.
 - **Sell failure diagnostics** — on sell failure, logs `SELL_FAIL_DEBUG` with positions-API response and on-chain balance side-by-side for root cause analysis.
+- **Full-position sell rounding** — `limit_sell` uses `round(size)` (nearest integer) instead of `int(size)` (floor) for sizes > 1 share. `int(6.9905)` silently dropped 0.9905 shares per partial exit, leaving a rump that then triggered a separate HARD_STOP exit at a worse price.
+- **Dust write-off guard** — if `sell_size < MIN_SELL_SIZE (0.05 shares)` after all on-chain/API clamping, the position is written off as `DUST_WRITEOFF` with blended PnL rather than placing an order that will fail with a 400 allowance error.
+- **Blended PnL on auto-settle** — `AUTO_SETTLE_WIN` and `AUTO_SETTLE_LOSS` now compute `blended_exit_price` and `blended_pnl` weighted across all partial exits plus the remaining shares at settlement ($1.00 or $0.00). Previously, auto-settle overwrote `pnl = -1.0` even when 90%+ of the position had already been sold at recovery prices, causing the dashboard to show -100% instead of the real ~-15%.
 - **Slippage tracking** — actual fill price vs intended price logged per trade; warns if > 1%
 - **Market quality filter** — skips cycle if spreads > 8%, book depth < 20 USDC, or klines > 5 min stale
 
@@ -363,4 +375,8 @@ python main.py --reset
 | `PUMP_REVERSION_OFFSET` | 0.03 | Buy $0.03 below mid on pump detection |
 | `MAX_SELL_ATTEMPTS_PER_CYCLE` | 2 | Max sell HTTP calls per 5s cycle (caps RUNTIME) |
 | `MAX_CONSECUTIVE_SELL_FAILURES` | 20 | After this many failures, stop trying — wait for auto-settle |
+| `MIN_SELL_SIZE` | 0.05 | Minimum sell size in shares; below this, write off as dust instead of placing order |
+| `MOMENTUM_GATE_ATR_THRESHOLD` | 0.25 | ATR-normalized 15s BTC velocity magnitude to block adverse entries |
+| `PM_LOB_ADVERSE_THRESHOLD` | 0.80 | PM book ask-ratio above this blocks entry (distribution signal) |
+| `FUNDING_RATE_GATE_THRESHOLD` | 0.0002 | Funding rate opposing direction above this blocks entry (~0.02%/8h) |
 

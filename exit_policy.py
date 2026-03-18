@@ -187,24 +187,31 @@ def evaluate_exit(
 
     # 1d. Strike distance exceeded — migrated from monitor_and_exit_open_positions
     # When BTC has moved far from strike and position is losing, cut losses.
-    # Same min-hold grace as VOL_HARD_STOP — transient post-entry impact can trigger this falsely.
+    # ATR-adaptive multiplier: tighter in high-vol regimes (fast moves), looser in low-vol.
+    # Ref: Avellaneda & Stoikov (2008) — optimal threshold adapts to current σ, not historical σ.
     if (
         distance is not None and atr14 is not None and atr14 > 0
-        and abs(distance) > 0.6 * atr14
         and unrealized_pct < -0.05
     ):
-        if hold_seconds < _min_hold:
-            log.info(
-                "STRIKE_DISTANCE_SUPPRESSED: distance=%.1f > 0.6*ATR=%.1f unrealized=%.1f%% "
-                "but hold_seconds=%.0f < %ds — suppressing (transient impact)",
-                abs(distance), 0.6 * atr14, unrealized_pct * 100, hold_seconds, _min_hold,
-            )
+        if atr14 > Config.ATR_HIGH_THRESHOLD:
+            _strike_mult = 0.40   # high-vol: BTC moves fast — cut sooner
+        elif atr14 < Config.ATR_LOW_THRESHOLD:
+            _strike_mult = 0.80   # low-vol: give more room, small moves are noise
         else:
-            log.warning(
-                "STRIKE_DISTANCE_EXCEEDED: distance=%.1f > 0.6*ATR=%.1f, unrealized=%.1f%% — exiting",
-                abs(distance), 0.6 * atr14, unrealized_pct * 100,
-            )
-            return _exit("STRIKE_DISTANCE_EXCEEDED")
+            _strike_mult = 0.60   # normal: baseline
+        if abs(distance) > _strike_mult * atr14:
+            if hold_seconds < _min_hold:
+                log.info(
+                    "STRIKE_DISTANCE_SUPPRESSED: distance=%.1f > %.2f*ATR=%.1f unrealized=%.1f%% "
+                    "but hold_seconds=%.0f < %ds — suppressing (transient impact)",
+                    abs(distance), _strike_mult, _strike_mult * atr14, unrealized_pct * 100, hold_seconds, _min_hold,
+                )
+            else:
+                log.warning(
+                    "STRIKE_DISTANCE_EXCEEDED: distance=%.1f > %.2f*ATR=%.1f, unrealized=%.1f%% — exiting",
+                    abs(distance), _strike_mult, _strike_mult * atr14, unrealized_pct * 100,
+                )
+                return _exit("STRIKE_DISTANCE_EXCEEDED")
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 1.5: MAE-CONDITIONED EXITS

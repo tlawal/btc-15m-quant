@@ -1570,10 +1570,10 @@ class PolymarketClient:
             log.error("Order blocked: conditional token allowance check failed for token_id=%s", str(token_id))
             raise PolyApiException(error_msg="conditional_allowance_missing")
         clean_price = round(price, 2)
-        clean_size = int(size) if size > 1 else round(size, 2)
-        if clean_size < 1 and int(size) == 0:
-            # Selling fractional position — keep as-is, CLOB may accept for sells
-            clean_size = round(size, 2)
+        # Use round() (nearest integer) not int() (floor) for sizes > 1.
+        # int(6.9905) = 6 silently drops ~1 share; round(6.9905) = 7 sells the full position.
+        # Integer shares × 2-decimal price guarantees clean 2-decimal USDC maker amount.
+        clean_size = round(size) if size > 1 else round(size, 2)
 
         for attempt in range(2):
             try:
