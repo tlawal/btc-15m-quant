@@ -110,7 +110,7 @@ class BinanceCVDWebsocket:
                         _binance_failures = 0
                         while self.running:
                             msg = await ws.recv()
-                            data = __json.loads(msg)
+                            data = _json.loads(msg)
                             # aggTrade schema: e, T, p, q, m (isBuyerMaker)
                             if data.get("e") == "aggTrade":
                                 trade_ts = int(data["T"])
@@ -137,7 +137,7 @@ class BinanceCVDWebsocket:
                         await ws.send(_sub.decode() if isinstance(_sub, bytes) else _sub)
                         while self.running:
                             msg = await ws.recv()
-                            data = __json.loads(msg)
+                            data = _json.loads(msg)
                             if data.get("topic") == "publicTrade.BTCUSDT" and "data" in data:
                                 for trade in data["data"]:
                                     trade_ts = int(trade["T"])

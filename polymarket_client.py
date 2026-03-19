@@ -21,6 +21,7 @@ except ImportError:
     import json as _json
 import json
 import logging
+import math
 import time
 from dataclasses import dataclass
 from typing import Optional, List, Dict, Any, Tuple
@@ -1584,7 +1585,17 @@ class PolymarketClient:
         # Use round() (nearest integer) not int() (floor) for sizes > 1.
         # int(6.9905) = 6 silently drops ~1 share; round(6.9905) = 7 sells the full position.
         # Integer shares × 2-decimal price guarantees clean 2-decimal USDC maker amount.
-        clean_size = round(size) if size > 1 else round(size, 2)
+        try:
+            _sz = float(size or 0.0)
+        except Exception:
+            _sz = 0.0
+        # Preserve fractional share precision to avoid overselling when on-chain balances
+        # are fractional (e.g. 6.9944 shares). Quantize down to 4 decimals.
+        clean_size = math.floor(_sz * 10000.0) / 10000.0
+        if clean_size > 1:
+            clean_size = float(clean_size)
+        else:
+            clean_size = round(float(clean_size), 2)
 
         for attempt in range(2):
             try:

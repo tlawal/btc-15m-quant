@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
@@ -313,6 +314,17 @@ async def reset_db():
         os.remove(db_path)
         removed = True
     return {"status": "reset", "path": db_path, "removed": removed}
+
+@app.get("/api/db/download")
+async def download_db():
+    db_path = "/data/state.db" if os.path.isdir("/data") else "state.db"
+    if not os.path.exists(db_path):
+        return JSONResponse({"error": "db_not_found", "path": db_path}, status_code=404)
+    return FileResponse(
+        db_path,
+        media_type="application/octet-stream",
+        filename=os.path.basename(db_path),
+    )
 
 @app.get("/api/logs")
 async def get_logs(limit: int = 240):
