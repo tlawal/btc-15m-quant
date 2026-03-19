@@ -410,26 +410,56 @@ class StateManager:
     def get_cached(self) -> Optional[EngineState]:
         return self._state
 
-    async def record_closed_trade(self, ts: int, market_slug: str, size: float, entry_price: float, exit_price: float, pnl_usd: float, outcome_win: int, regime: str = None, features: dict = None, kelly_fraction: float = None):
+    async def record_closed_trade(
+        self,
+        ts: int,
+        market_slug: str,
+        size: float,
+        entry_price: float,
+        exit_price: float,
+        pnl_usd: float,
+        outcome_win: int,
+        slippage: float = None,
+        exit_reason: str = None,
+        regime: str = None,
+        features: dict = None,
+        kelly_fraction: float = None,
+    ):
         async with self.engine.begin() as conn:
             try:
                 await conn.execute(text(
-                    "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win, regime, features, kelly_fraction) "
-                    "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win, :regime, :feats, :kelly)"
+                    "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win, slippage, exit_reason, regime, features, kelly_fraction) "
+                    "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win, :slip, :reason, :regime, :feats, :kelly)"
                 ), {
                     "ts": ts, "slug": market_slug, "sz": size,
                     "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
-                    "regime": regime, "feats": _dumps_str(features) if features else None, "kelly": kelly_fraction
+                    "slip": slippage,
+                    "reason": exit_reason,
+                    "regime": regime,
+                    "feats": _dumps_str(features) if features else None,
+                    "kelly": kelly_fraction,
                 })
             except Exception:
-                # Fallback for pre-migration DB without regime/features/kelly columns
-                await conn.execute(text(
-                    "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win) "
-                    "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win)"
-                ), {
-                    "ts": ts, "slug": market_slug, "sz": size,
-                    "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
-                })
+                try:
+                    # Fallback for DBs with Phase 3 columns but without Phase 4 columns
+                    await conn.execute(text(
+                        "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win, slippage, exit_reason) "
+                        "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win, :slip, :reason)"
+                    ), {
+                        "ts": ts, "slug": market_slug, "sz": size,
+                        "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
+                        "slip": slippage,
+                        "reason": exit_reason,
+                    })
+                except Exception:
+                    # Fallback for pre-migration DB without slippage/exit_reason columns
+                    await conn.execute(text(
+                        "INSERT INTO closed_trades (timestamp, market_slug, size, entry_price, exit_price, pnl_usd, outcome_win) "
+                        "VALUES (:ts, :slug, :sz, :ep, :xp, :pnl, :win)"
+                    ), {
+                        "ts": ts, "slug": market_slug, "sz": size,
+                        "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
+                    })
 
     async def calculate_performance_metrics(self) -> dict:
         async with self._session_factory() as session:

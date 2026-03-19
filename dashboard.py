@@ -306,8 +306,73 @@ async def clear_logs():
     open(log_path, "w").close()
     return {"status": "cleared", "path": log_path}
 
+@app.get("/api/logs/download")
+async def download_structured_logs():
+    log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
+    if not os.path.exists(log_path):
+        return {"error": "Log file not found"}
+    return FileResponse(
+        path=log_path,
+        media_type="application/octet-stream",
+        filename=os.path.basename(log_path),
+    )
+
+@app.get("/api/logs/range")
+async def get_logs_range(start_ts: int, end_ts: int, types: str = "", limit: int = 5000):
+    """Return structured log entries between [start_ts, end_ts).
+
+    This avoids pulling huge log payloads over the network when doing forensic
+    reconstruction.
+    """
+    log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
+    if not os.path.exists(log_path):
+        return {"error": "Log file not found"}
+
+    want_types = set(t.strip() for t in (types or "").split(",") if t.strip())
+    out = []
+    try:
+        with open(log_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except Exception:
+                    continue
+                ts = entry.get("ts")
+                if ts is None:
+                    continue
+                try:
+                    ts_i = int(ts)
+                except Exception:
+                    continue
+                if ts_i < int(start_ts) or ts_i >= int(end_ts):
+                    continue
+                if want_types and entry.get("type") not in want_types:
+                    continue
+                out.append(entry)
+                if len(out) >= int(limit):
+                    break
+        return out
+    except Exception:
+        return {"error": "Log file not found"}
+
+@app.get("/api/logs")
+async def get_logs(limit: int = 240):
+    log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
+    if not os.path.exists(log_path):
+        return {"error": "Log file not found"}
+    try:
+        with open(log_path, "r") as f:
+            lines = f.readlines()[-limit:]
+        return [json.loads(line.strip()) for line in lines if line.strip()]
+    except:
+        return {"error": "Log file not found"}
+
 @app.post("/api/db/reset")
 async def reset_db():
+    """Reset all performance metrics and state"""
     db_path = "/data/state.db" if os.path.isdir("/data") else "state.db"
     removed = False
     if os.path.exists(db_path):

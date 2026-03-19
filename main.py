@@ -469,6 +469,8 @@ class Engine:
                         exit_price=1.0,
                         pnl_usd=profit_usd,
                         outcome_win=1,
+                        slippage=getattr(tr, "slippage", None),
+                        exit_reason=getattr(tr, "exit_reason", None) or "REDEMPTION_WIN",
                         regime=getattr(self.state, "entry_regime", None),
                     ))
 
@@ -1624,6 +1626,8 @@ class Engine:
                         exit_price=actual_px,
                         pnl_usd=(actual_px - entry_px) * (pos.size or 0),
                         outcome_win=1 if outcome == "WIN" else 0,
+                        slippage=None,
+                        exit_reason=pos.exit_reason,
                     )
                     log.info(f"RECONCILE FORCE EXIT: {outcome} pnl={pnl_pct*100:.1f}%")
                     self.state.held_position = HeldPosition()
@@ -1742,6 +1746,8 @@ class Engine:
                         exit_price=actual_px,
                         pnl_usd=(actual_px - entry_px) * sell_size,
                         outcome_win=1 if outcome == "WIN" else 0,
+                        slippage=slippage,
+                        exit_reason=pos.exit_reason,
                         regime=getattr(self.state, "entry_regime", None),
                         features=entry_feats,
                         kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
@@ -1779,6 +1785,8 @@ class Engine:
                         exit_price=actual_px,
                         pnl_usd=(actual_px - entry_px) * sell_size,
                         outcome_win=1 if final_outcome == "WIN" else 0,
+                        slippage=slippage,
+                        exit_reason=pos.exit_reason,
                         regime=getattr(self.state, "entry_regime", None),
                         features=entry_feats,
                         kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
