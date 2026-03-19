@@ -358,6 +358,47 @@ async def get_logs_range(start_ts: int, end_ts: int, types: str = "", limit: int
     except Exception:
         return {"error": "Log file not found"}
 
+
+@app.get("/api/text-logs/list")
+async def list_text_logs(prefix: str = "logs."):
+    """List files in /data that look like engine text logs."""
+    base_dir = "/data" if os.path.isdir("/data") else "."
+    try:
+        files = []
+        for name in os.listdir(base_dir):
+            if not name.startswith(prefix):
+                continue
+            path = os.path.join(base_dir, name)
+            if os.path.isfile(path):
+                try:
+                    st = os.stat(path)
+                    files.append({"name": name, "size": int(st.st_size), "mtime": float(st.st_mtime)})
+                except Exception:
+                    files.append({"name": name})
+        files.sort(key=lambda x: x.get("mtime", 0), reverse=True)
+        return {"base_dir": base_dir, "files": files}
+    except Exception as e:
+        return {"error": str(e), "base_dir": base_dir}
+
+
+@app.get("/api/text-logs/download")
+async def download_text_log(name: str):
+    """Download a specific /data text log file by name."""
+    base_dir = "/data" if os.path.isdir("/data") else "."
+    safe = os.path.basename(name)
+    if safe != name:
+        return {"error": "Invalid filename"}
+    if not (safe.startswith("logs.") or safe.endswith(".log")):
+        return {"error": "File not allowed"}
+    path = os.path.join(base_dir, safe)
+    if not os.path.exists(path):
+        return {"error": "File not found"}
+    return FileResponse(
+        path=path,
+        media_type="application/octet-stream",
+        filename=safe,
+    )
+
 @app.get("/api/logs")
 async def get_logs(limit: int = 240):
     log_path = "/data/structured_logs.json" if os.path.isdir("/data") else "structured_logs.json"
