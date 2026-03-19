@@ -272,7 +272,7 @@ class Config:
     MAX_SESSION_DRAWDOWN_PCT = 30.0     # Halt trading at this session drawdown %
     SESSION_DRAWDOWN_RESUME_PCT = 20.0  # Resume trading below this % (hysteresis)
     LATE_WINDOW_KELLY_MULTIPLIER = 1.5  # Increase sizing in late window with high posterior
-    PREFERRED_HOURS_UTC = [(11.0, 22.0)]  # 7 AM - 6 PM ET on weekdays
+    PREFERRED_HOURS_UTC = [(10.0, 24.0), (0.0, 4.0)]  # 6 AM - 12 AM ET on weekdays
     OUTSIDE_HOURS_POSTERIOR_MIN = 0.85  # Higher threshold outside preferred hours
     MAX_EXPOSURE_USD           = 100.0    # total notional across all positions
     KILL_SWITCH                = os.getenv("KILL_SWITCH", "false").lower() == "true"
@@ -321,8 +321,8 @@ class Config:
     LOG_LEVEL                  = os.getenv("LOG_LEVEL", "INFO")
 
     # Preferred trading times
-    PREFERRED_START_HOUR_ET    = 7    # 7 AM ET (market open area)
-    PREFERRED_END_HOUR_ET      = 18   # 6 PM ET (core hours only)
+    PREFERRED_START_HOUR_ET    = 6    # 6 AM ET (market open area)
+    PREFERRED_END_HOUR_ET      = 0    # 12 AM ET (midnight)
     PREFERRED_WEEKDAYS_ONLY    = True  # Block weekends entirely
 
     # ── Derived helpers ───────────────────────────────────────────────────────
