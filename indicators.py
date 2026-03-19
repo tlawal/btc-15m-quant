@@ -195,3 +195,108 @@ def inv_logit(x: float) -> float:
 
 def clamp(v: float, lo: float, hi: float) -> float:
     return max(lo, min(hi, v))
+
+
+# ── Fix #6: Higher-timeframe trend detection ─────────────────────────────────
+
+def compute_htf_trend(klines_1h) -> str:
+    """Compute 1H trend direction from hourly klines using EMA9/EMA20 crossover.
+
+    Args:
+        klines_1h: List of Candle objects (or any object with .close attribute).
+                   Needs at least 21 candles.
+    Returns:
+        "UP", "DOWN", or "NEUTRAL"
+    """
+    if not klines_1h or len(klines_1h) < 21:
+        return "NEUTRAL"
+
+    closes = [c.close for c in klines_1h]
+
+    def _ema(data, period):
+        alpha = 2.0 / (period + 1)
+        val = data[0]
+        for px in data[1:]:
+            val = alpha * px + (1 - alpha) * val
+        return val
+
+    ema9 = _ema(closes, 9)
+    ema20 = _ema(closes, 20)
+
+    # Require meaningful separation (0.05% of price) to avoid noise
+    threshold = closes[-1] * 0.0005 if closes[-1] > 0 else 1.0
+    diff = ema9 - ema20
+
+    if diff > threshold:
+        return "UP"
+    elif diff < -threshold:
+        return "DOWN"
+    return "NEUTRAL"
+
+
+# ── Fix #10: Candlestick pattern recognition ─────────────────────────────────
+
+def compute_candle_patterns(klines) -> dict:
+    """Detect common candlestick patterns from the last 2 candles.
+
+    Args:
+        klines: List of Candle objects (needs at least 2).
+    Returns:
+        Dict with boolean flags: bearish_engulfing, bullish_engulfing,
+        doji, shooting_star, hammer.
+    """
+    result = {
+        "bearish_engulfing": False,
+        "bullish_engulfing": False,
+        "doji": False,
+        "shooting_star": False,
+        "hammer": False,
+    }
+
+    if not klines or len(klines) < 2:
+        return result
+
+    prev = klines[-2]
+    curr = klines[-1]
+
+    curr_body = abs(curr.close - curr.open)
+    curr_range = curr.high - curr.low
+    prev_body = abs(prev.close - prev.open)
+
+    if curr_range <= 0:
+        return result
+
+    # Doji: body <= 15% of range
+    if curr_body <= 0.15 * curr_range:
+        result["doji"] = True
+
+    # Bearish engulfing: prev was green, current red engulfs it
+    if (prev.close > prev.open                     # prev is green
+            and curr.open >= prev.close             # current opens at/above prev close
+            and curr.close <= prev.open             # current closes at/below prev open
+            and curr_body > prev_body):             # current body is larger
+        result["bearish_engulfing"] = True
+
+    # Bullish engulfing: prev was red, current green engulfs it
+    if (prev.close < prev.open                     # prev is red
+            and curr.open <= prev.close             # current opens at/below prev close
+            and curr.close >= prev.open             # current closes at/above prev open
+            and curr_body > prev_body):             # current body is larger
+        result["bullish_engulfing"] = True
+
+    # Shooting star: upper shadow >= 2x body, small lower shadow, bearish
+    upper_shadow = curr.high - max(curr.open, curr.close)
+    lower_shadow = min(curr.open, curr.close) - curr.low
+    if (upper_shadow >= 2 * curr_body
+            and lower_shadow <= 0.3 * curr_range
+            and curr.close < curr.open):            # bearish close
+        result["shooting_star"] = True
+
+    # Hammer: lower shadow >= 2x body, small upper shadow, bullish
+    if (lower_shadow >= 2 * curr_body
+            and upper_shadow <= 0.3 * curr_range
+            and curr.close > curr.open):            # bullish close
+        result["hammer"] = True
+
+    return result
+

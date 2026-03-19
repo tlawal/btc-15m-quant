@@ -791,6 +791,41 @@ class DataFeeds:
             except Exception as e:
                 log.warning(f"Fallback fetch failed ({alt}): {e}")
         return None
+
+    # ── Fix #6: 1H klines for higher-timeframe trend ─────────────────────────
+
+    async def get_1h_klines(self, limit: int = 50) -> list[Candle]:
+        """Fetch 1H klines. Thin wrapper over generic get_klines method."""
+        return await self.get_klines("BTCUSDT", "1h", limit)
+
+
+# ── Fix #9: Volume Profile Point of Control ──────────────────────────────────
+
+def compute_vpoc(klines, lookback: int = 48):
+    """Compute Volume Profile Point of Control from recent klines.
+
+    Groups close prices into $100 buckets and returns the price level
+    (bucket center) with the highest aggregate volume.
+
+    Args:
+        klines: List of Candle objects.
+        lookback: Number of recent candles to use.
+    Returns:
+        VPOC price (float) or None if insufficient data.
+    """
+    if not klines or len(klines) < 5:
+        return None
+
+    subset = klines[-lookback:] if len(klines) > lookback else klines
+    price_bins = {}
+    for candle in subset:
+        bucket = round(candle.close / 100) * 100  # $100 buckets
+        price_bins[bucket] = price_bins.get(bucket, 0) + candle.volume
+
+    if not price_bins:
+        return None
+
+    return max(price_bins, key=price_bins.get)
 import asyncio
 import logging
 import time

@@ -30,9 +30,9 @@ from typing import Optional
 
 from config import Config
 from state import StateManager, EngineState, HeldPosition, TradeRecord
-from data_feeds import DataFeeds
+from data_feeds import DataFeeds, compute_vpoc
 from polymarket_client import PolymarketClient
-from indicators import compute_local_indicators
+from indicators import compute_local_indicators, compute_htf_trend, compute_candle_patterns
 from signals import SignalResult, compute_signals
 from exit_policy import evaluate_exit
 from sizing import compute_position_size
@@ -1135,6 +1135,32 @@ class Engine:
         # Phase 6: Institutional Signal Optimization
         score_offset, edge_offset = self.optimizer.get_adjusted_thresholds(0.0, 0.0)
 
+        # ── Fix #6 / #9 / #10: HTF trend, VPOC, candle patterns ─────────────
+        # HTF trend: fetch 1H klines every 5 minutes to avoid rate-limit pressure.
+        _htf_cache_ttl = 300  # seconds between 1H kline refreshes
+        _htf_last_ts = getattr(self, "_htf_last_fetch_ts", 0)
+        if now_ts - _htf_last_ts >= _htf_cache_ttl:
+            try:
+                klines_1h = await self.feeds.kline_feed.get_1h_klines(limit=50)
+                self._htf_klines_cache = klines_1h
+                self._htf_last_fetch_ts = now_ts
+            except Exception as _htf_err:
+                log.debug("HTF kline fetch failed: %s", _htf_err)
+                self._htf_klines_cache = getattr(self, "_htf_klines_cache", [])
+        _klines_1h_cached = getattr(self, "_htf_klines_cache", [])
+        htf_trend = compute_htf_trend(_klines_1h_cached)
+
+        # VPOC: computed from 15m klines already loaded this cycle (no extra I/O) — Fix #9
+        vpoc = compute_vpoc(k5m, lookback=48) if k5m else None
+
+        # Candle patterns: from last 2 of the 15m klines — Fix #10
+        candle_patterns = compute_candle_patterns(k5m) if k5m and len(k5m) >= 2 else None
+
+        log.debug(
+            "htf_trend=%s vpoc=%s candle_patterns=%s",
+            htf_trend, f"{vpoc:.0f}" if vpoc else "N/A", candle_patterns,
+        )
+
         # ── Phase 4: Compute full signal suite ───────────────────────────────
         perp_basis_pct = await self.feeds.get_binance_perp_basis_pct("BTCUSDT")
 
@@ -1195,6 +1221,10 @@ class Engine:
             edge_offset       = edge_offset,
             balance           = balance,
             one_sided_cycles  = self.state.one_sided_clear_count,
+            # Fix #6 / #9 / #10: HTF trend, VPOC, candle patterns
+            htf_trend         = htf_trend,
+            vpoc              = vpoc,
+            candle_patterns   = candle_patterns,
         )
         self._last_sig = sig # Phase 6: Store for trade logging feedback
 
@@ -2397,6 +2427,9 @@ class Engine:
             mae_pct           = getattr(pos, "mae_pct", 0.0),
             mfe_pct           = getattr(pos, "mfe_pct", 0.0),
             deep_drawdown_ts  = getattr(pos, "deep_drawdown_ts", None),
+            # Fix #7: opposing side prices for reverse convergence
+            no_bid            = ob.no_bid,
+            yes_bid           = ob.yes_bid,
         )
         # Unpack structured exit result (dict or None)
         if not exit_result:
@@ -2618,7 +2651,8 @@ class Engine:
                         "FORCED_ADVERSE_OFI", "FORCED_DISTANCE_LATE",
                         "MAE_RECOVERY_EXIT", "MAE_LATE_RECOVERY",
                         "TP1", "TP2", "TP3", "TP_FULL", "TP_LATE_ENTRY",
-                        "NEAR_CERTAIN_LOCK", "PROB_CONVERGENCE")
+                        "NEAR_CERTAIN_LOCK", "PROB_CONVERGENCE",
+                        "REVERSE_CONVERGENCE", "STRIKE_DISTANCE_EXCEEDED")
         if reason in _fok_reasons:
             order_id = await self.pm.limit_sell(pos.token_id, exit_bid, sell_size, order_type="FOK")
             exit_px = exit_bid
@@ -2635,6 +2669,20 @@ class Engine:
         if not order_id:
             pos.consecutive_sell_failures += 1
             log.error(f"Exit order failed ({reason}) — consecutive_sell_failures={pos.consecutive_sell_failures}")
+
+            # Fix #8: Emergency market-sell when loss is deep (>8%) and first retry already failed.
+            # Don't compound latency on already-catastrophic positions.
+            _emergency_loss_pct = float(getattr(Config, 'EMERGENCY_SELL_LOSS_PCT', 0.08))
+            if entry_px > 0 and pos.consecutive_sell_failures >= 1:
+                _unrealized_check = (_exit_bid - entry_px) / entry_px
+                if _unrealized_check < -_emergency_loss_pct:
+                    log.critical(
+                        "EMERGENCY_MARKET_SELL: loss=%.1f%% > -%.0f%% and %d sell failures — market order",
+                        _unrealized_check * 100, _emergency_loss_pct * 100, pos.consecutive_sell_failures,
+                    )
+                    order_id = await self.pm.market_sell(pos.token_id, sell_size)
+                    if order_id:
+                        pos.consecutive_sell_failures = 0
 
             # Cap: after MAX_CONSECUTIVE_SELL_FAILURES, stop trying — let auto-settle
             if pos.consecutive_sell_failures >= Config.MAX_CONSECUTIVE_SELL_FAILURES:

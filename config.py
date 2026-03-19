@@ -68,7 +68,7 @@ class Config:
     LATE_CONVICTION_EDGE       = 0.006    # relaxed edge requirement (was 0.020 — too high for near-certain late trades)
     LATE_CONVICTION_DISTANCE_ATR_MULT = 0.25 # dynamic ATR-based distance requirement
     LATE_CONVICTION_MIN_SCORE  = 1.25     # strict safety floor to prevent pure noise entries
-    MIN_ENTRY_DISTANCE_ATR_MULT = 0.25    # global distance gate requirement
+    MIN_ENTRY_DISTANCE_ATR_MULT = 0.40    # Fix #2: raised from 0.25 — eliminates near-strike entries where spread consumes edge
 
     # ── ADX trend filter (FIX #5) ─────────────────────────────────────────────
     ADX_TREND_THRESHOLD        = 20.0     # below = choppy, block directional entry

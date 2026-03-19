@@ -9,7 +9,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Sequence
 
 from config import Config
-from indicators import Indicators, normal_cdf, logit, inv_logit, clamp
+from indicators import (Indicators, normal_cdf, student_t_cdf, logit, inv_logit, clamp,
+                         compute_htf_trend, compute_candle_patterns)
 from state import EngineState, BeliefVolSample
 
 log = logging.getLogger(__name__)
@@ -300,6 +301,12 @@ def compute_signals(
     balance:          float = None,
     # Late-window entry hardening
     one_sided_cycles: int = 0,
+    # Fix #6: Higher-timeframe trend
+    htf_trend:        str = "NEUTRAL",   # "UP" | "DOWN" | "NEUTRAL"
+    # Fix #9: Volume Profile Point of Control
+    vpoc:             Optional[float] = None,
+    # Fix #10: Candlestick patterns
+    candle_patterns:  Optional[dict] = None,
 ) -> SignalResult:
 
     res = SignalResult()
@@ -408,7 +415,9 @@ def compute_signals(
     if strike and res.expected_move and res.expected_move > 0:
         res.distance = btc_price - strike
         res.z_score  = res.distance / res.expected_move
-        res.posterior_fair_up   = normal_cdf(res.z_score)
+        # Fix #3: Student-T with df=6 for fat-tail correction (BTC kurtosis > 5).
+        # normal_cdf systematically overestimates tail probabilities.
+        res.posterior_fair_up   = student_t_cdf(res.z_score, df=6)
         res.posterior_fair_down = 1.0 - res.posterior_fair_up
 
     # ── Time-to-expiry probability decay ──────────────────────────────────────
@@ -428,11 +437,13 @@ def compute_signals(
             res.posterior_fair_down = 1.0 - res.posterior_fair_up
 
     # Bayesian update: blend fair value with market prior in logit space.
-    # Signal weight 0.5 — balanced blend; let calibration data inform future adjustments.
+    # Fix #4: Signal weight reduced from 0.50 to 0.30 — market price is the stronger signal
+    # (Manski 2004, Nofer 2018: prediction market prices aggregate thousands of traders' info).
+    _bayes_signal_weight = float(getattr(Config, 'BAYES_SIGNAL_WEIGHT', 0.30))
     if res.posterior_fair_up is not None and yes_mid is not None:
         mkt_prior = clamp(yes_mid, 0.01, 0.99)
         signal_lo = logit(res.posterior_fair_up)
-        po        = logit(mkt_prior) + 0.5 * signal_lo
+        po        = logit(mkt_prior) + _bayes_signal_weight * signal_lo
         up        = clamp(inv_logit(po), 1e-6, 1 - 1e-6)
         res.posterior_final_up   = up
         res.posterior_final_down = 1.0 - up
@@ -1243,6 +1254,41 @@ def compute_signals(
         _pm_surge_thresh = float(getattr(Config, "PM_PRICE_SURGE_GATE", 0.12))
         if _pm_surge_pct > _pm_surge_thresh:
             gates.append(f"pm_price_surge={_pm_surge_pct*100:.1f}%_prev={_prev_mid:.2f}_cur={_cur_side_mid:.2f}")
+
+    # Fix #6: Higher-timeframe trend conflict gate.
+    # Block entries when the 1H EMA trend explicitly opposes our trade direction.
+    # Only apply when we have a definitive UP/DOWN trend — NEUTRAL is permissive.
+    # Ref: Jegadeesh & Titman (1993) — momentum persistence across timeframes.
+    _htf_enabled = bool(getattr(Config, "HTF_TREND_GATE_ENABLED", True))
+    if _htf_enabled and htf_trend != "NEUTRAL" and res.direction is not None and not res.monster_signal:
+        _htf_opposes = (
+            (res.direction == "UP" and htf_trend == "DOWN")
+            or (res.direction == "DOWN" and htf_trend == "UP")
+        )
+        if _htf_opposes:
+            gates.append(f"htf_trend_conflict:1H={htf_trend}_trade={res.direction}")
+
+    # Fix #9: VPOC proximity gate.
+    # Block entries when BTC price is too far from the volume-weighted fair value.
+    # Large VPOC gaps indicate thin-volume price discovery — adversely selected fills.
+    # Ref: Market Profile theory (Steidlmayer 1984) — VPOC acts as a market magnet.
+    _vpoc_gate_pct = float(getattr(Config, "VPOC_PROXIMITY_GATE_PCT", 0.015))
+    if vpoc is not None and vpoc > 0 and not res.monster_signal:
+        _vpoc_dist = abs(btc_price - vpoc) / vpoc
+        if _vpoc_dist > _vpoc_gate_pct:
+            gates.append(f"vpoc_too_far={_vpoc_dist*100:.1f}%_from_{vpoc:.0f}")
+
+    # Fix #10: Bearish candlestick pattern gate.
+    # A fresh bearish engulfing or shooting star on the last 15m candle signals reversal risk
+    # that overrides momentum on UP entries, and vice versa for DOWN entries.
+    # Ref: Nison (1991) — high-reliability reversal signals in liquid markets.
+    if candle_patterns is not None and res.direction is not None and not res.monster_signal:
+        _bearish = candle_patterns.get("bearish_engulfing") or candle_patterns.get("shooting_star")
+        _bullish = candle_patterns.get("bullish_engulfing") or candle_patterns.get("hammer")
+        if res.direction == "UP" and _bearish:
+            gates.append("candle_bearish_pattern:engulf_or_star_on_UP_entry")
+        elif res.direction == "DOWN" and _bullish:
+            gates.append("candle_bullish_pattern:engulf_or_hammer_on_DOWN_entry")
 
     res.skip_gates = gates
 

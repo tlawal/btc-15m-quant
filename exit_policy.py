@@ -104,6 +104,9 @@ def evaluate_exit(
     mae_pct:          float = 0.0,
     mfe_pct:          float = 0.0,
     deep_drawdown_ts: Optional[int] = None,
+    # ── Fix #7: opposing side prices for reverse convergence ──
+    no_bid:           Optional[float] = None,
+    yes_bid:          Optional[float] = None,
 ) -> Optional[dict]:
     """Evaluate whether to exit the current position.
 
@@ -204,6 +207,9 @@ def evaluate_exit(
     # When BTC has moved far from strike and position is losing, cut losses.
     # ATR-adaptive multiplier: tighter in high-vol regimes (fast moves), looser in low-vol.
     # Ref: Avellaneda & Stoikov (2008) — optimal threshold adapts to current σ, not historical σ.
+    # Fix #1: STRIKE_DISTANCE uses a shorter 20s grace (not the general 60s _min_hold).
+    # Forensic audit: 60s allowed 17 consecutive suppressions while BTC moved against the trade.
+    _strike_grace_sec = 20
     if (
         distance is not None and atr14 is not None and atr14 > 0
         and unrealized_pct < -0.05
@@ -215,11 +221,11 @@ def evaluate_exit(
         else:
             _strike_mult = 0.60   # normal: baseline
         if abs(distance) > _strike_mult * atr14:
-            if hold_seconds < _min_hold:
+            if hold_seconds < _strike_grace_sec:
                 log.info(
                     "STRIKE_DISTANCE_SUPPRESSED: distance=%.1f > %.2f*ATR=%.1f unrealized=%.1f%% "
                     "but hold_seconds=%.0f < %ds — suppressing (transient impact)",
-                    abs(distance), _strike_mult, _strike_mult * atr14, unrealized_pct * 100, hold_seconds, _min_hold,
+                    abs(distance), _strike_mult, _strike_mult * atr14, unrealized_pct * 100, hold_seconds, _strike_grace_sec,
                 )
             else:
                 log.warning(
@@ -361,6 +367,22 @@ def evaluate_exit(
             bid_price, unrealized_pct * 100,
         )
         return _exit("NEAR_CERTAIN_LOCK", use_maker=use_maker)
+
+    # 3c. Fix #7: Reverse convergence — opposing side near certain means our side is losing.
+    # Exit YES when NO_bid >= 0.85 (market says DOWN is ~85% likely) and vice versa.
+    _rev_conv_threshold = 0.85
+    if held_side == "YES" and no_bid is not None and no_bid >= _rev_conv_threshold:
+        log.warning(
+            "REVERSE_CONVERGENCE: NO bid=%.3f >= %.2f while holding YES, unrealized=%.1f%% — exiting",
+            no_bid, _rev_conv_threshold, unrealized_pct * 100,
+        )
+        return _exit("REVERSE_CONVERGENCE", use_maker=False)
+    if held_side == "NO" and yes_bid is not None and yes_bid >= _rev_conv_threshold:
+        log.warning(
+            "REVERSE_CONVERGENCE: YES bid=%.3f >= %.2f while holding NO, unrealized=%.1f%% — exiting",
+            yes_bid, _rev_conv_threshold, unrealized_pct * 100,
+        )
+        return _exit("REVERSE_CONVERGENCE", use_maker=False)
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 4: STRUCTURAL MODEL REVERSAL (Req #5)

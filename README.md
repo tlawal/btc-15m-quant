@@ -31,7 +31,8 @@ utils.py             — Logging, Telegram alerts, formatting
 ## Feature Set
 
 ### Signal Engine
-- **Bayesian posterior blending** — logit-space signal weight (0.5), time-decay curve
+- **Bayesian posterior blending** — logit-space signal weight (0.30 after Fix #4), time-decay curve
+- **Student-T CDF (df=6)** — fat-tail corrected probability from z-score (Fix #3 replacing normal CDF)
 - **Belief-vol sigma_B** — rolling 3-min belief volatility regresses posterior toward 0.5 in high-noise regimes (capped at 1.15–1.30)
 - **Noise Debouncing & Hysteresis** — Requires the ML model to hold a confirmed directional score for 3+ consecutive cycles (9 to 15 seconds) before entry; instantly rejects transient fakeouts.
 - **EMA score smoothing** — `signed_score = 0.6 * raw + 0.4 * prev` to reduce single-cycle noise
@@ -51,6 +52,23 @@ utils.py             — Logging, Telegram alerts, formatting
 - **Negative-edge block** — never sizes a position when model edge < 0, even on monster signals
 - **Early window guard** — blocks non-monster entries for the first 7.5 min of each 15-min window
 - **Early-minute momentum (stub)** — concept: BTC price momentum in the first 1-2 minutes of a window predicts direction for the remainder. If BTC moves strongly in one direction immediately after window open, momentum tends to persist. Currently stubbed (`compute_early_minute_momentum()` returns None) pending calibration data from historical windows. Will require: 1m klines from window's first 2 minutes, comparison of close[t=1min] vs open[t=0] as % of ATR, threshold calibration
+
+### Audit-Driven Signal Fixes (Forensic Audit — March 2026)
+
+All 10 findings from the institutional forensic audit are implemented:
+
+| Fix | Change | File |
+|-----|--------|------|
+| **#1** | `STRIKE_DISTANCE_EXCEEDED` grace period: 60s → **20s** | `exit_policy.py` |
+| **#2** | `MIN_ENTRY_DISTANCE_ATR_MULT`: 0.25 → **0.40** | `config.py` |
+| **#3** | Replace `normal_cdf` with **Student-T CDF (df=6)** | `signals.py` |
+| **#4** | Bayesian market weight: 0.50 → **0.30** (`BAYES_SIGNAL_WEIGHT`) | `signals.py` |
+| **#5** | **Isotonic calibration** scaffold (`calibration.py`) | `calibration.py` |
+| **#6** | **1H trend gate** — blocks entries opposing EMA9/EMA20 crossover on hourly klines | `indicators.py`, `main.py`, `signals.py` |
+| **#7** | **Reverse convergence exit** — exits when opposing side bid ≥ 0.85 | `exit_policy.py`, `main.py` |
+| **#8** | **Emergency market-sell** — FOK at market if loss > 8% and first sell failed | `main.py` |
+| **#9** | **VPOC proximity gate** — blocks entry when BTC is >1.5% from volume POC | `data_feeds.py`, `signals.py` |
+| **#10** | **Candlestick pattern gate** — blocks entry on engulfing/shooting star/hammer reversal signals | `indicators.py`, `signals.py` |
 
 ### Exit Engine (`exit_policy.py`)
 Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior override) and **soft exits** (suppressed by trailing posterior guard while model is still confident).
@@ -385,4 +403,9 @@ python main.py --reset
 | `MOMENTUM_GATE_ATR_THRESHOLD` | 0.25 | ATR-normalized 15s BTC velocity magnitude to block adverse entries |
 | `PM_LOB_ADVERSE_THRESHOLD` | 0.80 | PM book ask-ratio above this blocks entry (distribution signal) |
 | `FUNDING_RATE_GATE_THRESHOLD` | 0.0002 | Funding rate opposing direction above this blocks entry (~0.02%/8h) |
+| `MIN_ENTRY_DISTANCE_ATR_MULT` | **0.40** | ATR-scaled distance requirement (raised from 0.25 — Fix #2) |
+| `BAYES_SIGNAL_WEIGHT` | **0.30** | Bayesian model weight in Bayesian-market blend (market weight = 0.70 — Fix #4) |
+| `HTF_TREND_GATE_ENABLED` | `true` | Enable/disable 1H EMA9/EMA20 trend conflict gate (Fix #6) |
+| `VPOC_PROXIMITY_GATE_PCT` | **0.015** | Max allowed % deviation from VPOC before blocking entry (Fix #9, 1.5%) |
+| `EMERGENCY_SELL_LOSS_PCT` | **0.08** | Emergency FOK market-sell threshold when first sell failed and loss > 8% (Fix #8) |
 
