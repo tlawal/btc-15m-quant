@@ -512,6 +512,23 @@ def evaluate_exit(
     # thresholds tighter — less adverse flow triggers protective exits.
     # ══════════════════════════════════════════════════════════════════════════
 
+    # ── Micro-exit early grace period ────────────────────────────────────────
+    # Suppress ALL Layer-6 microstructure / alpha-decay / momentum exits for
+    # the first MICRO_EXIT_GRACE_SEC seconds (default 180s = 3 minutes).
+    # Rationale: sub-3-minute microstructure on a 15m binary prediction market
+    # is dominated by bid-ask noise and order-book transient imbalances, not
+    # genuine directional information. Cutting positions this early converts
+    # potential expiry wins into realized losses (confirmed by morning trade
+    # audit: all 7 early-exited trades lost; the 2 held-to-expiry trades won).
+    # Hard stops (Layers 0–1) and TP exits (Layer 2) are NOT affected.
+    _micro_grace = getattr(Config, "MICRO_EXIT_GRACE_SEC", 180)
+    if hold_seconds < _micro_grace:
+        log.debug(
+            "MICRO_EXIT_GRACE: hold_seconds=%.0fs < %.0fs — suppressing Layer-6 micro exits",
+            hold_seconds, _micro_grace,
+        )
+        return None
+
     # Dynamic profit-taking based on signal strength, time, and microstructure
     abs_score = abs(signed_score)
     profit_threshold = None

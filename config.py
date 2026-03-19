@@ -231,6 +231,8 @@ class Config:
     MIN_TRADE_USD              = 5.75    # Polymarket CLOB minimum is ~$5
     MAX_TRADES_PER_WINDOW      = 5
     STREAK_HALT_AT             = 3        # halt trading after N consecutive losses
+    SESSION_DRAWDOWN_HALT_PCT  = 0.30     # halt trading when session drawdown exceeds this fraction
+    MICRO_EXIT_GRACE_SEC       = 180      # suppress Layer-6 micro exits for this many seconds post-entry
 
     # Dynamic Kelly scaling based on belief volatility (sigma_b)
     KELLY_MULT_MIN             = 0.50

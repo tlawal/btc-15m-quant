@@ -667,9 +667,13 @@ class Engine:
                 except Exception:
                     equity_usd = balance
                     
-                if getattr(self.state, "session_start_balance", None) is None or self.state.session_start_balance == 0:
-                    self.state.session_start_balance = equity_usd
-                    log.info(f"Session start balance recorded: ${equity_usd:.2f} (20% limit = ${equity_usd * 0.20:.2f})")
+                # Fix: always reset session_start_balance from live equity on startup.
+                # Previously only set when None/0, allowing a stale persisted value to
+                # trigger false-positive drawdown halts immediately after redeployment
+                # (e.g., "+14.9% trade" followed by Railway restart → old high-water mark
+                # vs current USDC balance = phantom 37.8% drawdown → halt with loss_streak=0).
+                self.state.session_start_balance = equity_usd
+                log.info(f"Session start balance (re)set to live equity: ${equity_usd:.2f} (drawdown limit = ${equity_usd * Config.SESSION_DRAWDOWN_HALT_PCT:.2f})")
         except asyncio.TimeoutError:
             log.warning("Timeout while fetching initial balance; dashboard will show 0 until first successful cycle.")
         except Exception as e:
@@ -1311,38 +1315,65 @@ class Engine:
         session_drawdown = 0.0
         if self.state.session_start_balance and self.state.session_start_balance > 0:
             session_drawdown = (self.state.session_start_balance - equity_usd) / self.state.session_start_balance
-        
-        # Resume if conditions cleared — but NOT if kill switch is active (manual override)
-        if self.state.trading_halted and not Config.KILL_SWITCH and not (self.state.loss_streak >= Config.STREAK_HALT_AT or session_drawdown > 0.30):
-            self.state.trading_halted = False
-            log.info("Trading resumed: halt conditions no longer met")
-            await send_telegram(
-                self.feeds.session,
-                "✅ Trading resumed: loss_streak <5 and session_drawdown <=30%.",
-                tier=AlertTier.INFO
-            )
-            try:
-                asyncio.create_task(emit_event(EventType.TRADING_RESUMED, "Trading resumed: halt conditions cleared"))
-            except Exception:
-                pass
 
-        if (self.state.loss_streak >= Config.STREAK_HALT_AT or session_drawdown > 0.30) and not self.state.trading_halted:
-            # Pre-halt alert
+        _sd_limit = getattr(Config, "SESSION_DRAWDOWN_HALT_PCT", 0.30)
+        _streak_tripped = self.state.loss_streak >= Config.STREAK_HALT_AT
+        _drawdown_tripped = session_drawdown > _sd_limit
+
+        # ── SEPARATE HALT BLOCK A: Loss-streak ────────────────────────────────
+        # Halt on N consecutive losses, independent of drawdown.
+        if _streak_tripped and not self.state.trading_halted:
             await send_telegram(
                 self.feeds.session,
-                f"⚠️ PRE-HALT WARNING: loss_streak={self.state.loss_streak}, session_drawdown={session_drawdown*100:.1f}% — halting after this cycle.",
+                f"⚠️ PRE-HALT WARNING: loss_streak={self.state.loss_streak} >= {Config.STREAK_HALT_AT} — halting new entries.",
                 tier=AlertTier.CRITICAL
             )
-            
             self.state.trading_halted = True
-            log.error(f"TRADING HALTED: loss_streak={self.state.loss_streak}, session_drawdown={session_drawdown*100:.1f}%")
+            log.error(f"TRADING HALTED (streak): loss_streak={self.state.loss_streak} >= {Config.STREAK_HALT_AT}")
             await send_telegram(
                 self.feeds.session,
                 fmt_halt(self.state.loss_streak, balance),
                 tier=AlertTier.CRITICAL
             )
             try:
-                asyncio.create_task(emit_event(EventType.SYSTEM_HALT, f"Trading halted: streak={self.state.loss_streak}, drawdown={session_drawdown*100:.1f}%"))
+                asyncio.create_task(emit_event(EventType.SYSTEM_HALT, f"Trading halted: streak={self.state.loss_streak}"))
+            except Exception:
+                pass
+
+        # ── SEPARATE HALT BLOCK B: Session drawdown ───────────────────────────
+        # Halt when drawdown exceeds limit, independent of streak.
+        # Note: session_start_balance is refreshed to live equity on startup,
+        # preventing false positives after redeploy (Fix: session drawdown halt).
+        if _drawdown_tripped and not self.state.trading_halted:
+            await send_telegram(
+                self.feeds.session,
+                f"⚠️ PRE-HALT WARNING: session_drawdown={session_drawdown*100:.1f}% > {_sd_limit*100:.0f}% limit — halting new entries.",
+                tier=AlertTier.CRITICAL
+            )
+            self.state.trading_halted = True
+            log.error(f"TRADING HALTED (drawdown): session_drawdown={session_drawdown*100:.1f}% > {_sd_limit*100:.0f}%")
+            await send_telegram(
+                self.feeds.session,
+                fmt_halt(self.state.loss_streak, balance),
+                tier=AlertTier.CRITICAL
+            )
+            try:
+                asyncio.create_task(emit_event(EventType.SYSTEM_HALT, f"Trading halted: drawdown={session_drawdown*100:.1f}%"))
+            except Exception:
+                pass
+
+        # ── Resume if BOTH conditions cleared (and no manual kill switch) ─────
+        if self.state.trading_halted and not Config.KILL_SWITCH and not _streak_tripped and not _drawdown_tripped:
+            self.state.trading_halted = False
+            log.info("Trading resumed: streak < %d and drawdown %.1f%% <= %.0f%%",
+                     Config.STREAK_HALT_AT, session_drawdown * 100, _sd_limit * 100)
+            await send_telegram(
+                self.feeds.session,
+                f"✅ Trading resumed: loss_streak < {Config.STREAK_HALT_AT} and session_drawdown <= {_sd_limit*100:.0f}%.",
+                tier=AlertTier.INFO
+            )
+            try:
+                asyncio.create_task(emit_event(EventType.TRADING_RESUMED, "Trading resumed: halt conditions cleared"))
             except Exception:
                 pass
 
@@ -1841,6 +1872,19 @@ class Engine:
                         fmt_exit(pos.side, wavg_exit, entry_px, final_pnl, pos.exit_reason, balance),
                     )
                     log.info(f"EXIT CONFIRMED: {pos.side} {pos.exit_reason} pnl={final_pnl*100:.2f}% wavg_exit={wavg_exit:.3f} partials={len(pos.partial_exits)} slippage={slippage*100:.4f}%")
+                    # ── Post-trade attribution record ─────────────────────────
+                    _tp_hit = "TP3" if pos.tp3_hit else ("TP2" if pos.tp2_hit else ("TP1" if pos.tp1_hit else "none"))
+                    _hold_sec = int(time.time() - (getattr(pos, "entry_ts", None) or time.time()))
+                    _e_feats = getattr(self.state, "entry_features", {}) or {}
+                    log.info(
+                        "TRADE_ATTRIBUTION: {\"side\": \"%s\", \"entry_px\": %.4f, \"exit_px\": %.4f, "
+                        "\"exit_reason\": \"%s\", \"tp_level_hit\": \"%s\", \"time_held_sec\": %d, "
+                        "\"pnl_pct\": %.4f, \"score_at_entry\": %.3f, \"posterior_at_entry\": %.4f}",
+                        pos.side, entry_px, wavg_exit, pos.exit_reason, _tp_hit, _hold_sec,
+                        final_pnl,
+                        float(_e_feats.get("signed_score", 0.0)),
+                        float(_e_feats.get("posterior_final_up", 0.0)),
+                    )
                     try:
                         asyncio.create_task(emit_event(EventType.TRADE_EXIT, f"EXIT {pos.side} @ {wavg_exit:.3f} PnL={final_pnl*100:.2f}% ({pos.exit_reason})"))
                     except Exception:
