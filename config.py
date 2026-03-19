@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
-from datetime import datetime, timezone
+from datetime import datetime
+from zoneinfo import ZoneInfo
 load_dotenv()
 
 
@@ -329,11 +330,20 @@ class Config:
     @classmethod
     def is_preferred_trading_time(cls) -> bool:
         """Check if current time is within preferred trading hours (6am-6pm ET on weekdays)."""
-        now_utc = datetime.now(timezone.utc)
-        # Approximate ET as UTC-4 (Eastern Time, ignoring DST for simplicity)
-        et_hour = (now_utc.hour - 4) % 24
-        weekday = now_utc.weekday() < 5  # Monday-Friday
-        in_time = cls.PREFERRED_START_HOUR_ET <= et_hour < cls.PREFERRED_END_HOUR_ET
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+        et_hour = now_et.hour
+        weekday = now_et.weekday() < 5  # Monday-Friday
+
+        start = int(cls.PREFERRED_START_HOUR_ET)
+        end = int(cls.PREFERRED_END_HOUR_ET)
+        if start == end:
+            in_time = True
+        elif start < end:
+            in_time = start <= et_hour < end
+        else:
+            # Wraps past midnight (e.g. 6 -> 0 means 06:00–24:00)
+            in_time = (et_hour >= start) or (et_hour < end)
+
         return in_time and (not cls.PREFERRED_WEEKDAYS_ONLY or weekday)
     @classmethod
     def get_regime_thresholds(cls, atr14: float, balance: float = None) -> tuple[float, float]:

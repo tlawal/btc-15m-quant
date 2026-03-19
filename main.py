@@ -1794,6 +1794,12 @@ class Engine:
 
                 if is_partial:
                     # Partial fill — record the partial exit, keep TradeRecord as OPEN
+                    if pos.exit_reason == "TP1":
+                        pos.tp1_hit = True
+                    elif pos.exit_reason == "TP2":
+                        pos.tp2_hit = True
+                    elif pos.exit_reason == "TP3":
+                        pos.tp3_hit = True
                     pos.partial_exits.append({
                         "size": sell_size,
                         "price": actual_px,
@@ -1826,6 +1832,12 @@ class Engine:
                     pos.order_id = None
                 else:
                     # Full exit — finalize TradeRecord with weighted average if partial exits exist
+                    if pos.exit_reason == "TP1":
+                        pos.tp1_hit = True
+                    elif pos.exit_reason == "TP2":
+                        pos.tp2_hit = True
+                    elif pos.exit_reason == "TP3":
+                        pos.tp3_hit = True
                     all_exits = list(pos.partial_exits) + [{"size": sell_size, "price": actual_px}]
                     total_sold = sum(e["size"] for e in all_exits)
                     wavg_exit = sum(e["size"] * e["price"] for e in all_exits) / total_sold if total_sold > 0 else actual_px
@@ -1935,11 +1947,36 @@ class Engine:
         elif st in ("CANCELED", "EXPIRED"):
             if matched > 0:
                 log.info(f"PENDING ORDER {st} PARTIALLY: {matched}/{pos.size} shares filled")
-                pos.size = matched
-                pos.is_pending = False
                 if pos.exit_reason:
-                    # Partial exit handled as full exit for state clearing, but log real size
-                    pos.is_pending = False 
+                    # Exit was partially filled — record realized portion and keep remaining position open
+                    actual_px = fill_price or pos.intended_exit_price or pos.avg_entry_price or pos.entry_price or 0.0
+                    entry_px = pos.avg_entry_price or pos.entry_price or actual_px
+                    pnl_pct = (actual_px - entry_px) / entry_px if entry_px > 0 else 0.0
+                    remaining = max(0.0, (pos.size or 0.0) - float(matched))
+
+                    if pos.exit_reason == "TP1":
+                        pos.tp1_hit = True
+                    elif pos.exit_reason == "TP2":
+                        pos.tp2_hit = True
+                    elif pos.exit_reason == "TP3":
+                        pos.tp3_hit = True
+
+                    pos.partial_exits.append({
+                        "size": float(matched),
+                        "price": actual_px,
+                        "reason": pos.exit_reason,
+                        "ts": int(time.time()),
+                        "pnl_pct": pnl_pct,
+                    })
+
+                    pos.size = math.floor(remaining * 10000) / 10000
+                    pos.is_pending = False
+                    pos.order_id = None
+                    pos.exit_reason = None
+                else:
+                    # Entry was partially filled — update size to matched and clear pending.
+                    pos.size = matched
+                    pos.is_pending = False
             else:
                 log.info(f"PENDING ORDER {st}: clearing position state")
                 if not pos.exit_reason:
@@ -2776,14 +2813,6 @@ class Engine:
         # Reset failure counter on success
         pos.consecutive_sell_failures = 0
         self.pm.invalidate_balance_cache()
-
-        # Update TP tier flags for partial exits
-        if reason == "TP1":
-            pos.tp1_hit = True
-        elif reason == "TP2":
-            pos.tp2_hit = True
-        elif reason == "TP3":
-            pos.tp3_hit = True
 
         # Phase 3: Wait for _reconcile_pending_order to confirm fill
         pos.is_pending = True
