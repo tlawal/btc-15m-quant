@@ -361,12 +361,18 @@ async def get_logs_range(start_ts: int, end_ts: int, types: str = "", limit: int
 
 @app.get("/api/text-logs/list")
 async def list_text_logs(prefix: str = "logs."):
-    """List files in /data that look like engine text logs."""
+    """List files in /data that look like logs or forensic artifacts."""
     base_dir = "/data" if os.path.isdir("/data") else "."
     try:
         files = []
         for name in os.listdir(base_dir):
-            if not name.startswith(prefix):
+            if prefix and not name.startswith(prefix):
+                continue
+            if not (
+                name.endswith(".log")
+                or name.startswith("logs.")
+                or name.startswith("structured_logs.json")
+            ):
                 continue
             path = os.path.join(base_dir, name)
             if os.path.isfile(path):
@@ -383,12 +389,16 @@ async def list_text_logs(prefix: str = "logs."):
 
 @app.get("/api/text-logs/download")
 async def download_text_log(name: str):
-    """Download a specific /data text log file by name."""
+    """Download a specific /data log/artifact file by name."""
     base_dir = "/data" if os.path.isdir("/data") else "."
     safe = os.path.basename(name)
     if safe != name:
         return {"error": "Invalid filename"}
-    if not (safe.startswith("logs.") or safe.endswith(".log")):
+    if not (
+        safe.endswith(".log")
+        or safe.startswith("logs.")
+        or safe.startswith("structured_logs.json")
+    ):
         return {"error": "File not allowed"}
     path = os.path.join(base_dir, safe)
     if not os.path.exists(path):
