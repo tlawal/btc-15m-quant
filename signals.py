@@ -12,6 +12,11 @@ from config import Config
 from indicators import (Indicators, normal_cdf, student_t_cdf, logit, inv_logit, clamp,
                          compute_htf_trend, compute_candle_patterns)
 from state import EngineState, BeliefVolSample
+try:
+    from calibration import calibrate as _calibrate_posterior
+except Exception:
+    def _calibrate_posterior(p: float) -> float:  # type: ignore[misc]
+        return p
 
 log = logging.getLogger(__name__)
 
@@ -821,6 +826,19 @@ def compute_signals(
         p = clamp(p, 1e-6, 1 - 1e-6)
         res.posterior_final_up = p
         res.posterior_final_down = 1.0 - p
+
+    # Fix #5: Isotonic calibration — correct overconfident/underconfident posteriors.
+    # Applied AFTER ensemble blend so that the calibration targets the final output.
+    # If no model is loaded, _calibrate_posterior() is a no-op identity function.
+    if res.posterior_final_up is not None:
+        _p_cal = _calibrate_posterior(res.posterior_final_up)
+        if abs(_p_cal - res.posterior_final_up) > 1e-6:  # only log when model is active
+            log.debug(
+                "calibration: posterior %.4f → %.4f",
+                res.posterior_final_up, _p_cal,
+            )
+        res.posterior_final_up   = _p_cal
+        res.posterior_final_down = 1.0 - _p_cal
 
     # Delta tracking for reporting
     if state.prev_cycle_score is not None:

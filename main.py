@@ -65,6 +65,12 @@ class Engine:
         self._consecutive_skips = 0  # no-trade alert counter
         self._last_exit_reason = "HOLD"
         self.inference = InferenceEngine()  # Phase 5: ML inference engine
+        # Fix #5: Load isotonic calibration model (gracefully skips if missing)
+        try:
+            from calibration import load_calibration_model
+            load_calibration_model()
+        except Exception as _cal_err:
+            log.debug("calibration model not loaded: %s", _cal_err)
         self._dashboard_task = None         # Phase 6: Dashboard task handle
         self._reconcile_task = None         # Phase 5: Hourly Position sync
         # Real-time CVD WebSocket
