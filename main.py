@@ -1329,6 +1329,7 @@ class Engine:
                 tier=AlertTier.CRITICAL
             )
             self.state.trading_halted = True
+            self.state.trading_halted_reason = "loss_streak"
             log.error(f"TRADING HALTED (streak): loss_streak={self.state.loss_streak} >= {Config.STREAK_HALT_AT}")
             await send_telegram(
                 self.feeds.session,
@@ -1351,6 +1352,7 @@ class Engine:
                 tier=AlertTier.CRITICAL
             )
             self.state.trading_halted = True
+            self.state.trading_halted_reason = "session_drawdown"
             log.error(f"TRADING HALTED (drawdown): session_drawdown={session_drawdown*100:.1f}% > {_sd_limit*100:.0f}%")
             await send_telegram(
                 self.feeds.session,
@@ -1365,6 +1367,7 @@ class Engine:
         # ── Resume if BOTH conditions cleared (and no manual kill switch) ─────
         if self.state.trading_halted and not Config.KILL_SWITCH and not _streak_tripped and not _drawdown_tripped:
             self.state.trading_halted = False
+            self.state.trading_halted_reason = None
             log.info("Trading resumed: streak < %d and drawdown %.1f%% <= %.0f%%",
                      Config.STREAK_HALT_AT, session_drawdown * 100, _sd_limit * 100)
             await send_telegram(
@@ -2549,60 +2552,55 @@ class Engine:
 
         # Compute sell size — verify against actual Polymarket position to avoid overselling
         actual_size = pos.size
-        _onchain_floor = None  # floored on-chain balance for sell_size cap
-        _verified_zero = False # True if we are certain on-chain balance is 0
+        _onchain_floor = None  # floored on-chain balance for sell_size cap (only used when API is unavailable)
+        _verified_zero = False # True if we are certain position size is 0
+        _api_size = None
 
-        # Primary: on-chain ERC-1155 balance (authoritative, not cached)
+        # Positions API is authoritative for whether we still hold shares.
+        try:
+            live_positions = await self.pm.get_positions()
+            for p in (live_positions or []):
+                if str((p or {}).get("asset")) == str(pos.token_id):
+                    _api_size = float((p or {}).get("size") or 0.0)
+                    break
+        except Exception as _api_sz_err:
+            log.warning(f"Failed to verify position size via API: {_api_sz_err}")
+
+        if _api_size is not None:
+            if _api_size != (pos.size or 0.0):
+                log.warning(f"EXIT SIZE SYNC: state={pos.size} api={_api_size} — using API as authoritative")
+            actual_size = _api_size
+            pos.size = actual_size
+            if actual_size <= 0.0001:
+                _verified_zero = True
+
+        # On-chain ERC-1155 balance is non-authoritative; never shrink/clear based on on-chain alone.
+        # Only use as a conservative sell-size floor when API size is unavailable.
         try:
             onchain_bal = await self.pm.get_conditional_token_balance(pos.token_id)
             if onchain_bal is not None:
-                # Floor to 4 decimal places
                 onchain_shares = math.floor(onchain_bal * 10000) / 10000
-                _onchain_floor = onchain_shares
-                
-                missing_shares = actual_size - onchain_shares
-                if missing_shares > 0.01:
-                    log.warning("ONCHAIN_DESYNC: bot state=%.4f on-chain=%.4f — auto-recovering missing shares as EXTERNAL_EXIT", actual_size, onchain_bal)
-                    _ent_px = pos.avg_entry_price or pos.entry_price or 0.5
-                    pos.partial_exits.append({
-                        "size": missing_shares,
-                        "price": current_px,
-                        "reason": "EXTERNAL_EXIT",
-                        "ts": int(time.time()),
-                        "pnl_pct": (current_px - _ent_px) / _ent_px if _ent_px > 0 else 0.0
-                    })
-                    actual_size = onchain_shares
-                    pos.size = actual_size
-
-                if onchain_shares < 0.0001:
-                    _verified_zero = True
+                if _api_size is None:
+                    _onchain_floor = onchain_shares
+                else:
+                    # If on-chain disagrees with API, log but do not mutate position state.
+                    if abs(onchain_shares - float(_api_size)) > 0.01:
+                        log.warning(
+                            "DESYNC_ONCHAIN_LT_API: api=%.4f onchain=%.4f token=%s — ignoring on-chain",
+                            float(_api_size), float(onchain_shares), str(pos.token_id)[:16]
+                        )
         except Exception as _chain_err:
-            log.warning("on-chain balance check failed: %s — falling back to API", _chain_err)
+            log.warning("on-chain balance check failed: %s — ignoring on-chain", _chain_err)
 
-        # Fallback: positions API (may be stale/cached) — skip if we definitively know on-chain is 0
-        if not _verified_zero:
-            try:
-                live_positions = await self.pm.get_positions()
-                for p in (live_positions or []):
-                    if str((p or {}).get("asset")) == str(pos.token_id):
-                        api_size = float((p or {}).get("size") or 0.0)
-                        if api_size != pos.size:
-                            log.warning(f"EXIT SIZE MISMATCH: state={pos.size} api={api_size} — using min(state, api)")
-                            actual_size = min(actual_size, api_size) if api_size > 0 else actual_size
-                            pos.size = actual_size
-                        break
-            except Exception as _sz_err:
-                log.warning(f"Failed to verify position size: {_sz_err}")
-
-        if actual_size <= 0 and not _verified_zero:
-            # Both sources returned 0 due to API errors — fall back to state size
-            log.warning("EXIT: all balance sources returned 0 (API error) — using state size as fallback")
-            actual_size = pos.size
+        if actual_size is None or actual_size <= 0:
+            if not _verified_zero:
+                log.warning("EXIT: position size unknown/0 from API — falling back to state size")
+                actual_size = pos.size
 
         sell_size = actual_size if partial_pct >= 1.0 else max(1, int(actual_size * partial_pct))
         # Clamp to actual available
         sell_size = min(sell_size, actual_size)
-        if _onchain_floor is not None and _onchain_floor > 0:
+        if _onchain_floor is not None and _onchain_floor > 0 and _api_size is None:
             sell_size = min(sell_size, _onchain_floor)
 
         # Dust guard: CLOB rejects orders below ~0.05 shares with 400 balance/allowance errors.
