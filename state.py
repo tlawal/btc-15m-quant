@@ -56,6 +56,12 @@ class HeldPosition:
     market_expiry: Optional[int]    = None   # expiry ts of the market this position is on
     entry_posterior: Optional[float] = None  # posterior at entry for trailing
     tx_hash: Optional[str]          = None   # transaction hash for link
+    # Controlled repricing / stale-order replacement tracking
+    reprice_count: int              = 0
+    last_reprice_ts: Optional[int]  = None
+    # Lightweight price-change tracking for surge/protection logic
+    last_price: Optional[float]     = None
+    last_price_ts: Optional[int]    = None
     # Tiered take-profit tracking (persists across cycles)
     tp1_hit: bool                   = False  # TP1 (5%) already triggered
     tp2_hit: bool                   = False  # TP2 (12%) already triggered

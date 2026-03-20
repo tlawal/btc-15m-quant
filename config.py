@@ -170,6 +170,29 @@ class Config:
     PUMP_REVERSION_THRESHOLD       = 0.05   # 5% single-cycle pump triggers limit-below entry
     PUMP_REVERSION_OFFSET          = 0.03   # buy $0.03 below mid on pump detection
 
+    # ── Reprice safety (stale order replacement guardrails) ─────────────────
+    # Prevent stale-entry replacement from "chasing" the market too far from the
+    # original intended price.
+    REPRICE_MAX_COUNT              = 2
+    REPRICE_MIN_INTERVAL_SEC       = 6
+    # For BUY (entry) orders, never worsen the intended price by more than this.
+    REPRICE_MAX_WORSEN_PCT         = 0.03
+    # If new price would worsen beyond threshold, cancel the entry instead of chasing.
+    REPRICE_CANCEL_ON_WORSEN       = True
+
+    # ── Price surge handling (fast-move profit capture) ─────────────────────
+    # If price surges quickly in our favor, take profit early (prevents missing
+    # brief spikes / wick moves).
+    PRICE_SURGE_WINDOW_SEC         = 15
+    PRICE_SURGE_TRIGGER_PCT        = 0.12
+    PRICE_SURGE_MIN_PROFIT_PCT     = 0.05
+    PRICE_SURGE_EXIT_REASON        = "PRICE_SURGE_TAKE_PROFIT"
+
+    # ── Close-on-expiry (remainder) ─────────────────────────────────────────
+    # If position is still open on the old market near expiry, force-close rather
+    # than relying on auto-settle.
+    CLOSE_ON_EXPIRY_MIN_REM        = 0.75
+
     # Volatility-adjusted trailing stop (probability-space, ATR-scaled)
     TRAIL_ATR_REF              = 120.0    # reference ATR level for scaling trailing width
     TRAIL_BASE_POST_DROP       = 0.04     # base allowable posterior drop from peak before exit
@@ -189,7 +212,7 @@ class Config:
     TP3_PCT                    = 0.20     # +20% → sell remaining
     TP_LATE_ENTRY_THRESH       = 0.95     # entry >= $0.95 triggers single TP
     TP_LATE_ENTRY_PCT          = 0.02     # +2% single TP for late entries
-    TP_PARTIAL_ENABLED         = True     # 1/3 partial scaling at TP1/TP2/TP3
+    TP_PARTIAL_ENABLED         = False    # 1/3 partial scaling at TP1/TP2/TP3
     TP1_POSTERIOR_CEIL         = 0.93
 
     # ── Adaptive TP1 sizing (Option B) ─────────────────────────────────────
@@ -199,7 +222,7 @@ class Config:
     TP1_PARTIAL_MID            = 0.666
     TP1_PARTIAL_MAX            = 1.0
     TP1_CLOSE_DIST             = 80.0     # underlying points from strike considered "close"
-    TP1_LATE_MIN_REM           = 8.0      # minutes remaining considered "late" for TP1 sizing
+    TP1_LATE_MIN_REM           = 3.0      # minutes remaining considered "late" for TP1 sizing
     TP1_POST_DROP_THRESH       = 0.05     # posterior drop (pp) from entry to flag degradation
     TP1_EDGE_DROP_THRESH       = 0.005    # edge drop from entry to flag degradation
     TP1_USE_EDGE_DEGRADATION   = True
@@ -209,6 +232,12 @@ class Config:
     # same MFE tracking, to prevent winner→hard-stop reversals on the runner.
     TP1_TRAIL_PRICE_ACTIVATION_PCT = 0.02
     TP1_TRAIL_PRICE_DISTANCE_PCT   = 0.06
+
+    # ── Post-TP1 runner profit protection (posterior collapse) ─────────────
+    # If TP1 hit and profit exists, but posterior collapses meaningfully from
+    # entry, exit the remainder.
+    RUNNER_POSTERIOR_DROP_PCT       = 0.10
+    RUNNER_MIN_PROFIT_PCT           = 0.03
 
     # ── Volatility-Adapted Stop-Loss (ATR-normalized) ────────────────────
     VOL_STOP_BASE_PCT          = 0.15     # base max drawdown
@@ -251,7 +280,7 @@ class Config:
     MAX_TRADES_PER_WINDOW      = 5
     STREAK_HALT_AT             = 3        # halt trading after N consecutive losses
     SESSION_DRAWDOWN_HALT_PCT  = 0.30     # halt trading when session drawdown exceeds this fraction
-    MICRO_EXIT_GRACE_SEC       = 180      # suppress Layer-6 micro exits for this many seconds post-entry
+    MICRO_EXIT_GRACE_SEC       = 90       # suppress Layer-6 micro exits for this many seconds post-entry
 
     # Dynamic Kelly scaling based on belief volatility (sigma_b)
     KELLY_MULT_MIN             = 0.50

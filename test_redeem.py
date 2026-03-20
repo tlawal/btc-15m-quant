@@ -1,6 +1,18 @@
 import asyncio
 from web3 import Web3
-from web3.middleware import geth_poa_middleware
+try:
+    # web3 < 6
+    from web3.middleware import geth_poa_middleware  # type: ignore
+except Exception:
+    try:
+        # web3 >= 6
+        from web3.middleware.geth_poa import geth_poa_middleware  # type: ignore
+    except Exception:
+        # web3 >= 7
+        from web3.middleware.proof_of_authority import ExtraDataToPOAMiddleware  # type: ignore
+
+        def geth_poa_middleware(make_request, w3):
+            return ExtraDataToPOAMiddleware(make_request, w3)
 from config import Config
 
 w3 = Web3(Web3.HTTPProvider(Config.POLYGON_RPC_URL))

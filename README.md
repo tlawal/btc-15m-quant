@@ -96,6 +96,9 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 - **Profit lock timing** — `FORCED_PROFIT_LOCK` now triggers at `minutes_remaining <= 1.0` (60s) by default (configurable via `FORCED_PROFIT_LOCK_MIN_REM`).
 - **No loser-holding posterior exemption near expiry** — late forced-loss exits and adverse microstructure exits do not allow a “posterior says hold” override.
 - **Adverse OFI (Hawkes-style) strengthened** — `FORCED_ADVERSE_OFI` applies at ≤60s remaining with no posterior exemption when deep OFI reverses against the held side while losing.
+- **Runner protection after TP1** — after TP1 fills, remainder is protected via:
+  - `TP1_TRAIL_PRICE_STOP` (tighter price-based trailing)
+  - `RUNNER_POSTERIOR_COLLAPSE` (exit remainder if posterior collapses from entry by `RUNNER_POSTERIOR_DROP_PCT` while still in profit by `RUNNER_MIN_PROFIT_PCT`).
 
 References:
 
@@ -143,7 +146,10 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Mid-price fallback** — when ask is None (deep ITM), uses `mid + 0.01` capped at 0.99
 - **Depth-aware sizing** — caps position at 50% of top-of-book depth
 - **Stale order replace** — cancel + re-place after 12s if entry GTC not filled
+- **Reprice safety check (entry orders)** — caps stale-entry replacements (`REPRICE_MAX_COUNT` + `REPRICE_MIN_INTERVAL_SEC`) and cancels instead of chasing if the replacement would worsen price beyond `REPRICE_MAX_WORSEN_PCT` (when `REPRICE_CANCEL_ON_WORSEN=true`).
 - **Exit timeout FOK** — if exit order pending > 60s, force-replaces as FOK at `bid - 1 tick`
+- **Price surge take-profit** — if price jumps by `PRICE_SURGE_TRIGGER_PCT` within `PRICE_SURGE_WINDOW_SEC` (and overall unrealized >= `PRICE_SURGE_MIN_PROFIT_PCT`), force an immediate take-profit (`PRICE_SURGE_TAKE_PROFIT`).
+- **Close-on-expiry** — if a position remains on an old market close to expiry (`CLOSE_ON_EXPIRY_MIN_REM`), force a `CLOSE_ON_EXPIRY` exit instead of relying on settlement.
 - **FOK immediate reconcile recheck** — for FOK exits, the engine re-checks order status after a short delay (`FOK_RECHECK_DELAY_SEC`) before concluding the order was killed (eventual-consistency hardening).
 - **State checkpoint** — saves state before every order placement (crash-safe)
 - **Startup reconciliation** — checks pending orders AND live API positions on restart; populates `held_position` from Polymarket if local state is out of sync
@@ -156,6 +162,9 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Blended PnL on auto-settle** — `AUTO_SETTLE_WIN` and `AUTO_SETTLE_LOSS` now compute `blended_exit_price` and `blended_pnl` weighted across all partial exits plus the remaining shares at settlement ($1.00 or $0.00). Previously, auto-settle overwrote `pnl = -1.0` even when 90%+ of the position had already been sold at recovery prices, causing the dashboard to show -100% instead of the real ~-15%.
 - **Slippage tracking** — actual fill price vs intended price logged per trade; warns if > 1%
 - **Market quality filter** — skips cycle if spreads > 8%, book depth < 20 USDC, or klines > 5 min stale
+
+**Consider (not implemented):**
+- A **FOK fallback ladder** for exits (especially TP tiers and emergency stops): if an initial FOK fails due to partial-fill constraints, automatically retry with a more fillable progression (e.g., cross deeper, slice size, or switch order type) rather than waiting for the next cycle. This should be added carefully to avoid over-trading and nonce/allowance collisions.
 
 ### Risk Management
 - `MIN_TRADE_USD = 5.75` — minimum notional per trade (Polymarket CLOB minimum ~$5)
@@ -247,6 +256,9 @@ If you prefer the UI, you can `safeTransferFrom` the ERC-1155 from EOA → proxy
 - **Polygon RPC URL** (Alchemy/QuickNode recommended)
 - **EOA private key** (the wallet holding the orphan shares)
 - **A tiny bit of MATIC** in the EOA for gas
+
+Test note:
+- `test_redeem.py` includes a version-compatible POA middleware import to support newer `web3` releases.
 
 ### Addresses (Polygon mainnet)
 - **ConditionalTokens (ERC-1155):** `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045`

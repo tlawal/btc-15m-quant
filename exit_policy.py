@@ -291,6 +291,23 @@ def evaluate_exit(
             )
             return _exit("TP1_TRAIL_PRICE_STOP", use_maker=use_maker)
 
+    # ── Earlier profit protection on runner: posterior collapse after TP1 ──
+    # If we've already taken TP1 and then the model conviction collapses, exit the remainder
+    # rather than waiting for full reversal or expiry.
+    _runner_post_drop = float(getattr(Config, "RUNNER_POSTERIOR_DROP_PCT", 0.10) or 0.10)
+    _runner_min_profit = float(getattr(Config, "RUNNER_MIN_PROFIT_PCT", 0.03) or 0.03)
+    if tp1_hit and posterior is not None and _entry_post is not None:
+        if unrealized_pct >= _runner_min_profit and (_entry_post - float(posterior)) >= _runner_post_drop:
+            log.warning(
+                "RUNNER_POSTERIOR_COLLAPSE: tp1_hit=1 unrealized=%.1f%% entry_post=%.3f posterior=%.3f drop=%.1fpp>=%.1fpp — exiting remainder",
+                unrealized_pct * 100,
+                float(_entry_post),
+                float(posterior),
+                (float(_entry_post) - float(posterior)) * 100,
+                _runner_post_drop * 100,
+            )
+            return _exit("RUNNER_POSTERIOR_COLLAPSE", use_maker=False)
+
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 2: TIERED TAKE-PROFITS (Req #1)
     # ══════════════════════════════════════════════════════════════════════════
@@ -378,6 +395,9 @@ def evaluate_exit(
                     tp1_post_ceil,
                     unrealized_pct * 100,
                 )
+            # TP-state hardening: if TP1 already hit, do NOT require additional gates; allow TP2/TP3
+            # to fire normally when thresholds are reached.
+            # (This also makes behavior resilient to partial-fill timing/order failures.)
         else:
             # Full exit at TP1 threshold (fallback when partial disabled)
             if not tp3_hit and unrealized_pct >= Config.TP3_PCT:

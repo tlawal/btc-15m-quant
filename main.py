@@ -2046,6 +2046,29 @@ class Engine:
                     pos.order_id = None
 
             elif age_s > 12 and not pos.exit_reason:
+                # Entry repricing safety: avoid repeatedly chasing worse prices.
+                _now = int(time.time())
+                _max_reprices = int(getattr(Config, "REPRICE_MAX_COUNT", 0) or 0)
+                _min_interval = int(getattr(Config, "REPRICE_MIN_INTERVAL_SEC", 0) or 0)
+                if _max_reprices > 0 and int(getattr(pos, "reprice_count", 0)) >= _max_reprices:
+                    log.warning(
+                        "REPRICE_SAFETY: reprice_count=%d >= max=%d — canceling stale entry order",
+                        int(getattr(pos, "reprice_count", 0)),
+                        _max_reprices,
+                    )
+                    try:
+                        await self.pm.cancel_order(str(pos.order_id))
+                    except Exception:
+                        pass
+                    if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
+                        self.state.trade_history.pop()
+                    self.state.held_position = HeldPosition()
+                    return
+
+                _last_rep = getattr(pos, "last_reprice_ts", None)
+                if _last_rep is not None and _min_interval > 0 and (_now - int(_last_rep)) < _min_interval:
+                    return
+
                 log.info(f"STALE ORDER ({age_s}s): replacing {pos.order_id}")
                 # Fetch current orderbook for fresh price
                 try:
@@ -2057,6 +2080,29 @@ class Engine:
                     else:
                         new_px = pos.intended_entry_price
 
+                    _intended = float(pos.intended_entry_price or 0.0)
+                    _max_worsen = float(getattr(Config, "REPRICE_MAX_WORSEN_PCT", 0.0) or 0.0)
+                    _cancel_on_worsen = bool(getattr(Config, "REPRICE_CANCEL_ON_WORSEN", False))
+                    # For entries (buys), higher price is always worse.
+                    if _intended > 0 and new_px is not None:
+                        _worsen = (float(new_px) - _intended) / _intended
+                        if _worsen > _max_worsen and _cancel_on_worsen:
+                            log.warning(
+                                "REPRICE_SAFETY_CANCEL: intended=%.3f new=%.3f worsen=%.1f%% > %.1f%% — canceling entry",
+                                _intended,
+                                float(new_px),
+                                _worsen * 100,
+                                _max_worsen * 100,
+                            )
+                            try:
+                                await self.pm.cancel_order(str(pos.order_id))
+                            except Exception:
+                                pass
+                            if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
+                                self.state.trade_history.pop()
+                            self.state.held_position = HeldPosition()
+                            return
+
                     new_oid = await self.pm.replace_order(
                         old_order_id=pos.order_id,
                         token_id=pos.token_id,
@@ -2067,6 +2113,8 @@ class Engine:
                         pos.order_id = new_oid
                         pos.placed_at_ts = int(time.time())
                         pos.intended_entry_price = new_px
+                        pos.reprice_count = int(getattr(pos, "reprice_count", 0)) + 1
+                        pos.last_reprice_ts = int(time.time())
                         log.info(f"REPLACED -> {new_oid} @ {new_px}")
                     else:
                         # Cancel succeeded but re-place failed — clear position
@@ -2334,6 +2382,33 @@ class Engine:
             old_expiry = pos.market_expiry
             if old_expiry:
                 min_rem = max(0.0, (old_expiry - time.time()) / 60.0)
+
+            # Close-on-expiry: attempt to exit remaining shares before auto-settle.
+            # This prevents the "TP1 sold, remainder auto-settle loss" failure mode.
+            _close_min = float(getattr(Config, "CLOSE_ON_EXPIRY_MIN_REM", 0.0) or 0.0)
+            if _close_min > 0 and min_rem <= _close_min and not pos.is_pending and pos.size and pos.size > 0:
+                try:
+                    # Ensure we use the correct order book for the old token.
+                    _ob = await self.pm.get_order_books(pos.token_id, pos.token_id)
+                    if _ob:
+                        _bid = (_ob.yes_bid if pos.side == "YES" else _ob.no_bid) or (_ob.yes_mid if pos.side == "YES" else _ob.no_mid) or 0.5
+                    else:
+                        _bid = 0.5
+                    # Force close at bid via FOK for immediate execution.
+                    order_id = await self.pm.limit_sell(pos.token_id, max(0.01, min(0.99, float(_bid))), float(pos.size), order_type="FOK")
+                    if order_id:
+                        pos.is_pending = True
+                        pos.order_id = order_id
+                        pos.exit_reason = "CLOSE_ON_EXPIRY"
+                        pos.intended_exit_price = float(_bid)
+                        pos.placed_at_ts = int(time.time())
+                        log.warning(
+                            "CLOSE_ON_EXPIRY: forced exit order placed (%s) size=%.4f @ %.3f (min_rem=%.2f)",
+                            str(order_id)[:10], float(pos.size), float(_bid), float(min_rem),
+                        )
+                        return True
+                except Exception as _coe_err:
+                    log.warning("CLOSE_ON_EXPIRY: failed to place forced exit: %s", _coe_err)
             # Auto-settle when old market is near/past expiry (<= 2 min).
             # Polymarket endDate includes a ~2min settlement buffer after the nominal
             # window end, which causes stale OB prices and phantom negative PnL.
@@ -2458,6 +2533,43 @@ class Engine:
             if pos.mae_pct >= Config.MAE_RECOVERY_EXIT_THRESHOLD and pos.deep_drawdown_ts is None:
                 pos.deep_drawdown_ts = int(time.time())
 
+        # ── Price surge handling ────────────────────────────────────────────
+        # If price moves very quickly in our favor, take profit before the spike mean-reverts.
+        if current_px is not None and entry_px > 0:
+            _now = int(time.time())
+            _last_px = getattr(pos, "last_price", None)
+            _last_ts = getattr(pos, "last_price_ts", None)
+            _win = int(getattr(Config, "PRICE_SURGE_WINDOW_SEC", 0) or 0)
+            _trig = float(getattr(Config, "PRICE_SURGE_TRIGGER_PCT", 0.0) or 0.0)
+            _minp = float(getattr(Config, "PRICE_SURGE_MIN_PROFIT_PCT", 0.0) or 0.0)
+            if _last_px is not None and _last_ts is not None and _win > 0 and (_now - int(_last_ts)) <= _win:
+                try:
+                    _delta = (float(current_px) - float(_last_px)) / max(float(_last_px), 1e-9)
+                    _unreal = (float(current_px) - float(entry_px)) / float(entry_px)
+                    if _delta >= _trig and _unreal >= _minp and not pos.is_pending:
+                        log.warning(
+                            "PRICE_SURGE: delta=%.1f%% in %ds (unreal=%.1f%%) — forcing take-profit",
+                            _delta * 100,
+                            int(_now - int(_last_ts)),
+                            _unreal * 100,
+                        )
+                        # Override exit decision: take full profit now.
+                        reason = str(getattr(Config, "PRICE_SURGE_EXIT_REASON", "PRICE_SURGE_TAKE_PROFIT"))
+                        partial_pct = 1.0
+                        use_maker = False
+                        # Jump to exit execution path below.
+                        exit_result = {"reason": reason, "partial_pct": partial_pct, "use_maker": use_maker}
+                    else:
+                        exit_result = None
+                except Exception:
+                    exit_result = None
+            else:
+                exit_result = None
+            pos.last_price = float(current_px)
+            pos.last_price_ts = _now
+        else:
+            exit_result = None
+
         # Get previous posterior for decay detection
         prev_post = self.state.last_posterior_up if pos.side == "YES" else self.state.last_posterior_down
         curr_post = sig.posterior_final_up if pos.side == "YES" else sig.posterior_final_down
@@ -2487,41 +2599,42 @@ class Engine:
         # Resolve bid/ask for spread-aware exits
         _exit_bid = (ob.yes_bid if pos.side == "YES" else ob.no_bid) or current_px or entry_px
         _exit_ask = (ob.yes_ask if pos.side == "YES" else ob.no_ask) or current_px or entry_px
-        exit_result = evaluate_exit(
-            held_side         = pos.side,
-            entry_price       = entry_px,
-            current_price     = current_px,
-            minutes_remaining = min_rem,
-            signed_score      = sig.signed_score,
-            entry_score       = pos.entry_signed_score or 0.0,
-            entry_edge        = getattr(pos, "entry_edge", None),
-            distance          = sig.distance,
-            cvd_delta         = cvd_delta,
-            cvd_velocity      = self.cvd_ws.get_cvd_slope(),
-            deep_ofi          = getattr(sig, "deep_ofi", 0.0) or 0.0,
-            obi               = getattr(sig, "obi", 0.0) or 0.0,
-            atr14             = getattr(sig, "atr14", None),
-            vpin              = getattr(sig, "vpin_proxy", 0.0) or 0.0,
-            posterior         = curr_post,
-            prev_posterior    = prev_post,
-            entry_posterior   = pos.entry_posterior,
-            peak_posterior    = getattr(pos, "peak_posterior", None),
-            book_flip_count   = int(getattr(pos, "book_flip_count", 0)),
-            hold_seconds      = hold_secs,
-            entry_min_rem     = getattr(pos, "entry_min_rem", None),
-            yes_mid           = getattr(sig, "yes_mid", 0.5),
-            bid_price         = _exit_bid,
-            ask_price         = _exit_ask,
-            tp1_hit           = getattr(pos, "tp1_hit", False),
-            tp2_hit           = getattr(pos, "tp2_hit", False),
-            tp3_hit           = getattr(pos, "tp3_hit", False),
-            mae_pct           = getattr(pos, "mae_pct", 0.0),
-            mfe_pct           = getattr(pos, "mfe_pct", 0.0),
-            deep_drawdown_ts  = getattr(pos, "deep_drawdown_ts", None),
-            # Fix #7: opposing side prices for reverse convergence
-            no_bid            = ob.no_bid,
-            yes_bid           = ob.yes_bid,
-        )
+        if exit_result is None:
+            exit_result = evaluate_exit(
+                held_side         = pos.side,
+                entry_price       = entry_px,
+                current_price     = current_px,
+                minutes_remaining = min_rem,
+                signed_score      = sig.signed_score,
+                entry_score       = pos.entry_signed_score or 0.0,
+                entry_edge        = getattr(pos, "entry_edge", None),
+                distance          = sig.distance,
+                cvd_delta         = cvd_delta,
+                cvd_velocity      = self.cvd_ws.get_cvd_slope(),
+                deep_ofi          = getattr(sig, "deep_ofi", 0.0) or 0.0,
+                obi               = getattr(sig, "obi", 0.0) or 0.0,
+                atr14             = getattr(sig, "atr14", None),
+                vpin              = getattr(sig, "vpin_proxy", 0.0) or 0.0,
+                posterior         = curr_post,
+                prev_posterior    = prev_post,
+                entry_posterior   = pos.entry_posterior,
+                peak_posterior    = getattr(pos, "peak_posterior", None),
+                book_flip_count   = int(getattr(pos, "book_flip_count", 0)),
+                hold_seconds      = hold_secs,
+                entry_min_rem     = getattr(pos, "entry_min_rem", None),
+                yes_mid           = getattr(sig, "yes_mid", 0.5),
+                bid_price         = _exit_bid,
+                ask_price         = _exit_ask,
+                tp1_hit           = getattr(pos, "tp1_hit", False),
+                tp2_hit           = getattr(pos, "tp2_hit", False),
+                tp3_hit           = getattr(pos, "tp3_hit", False),
+                mae_pct           = getattr(pos, "mae_pct", 0.0),
+                mfe_pct           = getattr(pos, "mfe_pct", 0.0),
+                deep_drawdown_ts  = getattr(pos, "deep_drawdown_ts", None),
+                # Fix #7: opposing side prices for reverse convergence
+                no_bid            = ob.no_bid,
+                yes_bid           = ob.yes_bid,
+            )
         # Unpack structured exit result (dict or None)
         if not exit_result:
             return False
@@ -2774,7 +2887,8 @@ class Engine:
                         "MAE_RECOVERY_EXIT", "MAE_LATE_RECOVERY",
                         "TP1", "TP2", "TP3", "TP_FULL", "TP_LATE_ENTRY",
                         "NEAR_CERTAIN_LOCK", "PROB_CONVERGENCE",
-                        "REVERSE_CONVERGENCE", "STRIKE_DISTANCE_EXCEEDED")
+                        "REVERSE_CONVERGENCE", "STRIKE_DISTANCE_EXCEEDED",
+                        "CLOSE_ON_EXPIRY", "PRICE_SURGE_TAKE_PROFIT")
         if reason in _fok_reasons:
             order_id = await self.pm.limit_sell(pos.token_id, exit_bid, sell_size, order_type="FOK")
             exit_px = exit_bid
