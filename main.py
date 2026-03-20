@@ -2616,15 +2616,37 @@ class Engine:
                 if tr.side == pos.side and tr.outcome == "OPEN":
                     _dust_partial_rec = sum(p["price"] * p["size"] for p in pos.partial_exits)
                     _dust_total_cost  = entry_px * (tr.size or pos.size or 0) if entry_px > 0 else 0.0
-                    
-                    tr.exit_price  = round(_dust_partial_rec / (tr.size or pos.size or 1), 4) if (tr.size or pos.size) else 0.0
-                    tr.pnl         = (_dust_partial_rec / _dust_total_cost - 1.0) if _dust_total_cost > 0 else -1.0
-                    tr.outcome     = "WIN" if tr.pnl > 0 else "LOSS"
-                    tr.exit_reason = "EXTERNAL_EXIT" if _verified_zero else "DUST_WRITEOFF"
+
+                    # If the position is verified gone via the positions API but we have no recorded
+                    # partial exits, we likely missed fill reconciliation. In that case, estimate an
+                    # exit from the last known intended exit price (or current mid) instead of marking
+                    # the trade as a total loss.
+                    _estimated_exit_px = None
+                    try:
+                        _estimated_exit_px = float(getattr(pos, "intended_exit_price", None) or 0.0) or None
+                    except Exception:
+                        _estimated_exit_px = None
+                    if _estimated_exit_px is None:
+                        try:
+                            _estimated_exit_px = float(current_px) if current_px is not None else None
+                        except Exception:
+                            _estimated_exit_px = None
+
+                    if _verified_zero and _dust_partial_rec <= 0 and _estimated_exit_px is not None and entry_px > 0:
+                        tr.exit_price = round(_estimated_exit_px, 4)
+                        tr.pnl = (tr.exit_price - entry_px) / entry_px
+                        tr.outcome = "WIN" if tr.pnl > 0 else "LOSS"
+                        tr.exit_reason = "EXTERNAL_EXIT"
+                        _pnl_usd = (tr.exit_price - entry_px) * float(tr.size or pos.size or 0.0)
+                    else:
+                        tr.exit_price  = round(_dust_partial_rec / (tr.size or pos.size or 1), 4) if (tr.size or pos.size) else 0.0
+                        tr.pnl         = (_dust_partial_rec / _dust_total_cost - 1.0) if _dust_total_cost > 0 else -1.0
+                        tr.outcome     = "WIN" if tr.pnl > 0 else "LOSS"
+                        tr.exit_reason = "EXTERNAL_EXIT" if _verified_zero else "DUST_WRITEOFF"
+                        _pnl_usd = _dust_partial_rec - _dust_total_cost
                     tr.partial_exits = list(pos.partial_exits)
 
                     # Fix: update cumulative state PNL so dashboard matches trade results
-                    _pnl_usd = _dust_partial_rec - _dust_total_cost
                     self.state.total_pnl_usd += _pnl_usd
                     
                     # Record to DB
@@ -2828,14 +2850,37 @@ class Engine:
         # leave is_pending=True for minutes blocking all further exit attempts.
         if reason in _fok_reasons and order_id:
             try:
-                _fok_status = await self.pm.get_order_status(str(order_id))
-                _fok_matched = float((_fok_status or {}).get("size_matched", 0))
-                _fok_state = str((_fok_status or {}).get("status", "")).upper()
+                async def _get_fok_state():
+                    _st = await self.pm.get_order_status(str(order_id))
+                    _matched = float((_st or {}).get("size_matched", 0) or 0)
+                    _state = str((_st or {}).get("status", "") or "").upper()
+                    _txh = (_st or {}).get("tx_hash")
+                    return _matched, _state, _txh
+
+                _fok_matched, _fok_state, _fok_tx = await _get_fok_state()
+
+                # Some CLOB status endpoints are eventually consistent; do a short delayed re-check
+                # before concluding the FOK was killed with 0 fill.
                 if _fok_matched <= 0 and _fok_state in ("CANCELLED", "EXPIRED", ""):
-                    # FOK was killed — no fill. Clear pending so next cycle can retry.
-                    log.warning(f"FOK_IMMEDIATE_RECONCILE: order {str(order_id)[:10]} killed (matched=0) — clearing is_pending")
-                    pos.is_pending = False
-                    pos.order_id = None
+                    _delay = float(getattr(Config, "FOK_RECHECK_DELAY_SEC", 0.35) or 0.35)
+                    try:
+                        await asyncio.sleep(_delay)
+                        _fok_matched2, _fok_state2, _fok_tx2 = await _get_fok_state()
+                    except Exception:
+                        _fok_matched2, _fok_state2, _fok_tx2 = _fok_matched, _fok_state, _fok_tx
+
+                    if _fok_matched2 > 0:
+                        log.info(
+                            "FOK_IMMEDIATE_RECONCILE: order %s filled %.4f after recheck (state=%s) — reconcile will finalize",
+                            str(order_id)[:10], _fok_matched2, _fok_state2,
+                        )
+                    else:
+                        log.warning(
+                            "FOK_IMMEDIATE_RECONCILE: order %s killed (matched=0 state=%s) — clearing is_pending",
+                            str(order_id)[:10], _fok_state2,
+                        )
+                        pos.is_pending = False
+                        pos.order_id = None
                 elif _fok_matched > 0:
                     log.info(f"FOK_IMMEDIATE_RECONCILE: order {str(order_id)[:10]} filled {_fok_matched} — reconcile will finalize")
             except Exception as _fok_err:

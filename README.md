@@ -144,6 +144,7 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Depth-aware sizing** — caps position at 50% of top-of-book depth
 - **Stale order replace** — cancel + re-place after 12s if entry GTC not filled
 - **Exit timeout FOK** — if exit order pending > 60s, force-replaces as FOK at `bid - 1 tick`
+- **FOK immediate reconcile recheck** — for FOK exits, the engine re-checks order status after a short delay (`FOK_RECHECK_DELAY_SEC`) before concluding the order was killed (eventual-consistency hardening).
 - **State checkpoint** — saves state before every order placement (crash-safe)
 - **Startup reconciliation** — checks pending orders AND live API positions on restart; populates `held_position` from Polymarket if local state is out of sync
 - **On-chain position reconciliation** — on startup and before every sell, queries on-chain ERC-1155 `balanceOf` (Gnosis CTF contract) to verify inherited position size is correct. Clears phantom positions (on-chain balance = 0) immediately. Catches stale Polymarket positions-API data that can cause futile sell loops.
@@ -189,6 +190,7 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - Trade history table: side, entry/exit price, shares, PnL%, tx link, outcome
 - Nightly AI review panel
 - `/api/metrics` — live engine state; falls back to heartbeat file; returns 503 with `engine_stale: true` if heartbeat > 30s old
+- `/api/tx/{tx_hash}` — debug/forensics: fetch Polygon transaction receipt JSON for on-chain ground truth when reconciling missed fills.
 
 #### Manual exit-only management (Dashboard)
 

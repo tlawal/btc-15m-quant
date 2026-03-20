@@ -231,6 +231,53 @@ async def debug_balance():
 
     return result
 
+
+@app.get("/api/tx/{tx_hash}")
+async def get_tx_receipt(tx_hash: str):
+    """Fetch a Polygon tx receipt for a given hash (debug/forensics).
+
+    This is intended for investigating missed fills / reconciliation issues by letting
+    us confirm on-chain events for a specific trade.
+    """
+    from config import Config
+    if not Config.POLYGON_RPC_URL:
+        return JSONResponse({"error": "POLYGON_RPC_URL is not set"}, status_code=400)
+
+    # Basic validation
+    if not isinstance(tx_hash, str) or not tx_hash.startswith("0x") or len(tx_hash) != 66:
+        return JSONResponse({"error": "invalid tx hash"}, status_code=400)
+
+    try:
+        w3 = AsyncWeb3(AsyncWeb3.AsyncHTTPProvider(Config.POLYGON_RPC_URL))
+        receipt = await w3.eth.get_transaction_receipt(tx_hash)
+        if not receipt:
+            return JSONResponse({"error": "tx not found"}, status_code=404)
+
+        # Convert AttributeDict / bytes into JSON-friendly structures.
+        def _hex_or_val(v):
+            try:
+                if isinstance(v, (bytes, bytearray)):
+                    return "0x" + bytes(v).hex()
+            except Exception:
+                pass
+            return v
+
+        out = {}
+        for k, v in dict(receipt).items():
+            if k == "logs" and isinstance(v, list):
+                logs = []
+                for lg in v:
+                    d = dict(lg)
+                    d["data"] = _hex_or_val(d.get("data"))
+                    d["topics"] = [_hex_or_val(t) for t in (d.get("topics") or [])]
+                    logs.append(d)
+                out["logs"] = logs
+            else:
+                out[k] = _hex_or_val(v)
+        return out
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 @app.get("/api/signal-history")
 async def get_signal_history(limit: int = 240):
     """Return last N structured log entries for Plotly charts."""

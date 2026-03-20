@@ -269,6 +269,9 @@ class Config:
     DAILY_LOSS_LIMIT_USD       = 12.0     # stop if daily realized loss exceeds this
     DAILY_LOSS_LIMIT_PCT       = float(os.getenv("DAILY_LOSS_LIMIT_PCT", "0.15") or 0.15)
 
+    # FOK status endpoints can be eventually consistent; re-check briefly before declaring killed.
+    FOK_RECHECK_DELAY_SEC   = float(os.getenv("FOK_RECHECK_DELAY_SEC", "0.35"))
+
     # Profit-taking dynamic thresholds (posterior-gated, trailing guard suppressed)
     TAKE_PROFIT_STRONG_PCT = 0.20      # 25% for strong signals
     TAKE_PROFIT_STRONG_POSTERIOR = 0.90
