@@ -74,13 +74,14 @@ All 10 findings from the institutional forensic audit are implemented:
 Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior override) and **soft exits** (suppressed by trailing posterior guard while model is still confident).
 
 **Tiered take-profits (percentage from entry):**
-- **TP1 (+5%)** — conviction-gated: skipped when `posterior >= TP1_POSTERIOR_CEIL`.
-- **TP2 (+15%)** — unconditional: sells **50%** regardless of posterior.
+- **TP1 (+5%)** — conviction-gated and **adaptive sizing**: skipped when `posterior >= TP1_POSTERIOR_CEIL`; otherwise sells between **33% and 100%** based on strike proximity, time remaining, and signal degradation vs entry (see `TP1_*` knobs in `config.py`).
+- **TP2 (+15%)** — unconditional: sells **1/3** (when `TP_PARTIAL_ENABLED=true`).
 - **TP3 (+20%)** — unconditional: exits **100%** regardless of posterior.
 
 **Hard circuit breakers — always fire regardless of model state:**
 
 - **TRAIL_PRICE_STOP** — Dynamic trailing stop triggered when trade reaches +5% profit, unconditionally locking in gains if price sheds 10% from the highest recorded peak (MFE tracker). Protects winning trades from falling back down to the -25% hard stop.
+- **TP1_TRAIL_PRICE_STOP** — After **TP1 fill**, enables a **tighter** price-based trailing stop on the remainder (based on the same MFE tracker). This reduces the probability that a partial profit quickly reverses into a large loss on the runner.
 - **STRIKE_DISTANCE_EXCEEDED** — fires when `|btc_price - strike| > multiplier × ATR14` while losing (unrealized < -5%). Multiplier is ATR-adaptive: **0.40×** in high-vol regime (ATR > 200), **0.60×** normal, **0.80×** low-vol. Tighter threshold in fast-moving regimes; wider room in quiet ones. Ref: Avellaneda & Stoikov (2008).
 
 **Soft exits (60s minimum hold gate):**
@@ -343,9 +344,18 @@ curl -X POST https://<your-app>.up.railway.app/api/db/reset
 
 Profit-taking is handled in `exit_policy.py` via tiered take-profits measured as % return from entry price.
 
-- **TP1 (+5%)**: conviction-gated via `TP1_POSTERIOR_CEIL`.
-- **TP2 (+15%)**: unconditional partial — sells **50%**.
+- **TP1 (+5%)**: conviction-gated via `TP1_POSTERIOR_CEIL`, and **adaptive** partial exit sizing:
+  - base/mid/max fractions: `TP1_PARTIAL_BASE`, `TP1_PARTIAL_MID`, `TP1_PARTIAL_MAX` (max may be **1.0** = full exit)
+  - increases TP1 sell fraction when:
+    - near strike: `abs(distance) <= TP1_CLOSE_DIST`
+    - late in window: `minutes_remaining <= TP1_LATE_MIN_REM`
+    - signal degraded vs entry: posterior drop `>= TP1_POST_DROP_THRESH` and/or edge drop `>= TP1_EDGE_DROP_THRESH`
+- **TP2 (+15%)**: unconditional partial — sells **1/3** (when `TP_PARTIAL_ENABLED=true`).
 - **TP3 (+20%)**: unconditional full exit.
+
+After TP1 fill, a tighter trailing stop can protect the runner:
+- `TP1_TRAIL_PRICE_ACTIVATION_PCT` arms the tighter trailing once MFE exceeds this profit.
+- `TP1_TRAIL_PRICE_DISTANCE_PCT` sets how far below peak price to trail.
 
 This design avoids clipping extremely high-conviction trades too early (TP1 gate), while still guaranteeing you lock in profit at TP2 and fully de-risk at TP3.
 
@@ -385,6 +395,15 @@ python main.py --reset
 | `TAKE_PROFIT_PRICE` | 0.99 | Absolute price take-profit (exit when binary >= $0.99) |
 | `STOP_LOSS_DELTA` | 7.0 | Score reversal required for ALPHA_DECAY exit |
 | `SLIPPAGE_BUFFER_PCT` | 0.008 | Execution haircut on sizing (80bps) |
+| `TP1_PARTIAL_BASE` | 0.333 | Adaptive TP1: base sell fraction when conditions are favorable |
+| `TP1_PARTIAL_MID` | 0.666 | Adaptive TP1: sell fraction when near strike / late / degraded |
+| `TP1_PARTIAL_MAX` | 1.0 | Adaptive TP1: max sell fraction (1.0 = full exit at TP1) |
+| `TP1_CLOSE_DIST` | 80.0 | Adaptive TP1: considered "close to strike" when `abs(distance) <= this` |
+| `TP1_LATE_MIN_REM` | 8.0 | Adaptive TP1: considered "late" when minutes remaining <= this |
+| `TP1_POST_DROP_THRESH` | 0.05 | Adaptive TP1: posterior drop from entry (pp) to treat as degraded |
+| `TP1_EDGE_DROP_THRESH` | 0.005 | Adaptive TP1: edge drop from entry to treat as degraded |
+| `TP1_TRAIL_PRICE_ACTIVATION_PCT` | 0.02 | Post-TP1 tighter trailing: arm once MFE exceeds this |
+| `TP1_TRAIL_PRICE_DISTANCE_PCT` | 0.06 | Post-TP1 tighter trailing: trail distance from peak price |
 | `LATE_CONVICTION_POSTERIOR` | 0.80 | Min posterior for late-window sniping |
 | `LATE_CONVICTION_DISTANCE` | 40.0 | Min BTC distance from strike for late sniping |
 | `LATE_CONVICTION_DISTANCE_ATR_MULT` | 0.25 | Dynamic ATR-scaled fallback for late sniping distance |

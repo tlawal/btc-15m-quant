@@ -192,6 +192,24 @@ class Config:
     TP_PARTIAL_ENABLED         = True     # 1/3 partial scaling at TP1/TP2/TP3
     TP1_POSTERIOR_CEIL         = 0.93
 
+    # ── Adaptive TP1 sizing (Option B) ─────────────────────────────────────
+    # TP1 sell fraction increases when (a) near strike, (b) late in window,
+    # or (c) signal degraded vs entry (posterior/edge drop).
+    TP1_PARTIAL_BASE           = 0.333
+    TP1_PARTIAL_MID            = 0.666
+    TP1_PARTIAL_MAX            = 1.0
+    TP1_CLOSE_DIST             = 80.0     # underlying points from strike considered "close"
+    TP1_LATE_MIN_REM           = 8.0      # minutes remaining considered "late" for TP1 sizing
+    TP1_POST_DROP_THRESH       = 0.05     # posterior drop (pp) from entry to flag degradation
+    TP1_EDGE_DROP_THRESH       = 0.005    # edge drop from entry to flag degradation
+    TP1_USE_EDGE_DEGRADATION   = True
+
+    # ── Post-TP1 remainder protection (tighter trailing) ───────────────────
+    # Once TP1 has filled, apply a tighter price-based trailing stop using the
+    # same MFE tracking, to prevent winner→hard-stop reversals on the runner.
+    TP1_TRAIL_PRICE_ACTIVATION_PCT = 0.02
+    TP1_TRAIL_PRICE_DISTANCE_PCT   = 0.06
+
     # ── Volatility-Adapted Stop-Loss (ATR-normalized) ────────────────────
     VOL_STOP_BASE_PCT          = 0.15     # base max drawdown
     VOL_STOP_ATR_BASELINE      = 150.0    # daily average baseline BTC ATR ($)

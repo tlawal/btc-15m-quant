@@ -43,6 +43,7 @@ class HeldPosition:
     size: Optional[float]           = None   # shares
     size_usd: Optional[float]       = None
     entry_signed_score: Optional[float] = None
+    entry_edge: Optional[float]         = None
     condition_id: Optional[str]     = None
     intended_entry_price: Optional[float] = None
     intended_exit_price: Optional[float]  = None

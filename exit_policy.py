@@ -79,6 +79,7 @@ def evaluate_exit(
     minutes_remaining: float,
     signed_score:     float,
     entry_score:      float,
+    entry_edge:       Optional[float] = None,
     distance:         Optional[float],
     cvd_delta:        float = 0.0,
     cvd_velocity:     float = 0.0,
@@ -275,6 +276,21 @@ def evaluate_exit(
             )
             return _exit("TRAIL_PRICE_STOP", use_maker=use_maker)
 
+    # ── Post-TP1 remainder protection: tighter trailing once TP1 has filled ──
+    # After scaling out, protect the runner more aggressively to avoid giving
+    # back a winner into HARD_STOP.
+    _tp1_trail_active = float(getattr(Config, "TP1_TRAIL_PRICE_ACTIVATION_PCT", 0.02) or 0.02)
+    _tp1_trail_dist   = float(getattr(Config, "TP1_TRAIL_PRICE_DISTANCE_PCT", 0.06) or 0.06)
+    if tp1_hit and mfe_pct >= _tp1_trail_active:
+        highest_price = entry_price * (1.0 + mfe_pct)
+        trail_trigger_price = highest_price * (1.0 - _tp1_trail_dist)
+        if current_price <= trail_trigger_price:
+            log.info(
+                "TP1_TRAIL_PRICE_STOP: tp1_hit=1 mfe=%.1f%%, price=%.3f fell %.1f%% from peak=%.3f — protecting remainder",
+                mfe_pct * 100, current_price, _tp1_trail_dist * 100, highest_price
+            )
+            return _exit("TP1_TRAIL_PRICE_STOP", use_maker=use_maker)
+
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 2: TIERED TAKE-PROFITS (Req #1)
     # ══════════════════════════════════════════════════════════════════════════
@@ -303,12 +319,58 @@ def evaluate_exit(
                 return _exit("TP2", partial_pct=0.333, use_maker=use_maker)
             if not tp1_hit and unrealized_pct >= Config.TP1_PCT:
                 if tp1_allowed:
-                    # MAE TP override: after deep drawdown, take full profit instead of partial
-                    _tp1_pct = 1.0 if mae_pct >= Config.MAE_RECOVERY_EXIT_THRESHOLD else 0.333
-                    if _tp1_pct >= 1.0:
+                    # Adaptive TP1 sizing (Option B): increase TP1 sell fraction when
+                    # proximity/time are risky, or signal quality degraded vs entry.
+                    _tp1_frac_base = float(getattr(Config, "TP1_PARTIAL_BASE", 0.333) or 0.333)
+                    _tp1_frac_mid  = float(getattr(Config, "TP1_PARTIAL_MID", 0.666) or 0.666)
+                    _tp1_frac_max  = float(getattr(Config, "TP1_PARTIAL_MAX", 1.0) or 1.0)
+
+                    _close_dist = float(getattr(Config, "TP1_CLOSE_DIST", 80.0) or 80.0)
+                    _late_min_rem = float(getattr(Config, "TP1_LATE_MIN_REM", 8.0) or 8.0)
+                    _edge_drop_thresh = float(getattr(Config, "TP1_EDGE_DROP_THRESH", 0.005) or 0.005)
+                    _post_drop_thresh = float(getattr(Config, "TP1_POST_DROP_THRESH", 0.05) or 0.05)
+
+                    close_to_strike = (distance is not None) and (abs(distance) <= _close_dist)
+                    late_in_window = minutes_remaining <= _late_min_rem
+
+                    entry_post = _entry_post if _entry_post is not None else 0.5
+                    post_drop = (entry_post - float(posterior)) if posterior is not None else 0.0
+                    edge_drop = 0.0
+                    if entry_edge is not None and getattr(Config, "TP1_USE_EDGE_DEGRADATION", True):
+                        # entry_edge is expected edge at entry; current edge is approximated by (posterior - current_price)
+                        # for the held side.
+                        curr_edge = None
+                        if posterior is not None and current_price is not None:
+                            curr_edge = float(posterior) - float(current_price)
+                        if curr_edge is not None:
+                            edge_drop = float(entry_edge) - float(curr_edge)
+
+                    degrade = (post_drop >= _post_drop_thresh) or (edge_drop >= _edge_drop_thresh)
+
+                    # MAE override stays strongest: after deep drawdown, take full profit.
+                    if mae_pct >= Config.MAE_RECOVERY_EXIT_THRESHOLD:
+                        _tp1_pct = 1.0
                         log.info("TP1_MAE_OVERRIDE: mae=%.1f%% — upgrading TP1 to full exit", mae_pct * 100)
                     else:
-                        log.info("TP1: unrealized=%.1f%% >= %.1f%% — selling 1/3", unrealized_pct * 100, Config.TP1_PCT * 100)
+                        if close_to_strike and late_in_window:
+                            _tp1_pct = _tp1_frac_max
+                        elif degrade or close_to_strike or late_in_window:
+                            _tp1_pct = _tp1_frac_mid
+                        else:
+                            _tp1_pct = _tp1_frac_base
+                        _tp1_pct = max(0.0, min(1.0, float(_tp1_pct)))
+
+                        log.info(
+                            "TP1_ADAPTIVE: unrealized=%.1f%%>=%.1f%% sell=%.0f%% close=%s late=%s post_drop=%.1fpp edge_drop=%.1fpp",
+                            unrealized_pct * 100,
+                            Config.TP1_PCT * 100,
+                            _tp1_pct * 100,
+                            str(bool(close_to_strike)),
+                            str(bool(late_in_window)),
+                            post_drop * 100,
+                            edge_drop * 100,
+                        )
+
                     return _exit("TP1", partial_pct=_tp1_pct, use_maker=use_maker)
                 log.info(
                     "TP1_SKIPPED_HIGH_CONVICTION: posterior=%.3f >= %.3f — holding despite unrealized=%.1f%%",
