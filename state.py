@@ -165,6 +165,9 @@ class EngineState:
     one_sided_clear_count: int                = 0      # consecutive cycles with YES≥0.75 or NO≥0.75
     prev_cycle_mid: Optional[float]           = None   # mid price from previous cycle (pump detection)
 
+    # ── Pump cool-off (per market slug) ───────────────────────────────────────
+    pump_cooldown_until_ts: Dict[str, int]    = field(default_factory=dict)
+
     # ── Micro score memory (stale micro fallback) ──────────────────────────────
     last_cvd_score: float                 = 0.0
     last_ofi_score: float                 = 0.0

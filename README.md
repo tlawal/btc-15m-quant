@@ -163,8 +163,12 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Slippage tracking** — actual fill price vs intended price logged per trade; warns if > 1%
 - **Market quality filter** — skips cycle if spreads > 8%, book depth < 20 USDC, or klines > 5 min stale
 
-**Consider (not implemented):**
-- A **FOK fallback ladder** for exits (especially TP tiers and emergency stops): if an initial FOK fails due to partial-fill constraints, automatically retry with a more fillable progression (e.g., cross deeper, slice size, or switch order type) rather than waiting for the next cycle. This should be added carefully to avoid over-trading and nonce/allowance collisions.
+**Implemented:**
+- **Critical-exit FOK fallback ladder** — for critical exits (e.g., hard-stops / strike-distance / close-on-expiry), if the initial FOK sell fails, the bot retries up to 2 additional FOK attempts crossing deeper: `bid`, then `bid - 1 tick`, then `bid - 2 ticks`.
+- **Critical-exit cycle-lag bypass** — critical exits bypass `CYCLE_LAG_SELL_SKIP` so protective exits are not delayed by a slow cycle.
+- **Pump reversion entry pricing** — when `PUMP_DETECTED`, entries are priced below the pumped mid (`mid - PUMP_REVERSION_OFFSET`) rather than at/above the bid.
+- **Pump cool-off** — after `PUMP_DETECTED`, the bot blocks new entries for `PUMP_COOLOFF_SEC` seconds (unless `monster`).
+- **Distance-aware entry filter** — blocks entries when `|Dist|/ATR5m > DIST_ENTRY_MAX_ATR_RATIO` (unless `monster`).
 
 ### Risk Management
 - `MIN_TRADE_USD = 5.75` — minimum notional per trade (Polymarket CLOB minimum ~$5)

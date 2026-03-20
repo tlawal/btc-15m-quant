@@ -2859,14 +2859,29 @@ class Engine:
         # stale concurrent-order collisions (nonce collision → 400 allowance errors).
         _cycle_t0 = getattr(self, "_cycle_t0", None)
         _cycle_lag_limit = getattr(Config, "CYCLE_LAG_SELL_SKIP_SEC", 2.5)
+        _critical_exit_reasons = {
+            "HARD_STOP",
+            "VOL_HARD_STOP",
+            "FORCED_DRAWDOWN",
+            "STRIKE_DISTANCE_EXCEEDED",
+            "FORCED_LATE_EXIT",
+            "FORCED_ADVERSE_OFI",
+            "FORCED_DISTANCE_LATE",
+            "CLOSE_ON_EXPIRY",
+        }
         if _cycle_t0 is not None:
             _cycle_elapsed = time.monotonic() - _cycle_t0
             if _cycle_elapsed > _cycle_lag_limit:
+                if reason not in _critical_exit_reasons:
+                    log.warning(
+                        "CYCLE_LAG_SELL_SKIP: cycle_elapsed=%.2fs > %.1fs — skipping sell to avoid order collision, will retry next cycle",
+                        _cycle_elapsed, _cycle_lag_limit,
+                    )
+                    return False
                 log.warning(
-                    "CYCLE_LAG_SELL_SKIP: cycle_elapsed=%.2fs > %.1fs — skipping sell to avoid order collision, will retry next cycle",
-                    _cycle_elapsed, _cycle_lag_limit,
+                    "CYCLE_LAG_SELL_BYPASS_CRITICAL: reason=%s cycle_elapsed=%.2fs > %.1fs — proceeding with sell",
+                    reason, _cycle_elapsed, _cycle_lag_limit,
                 )
-                return False
 
         # Cancel open limit orders first
         if self.state.last_condition_id:
@@ -2892,6 +2907,26 @@ class Engine:
         if reason in _fok_reasons:
             order_id = await self.pm.limit_sell(pos.token_id, exit_bid, sell_size, order_type="FOK")
             exit_px = exit_bid
+
+            # Critical-exit fallback ladder: if FOK fails to fully fill, cross deeper in controlled steps.
+            _ladder_on = bool(getattr(Config, "CRITICAL_EXIT_FOK_LADDER_ENABLED", True))
+            _ladder_steps = int(getattr(Config, "CRITICAL_EXIT_FOK_LADDER_STEPS", 3) or 3)
+            _ladder_tick = float(getattr(Config, "CRITICAL_EXIT_FOK_LADDER_TICK", 0.01) or 0.01)
+            if _ladder_on and (reason in _critical_exit_reasons) and not order_id:
+                _bid0 = float(exit_bid)
+                for _i in range(1, max(1, _ladder_steps)):
+                    _px = round(max(0.01, min(0.99, _bid0 - (_ladder_tick * _i))), 2)
+                    log.warning(
+                        "CRITICAL_EXIT_FOK_LADDER: reason=%s step=%d/%d retry_px=%.2f size=%.4f",
+                        reason, _i + 1, _ladder_steps, _px, float(sell_size),
+                    )
+                    try:
+                        order_id = await self.pm.limit_sell(pos.token_id, _px, sell_size, order_type="FOK")
+                    except Exception:
+                        order_id = None
+                    if order_id:
+                        exit_px = _px
+                        break
         elif use_maker:
             # Spread-aware: place maker limit at best_bid + tick to capture spread
             maker_px = max(0.01, min(0.99, exit_bid + Config.SPREAD_MAKER_TICK))
@@ -3314,6 +3349,18 @@ class Engine:
             _entry_skipped("neutral_direction")
             return
 
+        # Pump cool-off: after a pump is detected, briefly block new entries on this market.
+        _slug = getattr(market_info, "slug", "") or ""
+        _now_ts = int(time.time())
+        _cooloff_until = None
+        try:
+            _cooloff_until = int((self.state.pump_cooldown_until_ts or {}).get(_slug, 0) or 0)
+        except Exception:
+            _cooloff_until = 0
+        if _slug and _cooloff_until and _now_ts < _cooloff_until and not sig.monster_signal:
+            _entry_skipped("pump_cooloff", cooldown_until=_cooloff_until, now=_now_ts)
+            return
+
         # Determine token + price (Phase 3: Smart Pricing)
         # Pump detection: if price pumped >5% in one cycle, buy below mid
         # (Tetlock 2004: prediction market prices overshoot then mean-revert)
@@ -3328,6 +3375,13 @@ class Engine:
                     "PUMP_DETECTED: mid moved %.1f%% in one cycle (%.3f→%.3f) — using reversion entry",
                     _cycle_pump_pct * 100, self.state.prev_cycle_mid, _current_mid,
                 )
+                # Start pump cool-off window for this market
+                _cool_s = int(getattr(Config, "PUMP_COOLOFF_SEC", 0) or 0)
+                if _cool_s > 0:
+                    try:
+                        self.state.pump_cooldown_until_ts[_slug] = int(time.time()) + _cool_s
+                    except Exception:
+                        pass
         _aggressive = sig.monster_signal
         # Phase 8: Use conservative bidding for non-monster entries (Fix #8)
         _conservative = not _aggressive
@@ -3356,6 +3410,27 @@ class Engine:
                 entry_px = round(min(ob.no_mid + 0.01, 0.99), 2)
             entry_px  = round(entry_px or 0.0, 2)
             posterior = sig.posterior_final_down or 0.5
+
+        # Distance-aware entry: block trend-extension entries when far from strike.
+        # Use ATR5m proxy (sig.atr14) and strike distance from signals (sig.distance).
+        _dist_ratio_max = float(getattr(Config, "DIST_ENTRY_MAX_ATR_RATIO", 0.0) or 0.0)
+        try:
+            _atr = float(getattr(sig, "atr14", 0.0) or 0.0)
+        except Exception:
+            _atr = 0.0
+        try:
+            _dist = float(getattr(sig, "distance", 0.0) or 0.0)
+        except Exception:
+            _dist = 0.0
+        if _dist_ratio_max and _atr > 0 and abs(_dist) / _atr > _dist_ratio_max and not sig.monster_signal:
+            _entry_skipped(
+                "distance_aware_entry_block",
+                dist=_dist,
+                atr=_atr,
+                ratio=abs(_dist) / _atr,
+                max_ratio=_dist_ratio_max,
+            )
+            return
 
         if entry_px <= 0.0 or entry_px >= 1.0:
             _entry_skipped("invalid_entry_price", entry_px=entry_px, side=side_name)

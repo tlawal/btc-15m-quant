@@ -169,6 +169,18 @@ class Config:
     # ── Pump Reversion Entry ────────────────────────────────────────────────
     PUMP_REVERSION_THRESHOLD       = 0.05   # 5% single-cycle pump triggers limit-below entry
     PUMP_REVERSION_OFFSET          = 0.03   # buy $0.03 below mid on pump detection
+    PUMP_COOLOFF_SEC               = 15     # after a pump, block new entries briefly to avoid chasing
+
+    # ── Distance-aware entry (trend-extension filter) ───────────────────────
+    # Block entries when BTC is already far from strike in ATR units; these moves
+    # are prone to mean reversion back toward strike.
+    DIST_ENTRY_MAX_ATR_RATIO       = 0.60
+
+    # ── Critical-exit execution fallback (FOK ladder) ───────────────────────
+    # For critical exits, retry FOK sells crossing deeper if full-fill fails.
+    CRITICAL_EXIT_FOK_LADDER_ENABLED = True
+    CRITICAL_EXIT_FOK_LADDER_STEPS   = 3      # bid, bid-1tick, bid-2tick
+    CRITICAL_EXIT_FOK_LADDER_TICK    = 0.01   # Polymarket min price increment
 
     # ── Reprice safety (stale order replacement guardrails) ─────────────────
     # Prevent stale-entry replacement from "chasing" the market too far from the

@@ -1453,8 +1453,20 @@ class PolymarketClient:
         if pump_detected and mid is not None:
             # Overshoot reversion: buy below mid
             offset = getattr(Config, "PUMP_REVERSION_OFFSET", 0.03)
-            reversion_px = round(max(mid - offset, bid or 0.01), 2)
-            return round(min(reversion_px, 0.98), 2)
+            try:
+                reversion_px = float(mid) - float(offset)
+            except Exception:
+                reversion_px = None
+            if reversion_px is None:
+                return None
+            # Clamp into valid range and keep it below the ask by at least one tick when possible.
+            hi = 0.98
+            if ask is not None:
+                try:
+                    hi = min(hi, float(ask) - float(tick))
+                except Exception:
+                    pass
+            return round(max(0.01, min(reversion_px, hi)), 2)
         if bid is not None and ask is not None:
             if conservative:
                 # Bidding at the current best bid instead of jumping ahead of it.
