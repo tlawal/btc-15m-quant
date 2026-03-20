@@ -9,7 +9,7 @@ class Config:
     # ── Timing ────────────────────────────────────────────────────────────────
     LOOP_INTERVAL_SEC          = 3        # inner loop cadence (3s: faster reversal detection; well within Binance rate limits)
     WINDOW_SEC                 = 900      # 15-minute binary window
-    EARLY_WINDOW_GUARD_MIN     = 7.0      # block non-monster trades in first 4 min (entries only in last 7.5 min)
+    EARLY_WINDOW_GUARD_MIN     = 7.5     # block non-monster trades in first 4 min (entries only in last 7.5 min)
     BELIEF_VOL_LOOKBACK_SEC    = 180      # rolling σ_B window (3 min)
     BELIEF_VOL_DEFAULT         = 0.15
     BELIEF_VOL_MULT_MIN        = 0.70
