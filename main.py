@@ -1945,7 +1945,13 @@ class Engine:
                 if abs(slippage) > 0.01:
                     log.warning(f"HIGH SLIPPAGE: {slippage*100:.2f}% (intended={intended_px:.3f} actual={actual_px:.3f})")
 
-                log.info(f"ENTRY CONFIRMED: {pos.side} @ {actual_px} size={matched or pos.size} slippage={slippage*100:.4f}%")
+                _limit_px = status.get("limit_price") or intended_px
+                _fill_improvement = ((_limit_px - actual_px) / _limit_px * 100) if _limit_px and _limit_px > 0 and _limit_px != actual_px else 0.0
+                log.info(
+                    "ENTRY CONFIRMED: %s @ %.4f size=%s slippage=%.4f%% (limit=%.4f fill_improvement=%.2f%%)",
+                    pos.side, actual_px, matched or pos.size, slippage * 100,
+                    _limit_px, _fill_improvement,
+                )
 
         elif st in ("CANCELED", "EXPIRED"):
             if matched > 0:
@@ -3457,6 +3463,33 @@ class Engine:
         # FOK for monster signals or late-window entries (Budish, Cramton & Shim 2015).
         _use_fok = sig.monster_signal or (min_rem is not None and min_rem < Config.LATE_WINDOW_FOK_MIN_REM)
 
+        # ── FOK escalation cap (audit fix 2026-03-23) ──────────────────────
+        # Track first FOK attempt price per window.  If the market has moved
+        # >3% above the initial attempt, skip entry rather than chase.
+        _FOK_MAX_ESCALATION_PCT = 0.03
+        _cur_window = self.state.last_window_start_sec or 0
+        if _use_fok:
+            if (self.state.first_fok_attempt_window != _cur_window
+                    or self.state.first_fok_attempt_price is None):
+                # First FOK attempt this window — record baseline
+                self.state.first_fok_attempt_price = entry_px
+                self.state.first_fok_attempt_window = _cur_window
+            else:
+                _base = self.state.first_fok_attempt_price
+                if _base and _base > 0 and entry_px > _base * (1 + _FOK_MAX_ESCALATION_PCT):
+                    log.info(
+                        "FOK_ESCALATION_CAP: entry_px=%.3f > base=%.3f × %.0f%% = %.3f — "
+                        "market moved too far from initial target, skipping entry",
+                        entry_px, _base, (1 + _FOK_MAX_ESCALATION_PCT) * 100,
+                        _base * (1 + _FOK_MAX_ESCALATION_PCT),
+                    )
+                    _entry_skipped(
+                        "fok_escalation_cap",
+                        entry_px=entry_px, base_px=_base,
+                        max_pct=_FOK_MAX_ESCALATION_PCT,
+                    )
+                    return
+
         # Block high-price GTC entries (tiny upside, huge downside; any adverse exit tick = full loss)
         _max_gtc_price = getattr(Config, "MAX_ENTRY_PRICE_GTC", 0.92)
         if entry_px > _max_gtc_price and not _use_fok and not sig.monster_signal:
@@ -3571,11 +3604,18 @@ class Engine:
             return
 
         # Phase 4 (P4 Audit Fix): Proactively approve the token for future selling
-        # to prevent trailing stop allowance failures 
+        # to prevent trailing stop allowance failures.
+        # For FOK entries, await blocking — FOK positions may need to exit immediately
+        # and a pending allowance causes the first sell attempt to fail (as seen in
+        # the 2026-03-23 10:27 trade where the first exit at $0.86 failed with
+        # 'not enough balance/allowance' because the allowance task hadn't completed).
         try:
-            asyncio.create_task(self.pm._ensure_conditional_allowance(token_id, shares))
+            if _use_fok:
+                await self.pm._ensure_conditional_allowance(token_id, shares)
+            else:
+                asyncio.create_task(self.pm._ensure_conditional_allowance(token_id, shares))
         except Exception as e:
-            log.debug(f"Failed to spawn proactive allowance task: {e}")
+            log.debug(f"Failed to ensure sell allowance: {e}")
 
         # Phase 3: record as PENDING and track order_id
         self.state.held_position = HeldPosition(

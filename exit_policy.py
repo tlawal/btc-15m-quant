@@ -451,20 +451,56 @@ def evaluate_exit(
         return _exit("NEAR_CERTAIN_LOCK", use_maker=use_maker)
 
     # 3c. Fix #7: Reverse convergence — opposing side near certain means our side is losing.
-    # Exit YES when NO_bid >= 0.85 (market says DOWN is ~85% likely) and vice versa.
-    _rev_conv_threshold = 0.85
-    if held_side == "YES" and no_bid is not None and no_bid >= _rev_conv_threshold:
-        log.warning(
-            "REVERSE_CONVERGENCE: NO bid=%.3f >= %.2f while holding YES, unrealized=%.1f%% — exiting",
-            no_bid, _rev_conv_threshold, unrealized_pct * 100,
-        )
-        return _exit("REVERSE_CONVERGENCE", use_maker=False)
-    if held_side == "NO" and yes_bid is not None and yes_bid >= _rev_conv_threshold:
-        log.warning(
-            "REVERSE_CONVERGENCE: YES bid=%.3f >= %.2f while holding NO, unrealized=%.1f%% — exiting",
-            yes_bid, _rev_conv_threshold, unrealized_pct * 100,
-        )
-        return _exit("REVERSE_CONVERGENCE", use_maker=False)
+    # Exit YES when NO_bid >= threshold (market says DOWN is near-certain) and vice versa.
+    #
+    # Guards added after audit of 2026-03-23 10:27 AM trade:
+    #   - 30s minimum hold: prevents 1-second panic exits on post-entry order book noise
+    #   - Sustained convergence: opposing bid must exceed threshold for ≥3 consecutive cycles
+    #     to filter transient whipsaws near expiry (De Long et al., 1990)
+    #   - Time-adaptive threshold: require higher certainty when >1.5 min remains (0.93 vs 0.85)
+    #     because BTC can cross strike multiple times in final 2-3 minutes of a 15m binary
+    _REV_CONV_MIN_HOLD_SEC = 30
+    _REV_CONV_BASE_THRESHOLD = 0.85
+    _REV_CONV_EARLY_THRESHOLD = 0.93  # when >1.5 min remains, require near-certainty
+    _REV_CONV_EARLY_MIN_REM = 1.5
+    _REV_CONV_SUSTAINED_CYCLES = 3    # must persist for 3 cycles (~15s at 5s cadence)
+
+    _rev_conv_threshold = (
+        _REV_CONV_EARLY_THRESHOLD if minutes_remaining > _REV_CONV_EARLY_MIN_REM
+        else _REV_CONV_BASE_THRESHOLD
+    )
+    _rev_conv_hold_ok = hold_seconds >= _REV_CONV_MIN_HOLD_SEC
+
+    _opp_bid = no_bid if held_side == "YES" else yes_bid
+    _opp_label = "NO" if held_side == "YES" else "YES"
+    if _opp_bid is not None and _opp_bid >= _rev_conv_threshold and _rev_conv_hold_ok:
+        # Track sustained convergence via counter stored on function (cheap stateless approach)
+        _prev = getattr(evaluate_exit, "_rev_conv_count", 0)
+        evaluate_exit._rev_conv_count = _prev + 1  # type: ignore[attr-defined]
+        if evaluate_exit._rev_conv_count >= _REV_CONV_SUSTAINED_CYCLES:
+            log.warning(
+                "REVERSE_CONVERGENCE: %s bid=%.3f >= %.2f (sustained %d cycles) while holding %s, "
+                "unrealized=%.1f%%, hold=%.0fs — exiting",
+                _opp_label, _opp_bid, _rev_conv_threshold,
+                evaluate_exit._rev_conv_count, held_side,
+                unrealized_pct * 100, hold_seconds,
+            )
+            evaluate_exit._rev_conv_count = 0  # type: ignore[attr-defined]
+            return _exit("REVERSE_CONVERGENCE", use_maker=False)
+        else:
+            log.info(
+                "REVERSE_CONVERGENCE: %s bid=%.3f >= %.2f but only %d/%d sustained cycles — holding",
+                _opp_label, _opp_bid, _rev_conv_threshold,
+                evaluate_exit._rev_conv_count, _REV_CONV_SUSTAINED_CYCLES,
+            )
+    else:
+        # Reset sustained counter when condition not met
+        evaluate_exit._rev_conv_count = 0  # type: ignore[attr-defined]
+        if _opp_bid is not None and _opp_bid >= _REV_CONV_BASE_THRESHOLD and not _rev_conv_hold_ok:
+            log.info(
+                "REVERSE_CONVERGENCE: %s bid=%.3f >= %.2f SUPPRESSED — hold=%.0fs < %ds min hold",
+                _opp_label, _opp_bid, _rev_conv_threshold, hold_seconds, _REV_CONV_MIN_HOLD_SEC,
+            )
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 4: STRUCTURAL MODEL REVERSAL (Req #5)

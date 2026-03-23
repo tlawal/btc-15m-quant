@@ -1411,7 +1411,14 @@ class PolymarketClient:
             return None
 
     async def get_order_status(self, order_id: str) -> Optional[dict]:
-        """Check if an order has been filled, partially filled, or is still open."""
+        """Check if an order has been filled, partially filled, or is still open.
+
+        The CLOB API ``price`` field is the **limit** price, not the average fill
+        price.  For FOK/market orders the actual fills may be at better prices.
+        We compute ``avg_fill_price`` from ``maker_amount / size_matched`` (USDC
+        spent ÷ shares received) which reflects the true cost basis.  Callers
+        should prefer ``avg_fill_price`` over ``price`` for PnL calculations.
+        """
         if not self.can_trade:
             self._warn_no_creds_once("get_order_status")
             return None
@@ -1421,11 +1428,25 @@ class PolymarketClient:
                 None, lambda: self.client.get_order(order_id)
             )
             if isinstance(result, dict):
+                limit_price = float(result.get("price", 0) or 0)
+                size_matched = float(result.get("size_matched", 0) or 0)
+                # maker_amount = total USDC spent (for buys) or received (for sells)
+                maker_amount = float(result.get("maker_amount", 0) or 0)
+
+                # Compute true average fill price from cost / shares
+                if maker_amount > 0 and size_matched > 0:
+                    avg_fill_price = maker_amount / size_matched
+                else:
+                    avg_fill_price = limit_price  # fallback to limit if no fill data
+
                 return {
                     "status": result.get("status", "UNKNOWN"),
-                    "size_matched": float(result.get("size_matched", 0) or 0),
+                    "size_matched": size_matched,
                     "original_size": float(result.get("original_size", 0) or result.get("size", 0) or 0),
-                    "price": float(result.get("price", 0) or 0),
+                    "price": avg_fill_price,           # callers expect 'price' = fill price
+                    "limit_price": limit_price,         # preserve original limit for logging
+                    "maker_amount": maker_amount,
+                    "tx_hash": result.get("tx_hash"),
                 }
             return None
         except Exception as e:

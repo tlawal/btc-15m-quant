@@ -168,6 +168,11 @@ class EngineState:
     # ── Pump cool-off (per market slug) ───────────────────────────────────────
     pump_cooldown_until_ts: Dict[str, int]    = field(default_factory=dict)
 
+    # ── FOK escalation cap ────────────────────────────────────────────────────
+    # First FOK attempt price per window — subsequent attempts capped at +3%.
+    first_fok_attempt_price: Optional[float]  = None
+    first_fok_attempt_window: Optional[int]   = None
+
     # ── Micro score memory (stale micro fallback) ──────────────────────────────
     last_cvd_score: float                 = 0.0
     last_ofi_score: float                 = 0.0
