@@ -772,7 +772,7 @@ class Engine:
 
         outside_preferred_hours = not Config.is_preferred_trading_time()
         if outside_preferred_hours:
-            log.info("Outside preferred trading hours: exits/monitoring enabled, entries disabled")
+            log.info("Outside preferred trading hours (7 AM - 4:30 PM ET): exits/monitoring enabled, entries disabled")
 
         # ── Window reset ──────────────────────────────────────────────────────
         if win_rolled:
@@ -3102,7 +3102,7 @@ class Engine:
             )
             return
 
-        # Preferred trading hours: 7 AM - 6 PM ET (11:00-22:00 UTC) on weekdays
+        # Preferred trading hours: 7 AM - 4:30 PM ET on weekdays
         if not Config.is_preferred_trading_time():
             log.info("Outside preferred trading window: skip entries.")
             _entry_skipped("outside_preferred_hours")

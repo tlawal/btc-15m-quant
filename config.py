@@ -335,7 +335,6 @@ class Config:
     MAX_SESSION_DRAWDOWN_PCT = 30.0     # Halt trading at this session drawdown %
     SESSION_DRAWDOWN_RESUME_PCT = 20.0  # Resume trading below this % (hysteresis)
     LATE_WINDOW_KELLY_MULTIPLIER = 1.5  # Increase sizing in late window with high posterior
-    PREFERRED_HOURS_UTC = [(10.0, 24.0), (0.0, 4.0)]  # 6 AM - 12 AM ET on weekdays
     OUTSIDE_HOURS_POSTERIOR_MIN = 0.85  # Higher threshold outside preferred hours
     MAX_EXPOSURE_USD           = 100.0    # total notional across all positions
     KILL_SWITCH                = os.getenv("KILL_SWITCH", "false").lower() == "true"
@@ -384,27 +383,29 @@ class Config:
     LOG_LEVEL                  = os.getenv("LOG_LEVEL", "INFO")
 
     # Preferred trading times
-    PREFERRED_START_HOUR_ET    = 6    # 6 AM ET (market open area)
-    PREFERRED_END_HOUR_ET      = 0    # 12 AM ET (midnight)
+    PREFERRED_START_HOUR_ET    = 7.0   # 7 AM ET
+    PREFERRED_END_HOUR_ET      = 16.5  # 4:30 PM ET
     PREFERRED_WEEKDAYS_ONLY    = True  # Block weekends entirely
 
     # ── Derived helpers ───────────────────────────────────────────────────────
     @classmethod
     def is_preferred_trading_time(cls) -> bool:
-        """Check if current time is within preferred trading hours (6am-6pm ET on weekdays)."""
+        """Check if current time is within preferred trading hours (7:00 AM - 4:30 PM ET on weekdays)."""
         now_et = datetime.now(ZoneInfo("America/New_York"))
-        et_hour = now_et.hour
+        # Get hour as a float (e.g. 16:30 -> 16.5)
+        et_time_float = now_et.hour + now_et.minute / 60.0
         weekday = now_et.weekday() < 5  # Monday-Friday
 
-        start = int(cls.PREFERRED_START_HOUR_ET)
-        end = int(cls.PREFERRED_END_HOUR_ET)
+        start = float(cls.PREFERRED_START_HOUR_ET)
+        end = float(cls.PREFERRED_END_HOUR_ET)
+
         if start == end:
             in_time = True
         elif start < end:
-            in_time = start <= et_hour < end
+            in_time = start <= et_time_float < end
         else:
-            # Wraps past midnight (e.g. 6 -> 0 means 06:00–24:00)
-            in_time = (et_hour >= start) or (et_hour < end)
+            # Wraps past midnight
+            in_time = (et_time_float >= start) or (et_time_float < end)
 
         return in_time and (not cls.PREFERRED_WEEKDAYS_ONLY or weekday)
     @classmethod
