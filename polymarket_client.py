@@ -1394,14 +1394,48 @@ class PolymarketClient:
 
     async def replace_order(self, old_order_id: str, token_id: str, new_price: float, size: float, side: str = "BUY", order_type: str = "GTC") -> Optional[str]:
         """Cancel an existing order and place a new one at the updated price.
-        Returns the new order_id, or None if the replacement failed."""
+        Returns the new order_id, or None if the replacement failed.
+        Returns None (without placing new order) if old order already filled — prevents double-buy."""
         if not self.can_trade:
             self._warn_no_creds_once("replace_order")
             return None
         try:
             await self.cancel_order(old_order_id)
-            # Small delay to let the cancel propagate
+            # Verify cancel succeeded before placing replacement (Audit 2 P5).
+            # Race condition: old order may have filled during cancel propagation.
             await asyncio.sleep(0.5)
+            old_status = await self.get_order_status(old_order_id)
+            if old_status:
+                old_st = old_status.get("status", "")
+                old_matched = float(old_status.get("size_matched", 0) or 0)
+                if old_st == "FILLED" or (old_matched > 0 and old_matched >= size * 0.95):
+                    # Old order already filled — do NOT place a new order (would double the position)
+                    log.warning(
+                        "REPLACE_ORDER_ABORT: old order %s status=%s matched=%.4f — "
+                        "already filled, skipping replacement to prevent double-buy",
+                        old_order_id, old_st, old_matched,
+                    )
+                    return None
+                if old_st in ("OPEN", "LIVE"):
+                    # Cancel didn't propagate — retry once
+                    log.warning("REPLACE_ORDER: old order still %s after cancel — retrying cancel", old_st)
+                    await self.cancel_order(old_order_id)
+                    await asyncio.sleep(0.5)
+                    # Re-check after second cancel attempt
+                    recheck = await self.get_order_status(old_order_id)
+                    if recheck:
+                        rc_st = recheck.get("status", "")
+                        rc_matched = float(recheck.get("size_matched", 0) or 0)
+                        if rc_st == "FILLED" or (rc_matched > 0 and rc_matched >= size * 0.95):
+                            log.warning(
+                                "REPLACE_ORDER_ABORT: old order filled on retry (status=%s matched=%.4f)",
+                                rc_st, rc_matched,
+                            )
+                            return None
+                # Adjust size for partial fills on the old order
+                if old_matched > 0:
+                    size = max(1, size - old_matched)
+                    log.info("REPLACE_ORDER: old order partially filled (%.2f shares) — adjusting new size to %.2f", old_matched, size)
             if side == "BUY":
                 return await self.limit_buy(token_id, new_price, size, order_type=order_type)
             else:

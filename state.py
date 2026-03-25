@@ -55,6 +55,7 @@ class HeldPosition:
     exit_reason: Optional[str]      = None   # for tracking why an exit was placed
     market_expiry: Optional[int]    = None   # expiry ts of the market this position is on
     entry_posterior: Optional[float] = None  # posterior at entry for trailing
+    placement_posterior: Optional[float] = None  # posterior at GTC placement (for staleness gate)
     tx_hash: Optional[str]          = None   # transaction hash for link
     # Controlled repricing / stale-order replacement tracking
     reprice_count: int              = 0
@@ -172,6 +173,9 @@ class EngineState:
     # First FOK attempt price per window — subsequent attempts capped at +3%.
     first_fok_attempt_price: Optional[float]  = None
     first_fok_attempt_window: Optional[int]   = None
+    # Audit 2 P3: FOK failure count per window — after 2 failures, fall back to short-lived GTC
+    fok_failures_this_window: int             = 0
+    fok_failures_window: Optional[int]        = None
 
     # ── Micro score memory (stale micro fallback) ──────────────────────────────
     last_cvd_score: float                 = 0.0

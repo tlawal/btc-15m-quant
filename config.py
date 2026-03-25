@@ -69,7 +69,7 @@ class Config:
     LATE_CONVICTION_EDGE       = 0.006    # relaxed edge requirement (was 0.020 — too high for near-certain late trades)
     LATE_CONVICTION_DISTANCE_ATR_MULT = 0.25 # dynamic ATR-based distance requirement
     LATE_CONVICTION_MIN_SCORE  = 1.25     # strict safety floor to prevent pure noise entries
-    MIN_ENTRY_DISTANCE_ATR_MULT = 0.40    # Fix #2: raised from 0.25 — eliminates near-strike entries where spread consumes edge
+    MIN_ENTRY_DISTANCE_ATR_MULT = 0.50    # Audit 2 P2: raised from 0.40 — blocks noise-range entries (<0.5 ATR from strike)
 
     # ── ADX trend filter (FIX #5) ─────────────────────────────────────────────
     ADX_TREND_THRESHOLD        = 20.0     # below = choppy, block directional entry
@@ -191,6 +191,8 @@ class Config:
     REPRICE_MAX_WORSEN_PCT         = 0.03
     # If new price would worsen beyond threshold, cancel the entry instead of chasing.
     REPRICE_CANCEL_ON_WORSEN       = True
+    # Audit 2 P3: short-lived GTC fallback after FOK failures — hard cap on pending time.
+    GTC_MAX_PENDING_SEC            = 10
 
     # ── Price surge handling (fast-move profit capture) ─────────────────────
     # If price surges quickly in our favor, take profit early (prevents missing

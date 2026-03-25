@@ -1923,6 +1923,12 @@ class Engine:
                 
                 pos.is_pending = False
                 pos.avg_entry_price = actual_px
+                # Audit 2 P4: record fill-time posterior (not stale placement-time)
+                # so MODEL_REVERSAL drop calculations are accurate.
+                if pos.side == "NO" and self.state.last_posterior_down is not None:
+                    pos.entry_posterior = self.state.last_posterior_down
+                elif pos.side == "YES" and self.state.last_posterior_up is not None:
+                    pos.entry_posterior = self.state.last_posterior_up
                 # Update size from actual fill (CLOB may partially fill)
                 if matched > 0 and matched != pos.size:
                     log.info(f"ENTRY SIZE ADJUSTED: requested={pos.size} filled={matched}")
@@ -1952,6 +1958,30 @@ class Engine:
                     pos.side, actual_px, matched or pos.size, slippage * 100,
                     _limit_px, _fill_improvement,
                 )
+
+                # ── Audit 2 P6: Post-fill position size reconciliation ──
+                # Cross-check tracked size vs actual on-chain holdings to catch
+                # double-buys from replace_order() race conditions.
+                try:
+                    _positions = await self.pm.get_positions()
+                    _onchain_size = 0.0
+                    for _p in (_positions or []):
+                        if str((_p or {}).get("asset")) == str(pos.token_id):
+                            _onchain_size += float((_p or {}).get("size", 0))
+                    if _onchain_size > 0 and _onchain_size > (pos.size or 0) * 1.05:
+                        log.critical(
+                            "POSITION_SIZE_MISMATCH: on-chain=%.4f tracked=%.4f — "
+                            "updating to on-chain size (possible double-buy from replace_order race)",
+                            _onchain_size, pos.size,
+                        )
+                        pos.size = _onchain_size
+                        # Update trade record too
+                        for tr in reversed(self.state.trade_history):
+                            if tr.side == pos.side and tr.outcome == "OPEN":
+                                tr.size = _onchain_size
+                                break
+                except Exception as _recon_err:
+                    log.debug(f"Post-fill position reconciliation failed: {_recon_err}")
 
         elif st in ("CANCELED", "EXPIRED"):
             if matched > 0:
@@ -2051,7 +2081,59 @@ class Engine:
                     pos.is_pending = False
                     pos.order_id = None
 
-            elif age_s > 12 and not pos.exit_reason:
+            # ── Posterior-staleness gate for pending GTC entries (Audit 2 P0) ──
+            # Cancel the pending entry if the Bayesian posterior has collapsed
+            # since placement — the signal that justified the entry is dead.
+            elif not pos.exit_reason and pos.placement_posterior is not None:
+                _placement_post = float(pos.placement_posterior)
+                # Use last cycle's posterior for the position's direction
+                if pos.side == "NO":
+                    _current_post = float(self.state.last_posterior_down or 0.5)
+                else:
+                    _current_post = float(self.state.last_posterior_up or 0.5)
+                _post_drop = _placement_post - _current_post
+                _GTC_STALE_POST_DROP = 0.10   # cancel if posterior dropped ≥10pp
+                _GTC_STALE_POST_FLOOR = 0.75  # cancel if posterior below this
+                _direction_flipped = _current_post < 0.50
+
+                if _post_drop >= _GTC_STALE_POST_DROP or _current_post < _GTC_STALE_POST_FLOOR or _direction_flipped:
+                    _reason = (
+                        f"direction_flip(post={_current_post:.3f})" if _direction_flipped
+                        else f"post_floor(post={_current_post:.3f}<{_GTC_STALE_POST_FLOOR})" if _current_post < _GTC_STALE_POST_FLOOR
+                        else f"post_drop({_post_drop*100:.1f}pp>={_GTC_STALE_POST_DROP*100:.0f}pp)"
+                    )
+                    log.warning(
+                        "GTC_STALE_SIGNAL: canceling pending entry — %s "
+                        "(placement=%.3f current=%.3f age=%ds)",
+                        _reason, _placement_post, _current_post, age_s,
+                    )
+                    try:
+                        await self.pm.cancel_order(str(pos.order_id))
+                    except Exception:
+                        pass
+                    if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
+                        self.state.trade_history.pop()
+                    self.state.held_position = HeldPosition()
+                    return
+
+            # ── GTC max pending time (Audit 2 P3) ──
+            # Hard cap on how long a GTC entry can sit unfilled.
+            _gtc_max = int(getattr(Config, "GTC_MAX_PENDING_SEC", 0) or 0)
+            if _gtc_max > 0 and not pos.exit_reason and age_s > _gtc_max:
+                log.warning(
+                    "GTC_MAX_PENDING: entry order pending %ds > %ds cap — canceling",
+                    age_s, _gtc_max,
+                )
+                try:
+                    await self.pm.cancel_order(str(pos.order_id))
+                except Exception:
+                    pass
+                if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
+                    self.state.trade_history.pop()
+                self.state.held_position = HeldPosition()
+                return
+
+            if age_s > 12 and not pos.exit_reason:
                 # Entry repricing safety: avoid repeatedly chasing worse prices.
                 _now = int(time.time())
                 _max_reprices = int(getattr(Config, "REPRICE_MAX_COUNT", 0) or 0)
@@ -2074,6 +2156,28 @@ class Engine:
                 _last_rep = getattr(pos, "last_reprice_ts", None)
                 if _last_rep is not None and _min_interval > 0 and (_now - int(_last_rep)) < _min_interval:
                     return
+
+                # ── Signal-aware reprice gate (Audit 2 P1) ──
+                # Before repricing, check if posterior has collapsed since placement.
+                # If so, cancel instead of chasing a dead signal.
+                if pos.placement_posterior is not None:
+                    _pp = float(pos.placement_posterior)
+                    _cp = float(self.state.last_posterior_down or 0.5) if pos.side == "NO" else float(self.state.last_posterior_up or 0.5)
+                    _pd = _pp - _cp
+                    if _pd >= 0.10 or _cp < 0.75:
+                        log.warning(
+                            "REPRICE_SIGNAL_CANCEL: posterior collapsed since placement "
+                            "(placement=%.3f current=%.3f drop=%.1fpp) — canceling instead of repricing",
+                            _pp, _cp, _pd * 100,
+                        )
+                        try:
+                            await self.pm.cancel_order(str(pos.order_id))
+                        except Exception:
+                            pass
+                        if self.state.trade_history and self.state.trade_history[-1].outcome == "OPEN":
+                            self.state.trade_history.pop()
+                        self.state.held_position = HeldPosition()
+                        return
 
                 log.info(f"STALE ORDER ({age_s}s): replacing {pos.order_id}")
                 # Fetch current orderbook for fresh price
@@ -3459,9 +3563,15 @@ class Engine:
                 _entry_skipped("strict_edge_gate", edge=_target_edge, score=sig.signed_score)
                 return
 
-        # Determine order type early — needed by the GTC price cap check below and by order placement.
-        # FOK for monster signals or late-window entries (Budish, Cramton & Shim 2015).
-        _use_fok = sig.monster_signal or (min_rem is not None and min_rem < Config.LATE_WINDOW_FOK_MIN_REM)
+        # Determine order type: FOK-first strategy (Audit 2 P3).
+        # Default to FOK for all entries — eliminates stale-signal risk.
+        # Fall back to short-lived GTC only after 2 FOK failures in same window.
+        _cur_window = self.state.last_window_start_sec or 0
+        if self.state.fok_failures_window != _cur_window:
+            self.state.fok_failures_this_window = 0
+            self.state.fok_failures_window = _cur_window
+        _fok_failures = self.state.fok_failures_this_window
+        _use_fok = _fok_failures < 2  # FOK first 2 attempts, then GTC fallback
 
         # ── FOK escalation cap (audit fix 2026-03-23) ──────────────────────
         # Track first FOK attempt price per window.  If the market has moved
@@ -3599,8 +3709,14 @@ class Engine:
             order_id = await self.pm.limit_buy(token_id, entry_px, shares, order_type="GTC")
 
         if not order_id:
-            log.error("Entry order failed")
-            _entry_skipped("entry_order_failed", entry_px=entry_px, shares=shares)
+            if _use_fok:
+                self.state.fok_failures_this_window += 1
+                log.info(
+                    "FOK_ENTRY_FAILED: fok_failures=%d/2 this window — %s",
+                    self.state.fok_failures_this_window,
+                    "will try short-lived GTC next" if self.state.fok_failures_this_window >= 2 else "will retry FOK",
+                )
+            _entry_skipped("entry_order_failed", entry_px=entry_px, shares=shares, fok=_use_fok)
             return
 
         # Phase 4 (P4 Audit Fix): Proactively approve the token for future selling
@@ -3628,6 +3744,7 @@ class Engine:
             entry_signed_score = sig.signed_score,
             entry_edge         = getattr(sig, "target_edge", None),
             entry_posterior    = posterior,
+            placement_posterior = posterior,  # Audit 2 P0: track for GTC staleness gate
             condition_id       = market_info.condition_id,
             order_id           = order_id,
             is_pending         = True,
