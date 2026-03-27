@@ -1889,7 +1889,7 @@ class Engine:
                     log.info(f"EXIT CONFIRMED: {pos.side} {pos.exit_reason} pnl={final_pnl*100:.2f}% wavg_exit={wavg_exit:.3f} partials={len(pos.partial_exits)} slippage={slippage*100:.4f}%")
                     # ── Post-trade attribution record ─────────────────────────
                     _tp_hit = "TP3" if pos.tp3_hit else ("TP2" if pos.tp2_hit else ("TP1" if pos.tp1_hit else "none"))
-                    _hold_sec = int(time.time() - (getattr(pos, "entry_ts", None) or time.time()))
+                    _hold_sec = int(time.time() - (getattr(pos, "placed_at_ts", None) or time.time()))
                     _e_feats = getattr(self.state, "entry_features", {}) or {}
                     log.info(
                         "TRADE_ATTRIBUTION: {\"side\": \"%s\", \"entry_px\": %.4f, \"exit_px\": %.4f, "
@@ -3212,6 +3212,27 @@ class Engine:
             )
             return
 
+        # ── Transition-zone gate stability (Audit 3 P2) ────────────────────
+        # For entries just past the early window guard, require N consecutive
+        # all-clear gate cycles to filter transient signal fluctuations.
+        _tz_low = float(getattr(Config, "TRANSITION_ZONE_MIN_REM_LOW", 6.0))
+        _tz_high = float(getattr(Config, "TRANSITION_ZONE_MIN_REM_HIGH", 7.5))
+        _tz_req = int(getattr(Config, "TRANSITION_GATE_STABLE_CYCLES", 2))
+        if (min_rem is not None and _tz_low <= min_rem <= _tz_high
+                and not is_monster):
+            _streak = getattr(self.state, "gate_clear_streak", 0)
+            if _streak < _tz_req:
+                log.info(
+                    "TRANSITION_GATE_UNSTABLE: gate_clear_streak=%d < required=%d "
+                    "(min_rem=%.1f, transition zone %.1f-%.1f) — skipping entry",
+                    _streak, _tz_req, float(min_rem), _tz_low, _tz_high,
+                )
+                _entry_skipped(
+                    "transition_gate_unstable",
+                    clear_streak=_streak, required=_tz_req, min_rem=float(min_rem),
+                )
+                return
+
         # Preferred trading hours: 7 AM - 4:30 PM ET on weekdays
         if not Config.is_preferred_trading_time():
             log.info("Outside preferred trading window: skip entries.")
@@ -3394,6 +3415,13 @@ class Engine:
         if is_monster:
             skip_gates = [g for g in skip_gates if "monster_too_early" not in g]
 
+        # ── Transition-zone gate stability tracking (Audit 3 P2) ────────────
+        # Track consecutive cycles with all gates clear (reset on any gate block).
+        if not skip_gates:
+            self.state.gate_clear_streak = getattr(self.state, "gate_clear_streak", 0) + 1
+        else:
+            self.state.gate_clear_streak = 0
+
         _fatal_gates = {"neutral_direction"}
         _has_fatal = any(any(f in g for f in _fatal_gates) for g in skip_gates)
         _override_active = (
@@ -3573,6 +3601,30 @@ class Engine:
         _fok_failures = self.state.fok_failures_this_window
         _use_fok = _fok_failures < 2  # FOK first 2 attempts, then GTC fallback
 
+        # ── FOK-only policy: no GTC fallback in early window (Audit 3 P4) ──
+        # Academic evidence (Glosten-Milgrom, Griffiths et al., Kyle, Almgren-Chriss):
+        # consecutive FOK failures on thin book = adverse signal (market has low
+        # conviction). Don't chase with GTC — skip entry entirely.
+        # GTC remains available with ≤ FOK_ONLY_MIN_REM_THRESHOLD min remaining
+        # (high-information regime, binary outcome nearly determined).
+        _fok_only_min_rem = float(getattr(Config, "FOK_ONLY_MIN_REM_THRESHOLD", 3.0))
+        _max_fok_early = int(getattr(Config, "MAX_FOK_ATTEMPTS_EARLY", 2))
+        if (not _use_fok
+                and min_rem is not None and min_rem > _fok_only_min_rem
+                and _fok_failures >= _max_fok_early
+                and not sig.monster_signal):
+            log.info(
+                "FOK_EXHAUSTED_NO_GTC: %d FOK failures with min_rem=%.1f > %.1f — "
+                "thin book = adverse signal, skipping entry (no GTC fallback)",
+                _fok_failures, float(min_rem), _fok_only_min_rem,
+            )
+            _entry_skipped(
+                "fok_exhausted_no_gtc",
+                fok_fails=_fok_failures, min_rem=float(min_rem),
+                threshold=_fok_only_min_rem,
+            )
+            return
+
         # ── FOK escalation cap (audit fix 2026-03-23) ──────────────────────
         # Track first FOK attempt price per window.  If the market has moved
         # >3% above the initial attempt, skip entry rather than chase.
@@ -3751,6 +3803,7 @@ class Engine:
             placed_at_ts       = int(time.time()),
             intended_entry_price = entry_px,
             market_expiry      = market_info.expiry_ts,
+            entry_min_rem      = min_rem,
         )
         # Store entry features for matching when closed
         self.state.entry_features = sig.to_feature_dict()

@@ -1863,6 +1863,27 @@ async def signal_accuracy():
     }
 
 
+# ── Audit 3 P5: Optimizer detail for dashboard self-learning widget ──────────
+@app.get("/api/optimizer-detail")
+async def optimizer_detail():
+    if not engine:
+        return JSONResponse({"status": "loading"}, status_code=503)
+    try:
+        detail = engine.optimizer.get_optimizer_detail()
+        # Add optimizer status label
+        closed_count = len([t for t in engine.state.trade_history if t.outcome in ("WIN", "LOSS")])
+        if closed_count < 1:
+            detail["status"] = "AWAITING"
+        elif closed_count < 10:
+            detail["status"] = "COLLECTING"
+        else:
+            detail["status"] = "LEARNING"
+        detail["closed_trades"] = closed_count
+        return detail
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ── Phase 5 #27: Trade P&L attribution by signal ────────────────────────────
 @app.get("/api/attribution")
 async def trade_attribution():

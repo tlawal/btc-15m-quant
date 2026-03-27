@@ -114,6 +114,12 @@ class Config:
     HARD_STOP_PCT              = 0.25    # HARD unconditional circuit breaker — no posterior gate.
                                           # Trailing guard held a -65% loss when posterior lagged price.
                                           # At -25% the position is unrecoverable on a 15m binary; cut always.
+    # Posterior-gated grace period for HARD_STOP (Audit 3 P3):
+    # When posterior still supports the position, delay HARD_STOP to filter microstructure noise.
+    HARD_STOP_GRACE_SEC            = 45    # grace when posterior >= HIGH threshold
+    HARD_STOP_GRACE_POST_HIGH      = 0.70  # posterior above this → full grace
+    HARD_STOP_GRACE_POST_LOW       = 0.50  # posterior between LOW and HIGH → reduced grace
+    HARD_STOP_GRACE_REDUCED_SEC    = 25    # grace when posterior between LOW and HIGH
     FORCED_LATE_EXIT_MIN_REM    = 1.0     # Force exit at <1 min if losing
     FORCED_DISTANCE_EXIT_MIN_REM = 3.0
     FORCED_PROFIT_LOCK_MIN_REM = 1.0
@@ -170,6 +176,21 @@ class Config:
     PUMP_REVERSION_THRESHOLD       = 0.05   # 5% single-cycle pump triggers limit-below entry
     PUMP_REVERSION_OFFSET          = 0.03   # buy $0.03 below mid on pump detection
     PUMP_COOLOFF_SEC               = 15     # after a pump, block new entries briefly to avoid chasing
+
+    # ── Transition-zone gate stability (Audit 3 P2) ─────────────────────────
+    # For entries in the transition zone (first 9 min elapsed = 6.0-7.5 min remaining),
+    # require N consecutive all-clear gate cycles before entering.
+    # Filters entries that only clear on transient signal fluctuations.
+    TRANSITION_ZONE_MIN_REM_LOW    = 6.0    # transition zone lower bound (min remaining)
+    TRANSITION_ZONE_MIN_REM_HIGH   = 7.5    # transition zone upper bound (= early_window_guard)
+    TRANSITION_GATE_STABLE_CYCLES  = 2      # require 2 consecutive all-clear cycles
+
+    # ── FOK-only policy in early window (Audit 3 P4) ─────────────────────
+    # After MAX_FOK_ATTEMPTS_EARLY FOK failures with > FOK_ONLY_MIN_REM_THRESHOLD
+    # min remaining, skip entry entirely — no GTC fallback.
+    # Academic basis: Glosten-Milgrom, Griffiths et al., Kyle, Almgren-Chriss.
+    FOK_ONLY_MIN_REM_THRESHOLD     = 3.0    # GTC fallback only allowed with ≤3 min remaining
+    MAX_FOK_ATTEMPTS_EARLY         = 2      # after 2 FOK failures in early window, skip entry
 
     # ── Distance-aware entry (trend-extension filter) ───────────────────────
     # Block entries when BTC is already far from strike in ATR units; these moves

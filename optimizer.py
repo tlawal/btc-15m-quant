@@ -100,6 +100,10 @@ class SignalOptimizer:
         self._kelly_multiplier = 1.0
         self._pnl_history = []
         self._last_optimize_ts = 0
+        # Audit 3 P5: Dashboard learning visibility
+        self._last_retrain_ts: float = 0.0
+        self._last_precision: float = 0.0
+        self._sharpe: float = 0.0
 
         # Paths
         self.features_path = "/data/trade_features.jsonl" if os.path.exists("/data") else "trade_features.jsonl"
@@ -258,6 +262,8 @@ class SignalOptimizer:
             precision = precision_score(y, preds, zero_division=0)
             
             log.info(f"Retrained optimizer model. Training Precision: {precision:.2f}")
+            self._last_retrain_ts = time.time()
+            self._last_precision = precision
 
             # Adjust thresholds
             if precision < 0.55:
@@ -297,6 +303,7 @@ class SignalOptimizer:
         mean_pnl = sum(pnls) / len(pnls)
         std = pd.Series(pnls).std() or 1e-6
         sharpe = (mean_pnl / std) * (96 ** 0.5) # ~96 cycles per day approx
+        self._sharpe = sharpe
 
         if sharpe < 0:
             self._kelly_multiplier = 0.4
@@ -309,6 +316,62 @@ class SignalOptimizer:
 
     def get_kelly_multiplier(self) -> float:
         return self._kelly_multiplier
+
+    def get_optimizer_detail(self) -> dict:
+        """Return all learning metrics for dashboard visibility (Audit 3 P5)."""
+        # Count features logged
+        _total_features = 0
+        try:
+            if os.path.exists(self.features_path):
+                with open(self.features_path, "r") as f:
+                    _total_features = sum(1 for _ in f)
+        except Exception:
+            pass
+
+        # Signal accuracies with sample counts
+        signal_detail = {}
+        disabled = set(self.get_disabled_signals())
+        cutoff = time.time() - 7 * 86400
+        signal_keys = ["ofi_score", "cvd_score", "flow_accel_score", "imbalance_score", "signed_score"]
+        buckets: dict[str, list[int]] = {k: [] for k in signal_keys}
+        try:
+            if os.path.exists(self.features_path):
+                with open(self.features_path, "r") as f:
+                    for line in f:
+                        try:
+                            entry = json.loads(line)
+                        except Exception:
+                            continue
+                        if entry.get("ts", 0) < cutoff:
+                            continue
+                        outcome = entry.get("outcome", 0)
+                        feats = entry.get("features", {})
+                        for k in signal_keys:
+                            val = feats.get(k)
+                            if val is not None:
+                                correct = 1 if (val > 0 and outcome == 1) or (val < 0 and outcome == 0) else 0
+                                buckets[k].append(correct)
+        except Exception:
+            pass
+        for k in signal_keys:
+            samples = len(buckets[k])
+            acc = round(sum(buckets[k]) / samples, 4) if samples >= 5 else None
+            signal_detail[k] = {
+                "accuracy": acc,
+                "samples": samples,
+                "active": k not in disabled,
+            }
+
+        return {
+            "score_offset": round(self.score_offset, 3),
+            "edge_offset": round(self.edge_offset, 4),
+            "last_retrain_ts": self._last_retrain_ts,
+            "last_precision": round(self._last_precision, 3),
+            "kelly_multiplier": self._kelly_multiplier,
+            "sharpe_ratio": round(self._sharpe, 3),
+            "signals": signal_detail,
+            "total_features_logged": _total_features,
+        }
 
     def get_signal_accuracies(self) -> dict:
         """Read trade_features.jsonl and compute rolling 7-day accuracy per signal."""

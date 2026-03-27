@@ -141,23 +141,50 @@ def evaluate_exit(
     # Kelly (1956) + Thorp (2006): at < 3 min, variance is maximum — don't cut noise as signal.
     # ══════════════════════════════════════════════════════════════════════════
     if unrealized_pct < -Config.HARD_STOP_PCT:
-        _suppress_hard_stop = (
+        # Late-entry suppression (original): for entries with < 3 min remaining,
+        # binary price swings of ±30% are CLOB noise in the first 60s.
+        _suppress_late = (
             entry_min_rem is not None
             and entry_min_rem < 3.0
             and hold_seconds < 60
             and posterior >= 0.65
         )
-        if _suppress_hard_stop:
+        if _suppress_late:
             log.info(
                 "HARD_STOP_LATE_SUPPRESSED: unrealized=%.1f%% but entry_min_rem=%.1f<3.0 hold=%ds<60s posterior=%.3f≥0.65 — noise, not signal",
                 unrealized_pct * 100, entry_min_rem, hold_seconds, posterior,
             )
         else:
-            log.warning(
-                "HARD_STOP: unrealized=%.1f%% breached -%.1f%% — unconditional exit",
-                unrealized_pct * 100, Config.HARD_STOP_PCT * 100,
-            )
-            return _exit("HARD_STOP")
+            # Posterior-gated grace period (Audit 3 P3):
+            # When model still supports position, CLOB drop may be microstructure noise.
+            # posterior >= HIGH → full grace; LOW-HIGH → reduced grace; < LOW → immediate.
+            _grace_high = float(getattr(Config, "HARD_STOP_GRACE_POST_HIGH", 0.70))
+            _grace_low = float(getattr(Config, "HARD_STOP_GRACE_POST_LOW", 0.50))
+            _grace_full = int(getattr(Config, "HARD_STOP_GRACE_SEC", 45))
+            _grace_reduced = int(getattr(Config, "HARD_STOP_GRACE_REDUCED_SEC", 25))
+
+            if posterior >= _grace_high:
+                _grace_sec = _grace_full
+            elif posterior >= _grace_low:
+                _grace_sec = _grace_reduced
+            else:
+                _grace_sec = 0  # model says we're wrong — fire immediately
+
+            if _grace_sec > 0 and hold_seconds < _grace_sec:
+                log.info(
+                    "HARD_STOP_GRACE: unrealized=%.1f%% breached -%.1f%% but posterior=%.3f "
+                    "→ grace=%ds, hold=%ds < grace — suppressing",
+                    unrealized_pct * 100, Config.HARD_STOP_PCT * 100,
+                    posterior, _grace_sec, hold_seconds,
+                )
+            else:
+                log.warning(
+                    "HARD_STOP: unrealized=%.1f%% breached -%.1f%% — %s (posterior=%.3f, hold=%ds)",
+                    unrealized_pct * 100, Config.HARD_STOP_PCT * 100,
+                    "grace expired" if _grace_sec > 0 else "no grace (posterior too low)",
+                    posterior, hold_seconds,
+                )
+                return _exit("HARD_STOP")
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 1: HARD CIRCUIT BREAKERS — bypass ALL posterior gating

@@ -166,6 +166,9 @@ class EngineState:
     one_sided_clear_count: int                = 0      # consecutive cycles with YES≥0.75 or NO≥0.75
     prev_cycle_mid: Optional[float]           = None   # mid price from previous cycle (pump detection)
 
+    # ── Transition-zone gate stability (Audit 3 P2) ─────────────────────────
+    gate_clear_streak: int                    = 0      # consecutive cycles with all gates clear
+
     # ── Pump cool-off (per market slug) ───────────────────────────────────────
     pump_cooldown_until_ts: Dict[str, int]    = field(default_factory=dict)
 

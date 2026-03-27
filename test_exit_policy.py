@@ -424,5 +424,82 @@ class TestExistingExitsPreserved:
         assert "use_maker" in result
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Audit 3: HARD_STOP posterior-gated grace period
+# ──────────────────────────────────────────────────────────────────────────────
+
+class TestHardStopGrace:
+    """Audit 3 P3: HARD_STOP fires with posterior-gated grace period."""
+
+    def test_hard_stop_fires_immediately_low_posterior(self):
+        """Posterior < 0.50 → 0s grace → fires immediately."""
+        result = call_exit(
+            entry_price=0.70, current_price=0.52,  # -25.7%
+            posterior=0.40, entry_posterior=0.70,
+            hold_seconds=5,
+        )
+        assert result is not None
+        assert result["reason"] == "HARD_STOP"
+
+    def test_hard_stop_suppressed_high_posterior_short_hold(self):
+        """Posterior >= 0.70 → 45s grace → suppressed when hold < 45s.
+        Use exactly -26% to cross HARD_STOP threshold but stay in grace."""
+        result = call_exit(
+            entry_price=0.80, current_price=0.59,  # -26.25%
+            posterior=0.75, entry_posterior=0.78,
+            hold_seconds=10,
+            distance=10.0,
+            atr14=300.0,  # high ATR widens FORCED_DRAWDOWN threshold
+        )
+        assert result is None
+
+    def test_hard_stop_fires_high_posterior_grace_expired(self):
+        """Posterior >= 0.70 → 45s grace → fires when hold >= 45s."""
+        result = call_exit(
+            entry_price=0.80, current_price=0.59,  # -26.25%
+            posterior=0.75, entry_posterior=0.78,
+            hold_seconds=50,
+            distance=10.0,
+            atr14=300.0,
+        )
+        assert result is not None
+        assert result["reason"] == "HARD_STOP"
+
+    def test_hard_stop_suppressed_mid_posterior_short_hold(self):
+        """Posterior 0.50-0.70 → 25s grace → suppressed when hold < 25s."""
+        result = call_exit(
+            entry_price=0.80, current_price=0.59,  # -26.25%
+            posterior=0.60, entry_posterior=0.65,
+            hold_seconds=10,
+            distance=10.0,
+            atr14=300.0,
+        )
+        assert result is None
+
+    def test_hard_stop_fires_mid_posterior_grace_expired(self):
+        """Posterior 0.50-0.70 → 25s grace → fires when hold >= 25s."""
+        result = call_exit(
+            entry_price=0.80, current_price=0.59,  # -26.25%
+            posterior=0.60, entry_posterior=0.65,
+            hold_seconds=30,
+            distance=10.0,
+            atr14=300.0,
+        )
+        assert result is not None
+        assert result["reason"] == "HARD_STOP"
+
+    def test_hard_stop_late_entry_still_suppressed(self):
+        """Late-entry suppression (entry_min_rem < 3.0) still works independently."""
+        result = call_exit(
+            entry_price=0.80, current_price=0.59,  # -26.25%
+            posterior=0.70, entry_posterior=0.72,
+            hold_seconds=30,
+            entry_min_rem=2.0,  # late entry
+            distance=10.0,
+            atr14=300.0,
+        )
+        assert result is None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
