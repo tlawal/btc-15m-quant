@@ -290,6 +290,189 @@
             .banner-val { font-size:0.7rem; }
             .banner-label { font-size:0.42rem; }
         }
+
+        /* ── YES/NO Toggle Pills ── */
+        .side-toggle {
+            display:flex; gap:6px; width:100%;
+        }
+        .side-btn {
+            flex:1; height:44px; border-radius:8px;
+            font-family:'JetBrains Mono',monospace;
+            font-size:0.8rem; font-weight:700;
+            letter-spacing:0.04em;
+            border:1.5px solid rgba(255,255,255,0.1);
+            background:rgba(0,0,0,0.3);
+            color:#64748b; cursor:pointer;
+            transition:all 0.15s ease;
+            display:flex; align-items:center; justify-content:center; gap:4px;
+        }
+        .side-btn:hover { border-color:rgba(255,255,255,0.2); color:#94a3b8; }
+        .side-yes.active {
+            background:rgba(34,197,94,0.15);
+            border-color:rgba(34,197,94,0.5);
+            color:#4ade80;
+            box-shadow:0 0 12px rgba(34,197,94,0.15);
+        }
+        .side-no.active {
+            background:rgba(239,68,68,0.15);
+            border-color:rgba(239,68,68,0.5);
+            color:#f87171;
+            box-shadow:0 0 12px rgba(239,68,68,0.15);
+        }
+
+        /* ── Order Book Intelligence Strip ── */
+        .ob-strip {
+            display:flex; justify-content:space-between; align-items:center;
+            background:rgba(0,0,0,0.25); border:1px solid rgba(255,255,255,0.05);
+            border-radius:6px; padding:6px 10px;
+            font-size:0.62rem; color:#64748b;
+        }
+        .ob-strip .ob-label { text-transform:uppercase; letter-spacing:0.06em; margin-right:3px; }
+        .ob-strip .ob-val { font-family:'JetBrains Mono',monospace; font-weight:600; }
+
+        /* ── Price Stepper ── */
+        .stepper-group {
+            display:flex; align-items:stretch; gap:0;
+            border:1px solid rgba(255,255,255,0.1); border-radius:6px;
+            overflow:hidden; background:rgba(0,0,0,0.3);
+        }
+        .stepper-group input {
+            flex:1; border:none; background:transparent;
+            text-align:center; min-width:0;
+            font-family:'JetBrains Mono',monospace;
+            font-size:0.75rem; color:#e2e8f0;
+            padding:6px 4px; outline:none;
+        }
+        .step-btn {
+            width:34px; flex-shrink:0;
+            background:rgba(255,255,255,0.04);
+            border:none; color:#94a3b8;
+            font-size:0.85rem; font-weight:700;
+            cursor:pointer; transition:background 0.15s;
+            display:flex; align-items:center; justify-content:center;
+        }
+        .step-btn:hover { background:rgba(255,255,255,0.1); color:#e2e8f0; }
+        .step-btn:active { background:rgba(255,255,255,0.15); }
+
+        /* ── Quick Size Presets ── */
+        .quick-size { display:flex; gap:4px; margin-top:4px; }
+        .quick-size button {
+            flex:1; height:28px; border-radius:5px;
+            font-family:'JetBrains Mono',monospace;
+            font-size:0.62rem; font-weight:600;
+            background:rgba(255,255,255,0.04);
+            border:1px solid rgba(255,255,255,0.08);
+            color:#94a3b8; cursor:pointer;
+            transition:all 0.12s;
+        }
+        .quick-size button:hover { background:rgba(255,255,255,0.1); color:#e2e8f0; border-color:rgba(255,255,255,0.15); }
+        .quick-size button:active { background:rgba(255,255,255,0.15); }
+
+        /* ── Payoff Display ── */
+        .payoff-row {
+            display:flex; justify-content:space-between; align-items:center;
+            padding:8px 10px; border-radius:6px;
+            background:rgba(0,0,0,0.2); border:1px solid rgba(255,255,255,0.04);
+            font-size:0.68rem;
+        }
+        .payoff-row .payoff-label { color:#64748b; }
+        .payoff-row .payoff-val { font-family:'JetBrains Mono',monospace; font-weight:600; }
+
+        /* ── Entry Panel Glow (when FLAT — CTA emphasis) ── */
+        .entry-glow {
+            border-color:rgba(56,189,248,0.25) !important;
+            box-shadow:0 0 16px rgba(56,189,248,0.06);
+        }
+
+        /* ── Inline Toast ── */
+        .entry-toast {
+            padding:8px 12px; border-radius:6px;
+            font-size:0.68rem; font-weight:500;
+            font-family:'JetBrains Mono',monospace;
+            transition:opacity 0.3s, transform 0.3s;
+            opacity:1; transform:translateY(0);
+        }
+        .entry-toast.hidden { display:none; }
+        .entry-toast.toast-success {
+            background:rgba(34,197,94,0.12); border:1px solid rgba(34,197,94,0.3);
+            color:#4ade80;
+        }
+        .entry-toast.toast-error {
+            background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3);
+            color:#f87171;
+        }
+        .entry-toast.toast-pending {
+            background:rgba(245,158,11,0.12); border:1px solid rgba(245,158,11,0.3);
+            color:#fbbf24;
+        }
+
+        /* ── BUY Button Enhanced ── */
+        .btn-buy-main {
+            width:100%; height:44px; border-radius:8px;
+            font-family:'JetBrains Mono',monospace;
+            font-size:0.85rem; font-weight:700; letter-spacing:0.05em;
+            border:none; cursor:pointer;
+            background:linear-gradient(135deg,rgba(34,197,94,0.25),rgba(34,197,94,0.15));
+            border:1.5px solid rgba(34,197,94,0.4);
+            color:#4ade80;
+            transition:all 0.2s;
+        }
+        .btn-buy-main:hover:not(:disabled) {
+            background:linear-gradient(135deg,rgba(34,197,94,0.35),rgba(34,197,94,0.25));
+            box-shadow:0 0 20px rgba(34,197,94,0.2);
+            transform:translateY(-1px);
+        }
+        .btn-buy-main:active:not(:disabled) { transform:translateY(0); }
+        .btn-buy-main:disabled { opacity:0.4; cursor:not-allowed; }
+
+        /* ── Confirm Overlay ── */
+        .confirm-overlay {
+            position:fixed; inset:0; z-index:9999;
+            background:rgba(0,0,0,0.6); backdrop-filter:blur(4px);
+            display:flex; align-items:center; justify-content:center;
+        }
+        .confirm-card {
+            background:rgba(13,18,28,0.98); border:1px solid rgba(255,255,255,0.12);
+            border-radius:12px; padding:20px 24px; max-width:340px; width:90%;
+            box-shadow:0 24px 64px rgba(0,0,0,0.5);
+        }
+        .confirm-card h3 { font-size:0.85rem; font-weight:700; color:#e2e8f0; margin:0 0 12px; }
+        .confirm-detail { font-size:0.72rem; color:#94a3b8; margin:4px 0; font-family:'JetBrains Mono',monospace; }
+        .confirm-detail span { color:#e2e8f0; font-weight:600; }
+        .confirm-actions { display:flex; gap:8px; margin-top:16px; }
+        .confirm-actions button {
+            flex:1; height:40px; border-radius:8px; font-weight:700; font-size:0.75rem;
+            cursor:pointer; border:1.5px solid; transition:all 0.15s;
+            font-family:'JetBrains Mono',monospace;
+        }
+        .confirm-cancel {
+            background:rgba(255,255,255,0.04); border-color:rgba(255,255,255,0.12) !important;
+            color:#94a3b8;
+        }
+        .confirm-cancel:hover { background:rgba(255,255,255,0.08); }
+        .confirm-go {
+            background:rgba(34,197,94,0.2); border-color:rgba(34,197,94,0.5) !important;
+            color:#4ade80;
+        }
+        .confirm-go:hover { background:rgba(34,197,94,0.3); box-shadow:0 0 12px rgba(34,197,94,0.15); }
+
+        /* Light mode overrides for new components */
+        body.light .side-btn { background:rgba(0,0,0,0.04); border-color:rgba(0,0,0,0.1); color:#64748b; }
+        body.light .side-yes.active { background:rgba(34,197,94,0.1); border-color:rgba(34,197,94,0.4); color:#16a34a; }
+        body.light .side-no.active { background:rgba(239,68,68,0.1); border-color:rgba(239,68,68,0.4); color:#dc2626; }
+        body.light .ob-strip { background:rgba(0,0,0,0.03); border-color:rgba(0,0,0,0.06); }
+        body.light .stepper-group { border-color:rgba(0,0,0,0.1); background:rgba(0,0,0,0.03); }
+        body.light .stepper-group input { color:#0f172a; }
+        body.light .step-btn { background:rgba(0,0,0,0.04); color:#475569; }
+        body.light .step-btn:hover { background:rgba(0,0,0,0.08); color:#0f172a; }
+        body.light .quick-size button { background:rgba(0,0,0,0.04); border-color:rgba(0,0,0,0.08); color:#475569; }
+        body.light .quick-size button:hover { background:rgba(0,0,0,0.08); color:#0f172a; }
+        body.light .payoff-row { background:rgba(0,0,0,0.03); border-color:rgba(0,0,0,0.05); }
+        body.light .btn-buy-main { background:linear-gradient(135deg,rgba(34,197,94,0.15),rgba(34,197,94,0.08)); color:#16a34a; border-color:rgba(34,197,94,0.3); }
+        body.light .confirm-card { background:rgba(255,255,255,0.98); border-color:rgba(0,0,0,0.1); }
+        body.light .confirm-card h3 { color:#0f172a; }
+        body.light .confirm-detail { color:#475569; }
+        body.light .confirm-detail span { color:#0f172a; }
     </style>
 </head>
 <body>
@@ -873,37 +1056,69 @@
                 <!-- Transaction Link -->
                 <div id="pos-tx-link" class="mt-2"></div>
 
-                <!-- Manual Entry Controls -->
-                <div id="manual-entry-panel" class="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3" style="display:none">
-                    <div class="text-[0.6rem] text-slate-400 uppercase tracking-wide mb-2">Manual Entry (Buy)</div>
-                    <div class="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
-                        <div>
-                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Side</div>
-                            <select id="entry-side" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200">
-                                <option value="YES">YES (UP)</option>
-                                <option value="NO">NO (DOWN)</option>
-                            </select>
+                <!-- Manual Entry Controls (Revamped) -->
+                <div id="manual-entry-panel" class="mt-3 rounded-lg border border-white/10 bg-black/20 px-4 py-4 space-y-3" style="display:none">
+                    <div class="flex items-center justify-between">
+                        <div class="text-[0.65rem] text-slate-400 uppercase tracking-wide font-semibold">Manual Entry</div>
+                        <select id="entry-otype" class="rounded bg-black/40 border border-white/10 px-2 py-0.5 text-[0.6rem] mono text-slate-400 cursor-pointer">
+                            <option value="GTC">Limit</option>
+                            <option value="FOK">FOK</option>
+                        </select>
+                    </div>
+
+                    <!-- 1. YES/NO Toggle Pills -->
+                    <input type="hidden" id="entry-side" value="YES">
+                    <div class="side-toggle">
+                        <button class="side-btn side-yes active" data-side="YES" onclick="toggleSide('YES')">YES ↑</button>
+                        <button class="side-btn side-no" data-side="NO" onclick="toggleSide('NO')">NO ↓</button>
+                    </div>
+
+                    <!-- 2. Order Book Intelligence Strip -->
+                    <div class="ob-strip">
+                        <span><span class="ob-label">Bid</span><span class="ob-val up" id="ob-bid">--</span></span>
+                        <span><span class="ob-label">Ask</span><span class="ob-val dn" id="ob-ask">--</span></span>
+                        <span><span class="ob-label">Spread</span><span class="ob-val" id="ob-spread">--</span></span>
+                    </div>
+
+                    <!-- 3. Price with ± Steppers -->
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <div class="text-[0.65rem] text-slate-500 uppercase">Limit Price</div>
+                            <div class="text-[0.58rem] text-slate-600 mono" id="price-hint"></div>
                         </div>
-                        <div>
-                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Price</div>
-                            <input id="entry-price" type="number" step="0.01" min="0.01" max="0.99" placeholder="0.50" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200" />
-                        </div>
-                        <div>
-                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Size (USD)</div>
-                            <input id="entry-size" type="number" step="0.01" min="1" max="100" placeholder="5.75" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200" />
-                        </div>
-                        <div>
-                            <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Order Type</div>
-                            <select id="entry-otype" class="w-full rounded bg-black/40 border border-white/10 px-2 py-1 text-xs mono text-slate-200">
-                                <option value="GTC">GTC</option>
-                                <option value="FOK">FOK</option>
-                            </select>
-                        </div>
-                        <div>
-                            <button id="btn-entry-buy" onclick="manualEntry()" class="w-full rounded bg-green-500/20 border border-green-500/40 text-green-200 text-xs px-2 py-1.5 hover:bg-green-500/30 font-bold">BUY</button>
+                        <div class="stepper-group">
+                            <button class="step-btn" onclick="stepPrice(-0.01)">−</button>
+                            <input id="entry-price" type="number" step="0.01" min="0.01" max="0.99" placeholder="0.50" oninput="updatePayoff()" />
+                            <button class="step-btn" onclick="stepPrice(+0.01)">+</button>
                         </div>
                     </div>
-                    <div id="entry-msg" class="mt-1 text-[0.6rem]"></div>
+
+                    <!-- 4. Size + Quick Presets -->
+                    <div>
+                        <div class="flex items-center justify-between mb-1">
+                            <div class="text-[0.65rem] text-slate-500 uppercase">Size (USD)</div>
+                            <button class="text-[0.58rem] text-sky-500 hover:text-sky-400 mono" style="background:none;border:none;cursor:pointer;padding:0" onclick="setMaxSize()">Max</button>
+                        </div>
+                        <input id="entry-size" type="number" step="0.01" min="1" max="100" placeholder="5.00" oninput="updatePayoff()" class="w-full rounded bg-black/40 border border-white/10 px-3 py-2 text-sm mono text-slate-200" />
+                        <div class="quick-size">
+                            <button onclick="setSize(1)">$1</button>
+                            <button onclick="setSize(3)">$3</button>
+                            <button onclick="setSize(5)">$5</button>
+                            <button onclick="setSize(10)">$10</button>
+                        </div>
+                    </div>
+
+                    <!-- 5. Payoff Display -->
+                    <div class="payoff-row">
+                        <div><span class="payoff-label">Shares </span><span class="payoff-val text-slate-300" id="calc-shares">--</span></div>
+                        <div><span class="payoff-label">To win </span><span class="payoff-val up" id="calc-towin">--</span></div>
+                    </div>
+
+                    <!-- BUY Button -->
+                    <button id="btn-entry-buy" onclick="manualEntry()" class="btn-buy-main">BUY</button>
+
+                    <!-- 7. Inline Toast -->
+                    <div id="entry-toast" class="entry-toast hidden"></div>
                 </div>
 
                 <!-- Manual Exit Controls (exit-only) -->
@@ -1339,6 +1554,7 @@ function updateUI() {
 
         // ── Capital panel ──
         $('wallet-bal').innerText   = d.wallet_usdc != null ? fmtMoney(d.wallet_usdc) : '--';
+        if (d.wallet_usdc != null) _walletBalance = parseFloat(d.wallet_usdc);
         $('unclaimed-win').innerText = d.unclaimed_usdc != null ? '$'+parseFloat(d.unclaimed_usdc).toFixed(2) : '$0.00';
 
         if (perf && Object.keys(perf).length) {
@@ -1470,9 +1686,13 @@ function updateUI() {
         const entryPanel = $('manual-entry-panel');
         if (entryPanel) {
             entryPanel.style.display = '';
-            entryPanel.style.opacity = (posSide === 'FLAT') ? '1' : '0.45';
-            if ($('btn-entry-buy')) $('btn-entry-buy').disabled = (posSide !== 'FLAT');
+            const isFlat = (posSide === 'FLAT');
+            entryPanel.style.opacity = isFlat ? '1' : '0.45';
+            if (isFlat) { entryPanel.classList.add('entry-glow'); } else { entryPanel.classList.remove('entry-glow'); }
+            if ($('btn-entry-buy')) $('btn-entry-buy').disabled = !isFlat;
         }
+        // Update order book strip
+        updateOBStrip(sig);
 
         // Manual exit panel
         const manualPanel = $('manual-exit-panel');
@@ -1827,7 +2047,7 @@ async function postManual(path, body) {
     persistAdminToken();
     const token = getAdminToken();
     if (!token) {
-        alert('Missing Admin Token (set DASHBOARD_ADMIN_TOKEN on server and paste it here).');
+        showEntryToast('Missing Admin Token — set DASHBOARD_ADMIN_TOKEN on the server and paste it in the exit panel.', 'error');
         return;
     }
     try {
@@ -1841,18 +2061,16 @@ async function postManual(path, body) {
         });
         const data = await res.json().catch(()=>({}));
         if (!res.ok) {
-            alert('❌ ' + ((data && data.message) ? data.message : ('Request failed: ' + res.status)));
+            showEntryToast('❌ ' + ((data && data.message) ? data.message : ('Request failed: ' + res.status)), 'error');
             return;
         }
-        // Show success feedback
         if (data && data.message) {
-            alert('✅ ' + data.message);
+            showEntryToast('✅ ' + data.message, 'success');
         }
-        // Refresh UI to reflect changes
         updateUI();
         return data;
     } catch(e) {
-        alert('❌ Network error: ' + e);
+        showEntryToast('❌ Network error: ' + e, 'error');
     }
 }
 
@@ -1975,22 +2193,173 @@ async function condSend() {
     if (out) out.textContent = res ? JSON.stringify(res, null, 2) : 'Error.';
 }
 
+// ── Manual Entry UI Helpers ─────────────────────────────────────────────
+let _lastSignal = {}; // cache signal data for OB strip
+let _walletBalance = 0; // cache wallet balance for MAX
+
+// 1. Toggle YES/NO side
+function toggleSide(side) {
+    const hidden = $('entry-side');
+    if (hidden) hidden.value = side;
+    document.querySelectorAll('.side-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.side === side);
+    });
+    // Auto-populate price from best bid for selected side
+    const sig = _lastSignal;
+    if (sig) {
+        let bid = null;
+        if (side === 'YES') bid = sig.yes_bid;
+        else if (side === 'NO') bid = sig.no_bid;
+        if (bid && bid > 0.01 && bid < 0.99) {
+            $('entry-price').value = bid.toFixed(2);
+            $('price-hint').innerText = 'best bid';
+            $('price-hint').className = 'text-[0.58rem] text-green-500/70 mono';
+        }
+    }
+    updateOBStrip(sig);
+    updatePayoff();
+}
+
+// 2. Price stepper (±0.01)
+function stepPrice(delta) {
+    const inp = $('entry-price');
+    let v = parseFloat(inp.value || '0.50');
+    v = Math.round((v + delta) * 100) / 100;
+    v = Math.max(0.01, Math.min(0.99, v));
+    inp.value = v.toFixed(2);
+    $('price-hint').innerText = '';
+    updatePayoff();
+}
+
+// 3. Quick size preset
+function setSize(val) {
+    $('entry-size').value = val.toFixed(2);
+    updatePayoff();
+}
+
+// 4. Max size (use wallet balance)
+function setMaxSize() {
+    if (_walletBalance > 0) {
+        const max = Math.floor(_walletBalance * 100) / 100;
+        $('entry-size').value = max.toFixed(2);
+    }
+    updatePayoff();
+}
+
+// 5. Payoff calculator
+function updatePayoff() {
+    const px = parseFloat($('entry-price')?.value || '');
+    const sz = parseFloat($('entry-size')?.value || '');
+    const sharesEl = $('calc-shares');
+    const towinEl = $('calc-towin');
+    if (!isFinite(px) || px <= 0 || px >= 1 || !isFinite(sz) || sz < 0.01) {
+        sharesEl.innerText = '--';
+        towinEl.innerText = '--';
+        return;
+    }
+    const shares = Math.floor((sz / px) * 100) / 100;
+    const profit = Math.floor(shares * (1 - px) * 100) / 100;
+    sharesEl.innerText = shares.toFixed(2);
+    towinEl.innerText = '$' + profit.toFixed(2);
+    towinEl.className = 'payoff-val up';
+}
+
+// 6. Update Order Book Strip from signal data
+function updateOBStrip(sig) {
+    if (!sig) return;
+    _lastSignal = sig;
+    const side = ($('entry-side')?.value) || 'YES';
+    let bid, ask;
+    if (side === 'YES') {
+        bid = sig.yes_bid;
+        ask = sig.yes_ask;
+    } else {
+        bid = sig.no_bid;
+        ask = sig.no_ask;
+    }
+    const bidEl = $('ob-bid');
+    const askEl = $('ob-ask');
+    const spreadEl = $('ob-spread');
+    if (bid && bid > 0) {
+        bidEl.innerText = bid.toFixed(2) + '¢';
+        bidEl.className = 'ob-val up';
+    } else {
+        bidEl.innerText = '--';
+        bidEl.className = 'ob-val';
+    }
+    if (ask && ask > 0) {
+        askEl.innerText = ask.toFixed(2) + '¢';
+        askEl.className = 'ob-val dn';
+    } else {
+        askEl.innerText = '--';
+        askEl.className = 'ob-val';
+    }
+    if (bid && ask && bid > 0 && ask > 0) {
+        const sp = ((ask - bid) * 100).toFixed(1);
+        spreadEl.innerText = sp + '¢';
+        spreadEl.className = 'ob-val ' + (parseFloat(sp) <= 3 ? 'up' : parseFloat(sp) >= 6 ? 'dn' : 'text-amber-400');
+    } else {
+        spreadEl.innerText = '--';
+    }
+}
+
+// 7. Inline toast
+let _toastTimer = null;
+function showEntryToast(msg, type) {
+    const el = $('entry-toast');
+    if (!el) { alert(msg); return; }
+    el.textContent = msg;
+    el.className = 'entry-toast toast-' + type;
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => {
+        el.className = 'entry-toast hidden';
+    }, type === 'error' ? 6000 : 4000);
+}
+
+// 8. Styled confirm overlay (replaces browser confirm())
+function showEntryConfirm(side, px, sz, ot, shares, toWin) {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    const sideColor = side === 'YES' ? '#4ade80' : '#f87171';
+    const sideLabel = side === 'YES' ? 'YES ↑' : 'NO ↓';
+    overlay.innerHTML = `
+        <div class="confirm-card">
+            <h3>Confirm Manual BUY</h3>
+            <div class="confirm-detail">Side: <span style="color:${sideColor}">${sideLabel}</span></div>
+            <div class="confirm-detail">Price: <span>$${px.toFixed(2)}</span></div>
+            <div class="confirm-detail">Size: <span>$${sz.toFixed(2)}</span></div>
+            <div class="confirm-detail">Shares: <span>${shares.toFixed(2)}</span></div>
+            <div class="confirm-detail">To Win: <span style="color:#4ade80">$${toWin.toFixed(2)}</span></div>
+            <div class="confirm-detail" style="opacity:0.6">Order Type: <span>${ot}</span></div>
+            <div class="confirm-actions">
+                <button class="confirm-cancel" id="confirm-no">Cancel</button>
+                <button class="confirm-go" id="confirm-yes">Confirm</button>
+            </div>
+        </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#confirm-no').onclick = () => overlay.remove();
+    overlay.querySelector('#confirm-yes').onclick = async () => {
+        overlay.remove();
+        showEntryToast('Placing order...', 'pending');
+        const data = await postManual('/api/manual/entry', { side, price: px, size_usd: sz, order_type: ot });
+        if (data) {
+            showEntryToast('✅ ' + (data.message || 'Order placed'), 'success');
+        }
+    };
+    // Close on overlay click (outside card)
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
 async function manualEntry() {
     const side = ($('entry-side')?.value)||'YES';
     const px = parseFloat(($('entry-price')?.value)||'');
     const sz = parseFloat(($('entry-size')?.value)||'');
     const ot = ($('entry-otype')?.value)||'GTC';
-    const msg = $('entry-msg');
-    if (!isFinite(px) || px <= 0 || px >= 1) { alert('Enter a valid price (0.01–0.99)'); return; }
-    if (!isFinite(sz) || sz < 1) { alert('Enter a valid size (min $1)'); return; }
-    const ok = confirm('Manual BUY: ' + side + ' @ $' + px.toFixed(2) + ' for $' + sz.toFixed(2) + ' (' + ot + '). Confirm?');
-    if (!ok) return;
-    if (msg) { msg.textContent = 'Placing order...'; msg.className = 'mt-1 text-amber-400 text-[0.6rem]'; }
-    const data = await postManual('/api/manual/entry', { side: side, price: px, size_usd: sz, order_type: ot });
-    if (msg && data) {
-        msg.textContent = data.message || 'Order placed';
-        msg.className = 'mt-1 text-green-400 text-[0.6rem]';
-    }
+    if (!isFinite(px) || px <= 0 || px >= 1) { showEntryToast('Enter a valid price (0.01–0.99)', 'error'); return; }
+    if (!isFinite(sz) || sz < 1) { showEntryToast('Enter a valid size (min $1)', 'error'); return; }
+    const shares = Math.floor((sz / px) * 100) / 100;
+    const toWin = Math.floor(shares * (1 - px) * 100) / 100;
+    showEntryConfirm(side, px, sz, ot, shares, toWin);
 }
 
 async function manualExitPlace() {
