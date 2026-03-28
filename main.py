@@ -162,7 +162,7 @@ class Engine:
             pos.order_id = order_id
             pos.is_pending = True
             pos.market_expiry = mkt.expiry_ts
-            await self._save_state()
+            await self.state_mgr.save(self.state)
             return {"status": "ok", "message": f"Manual {side} buy placed: {shares} shares @ ${price:.2f} (order {str(order_id)[:10]}...)"}
         except Exception as e:
             log.error(f"enqueue_manual_entry failed: {e}")

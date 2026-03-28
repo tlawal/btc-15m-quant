@@ -101,8 +101,12 @@ def _json_default(obj):
 class StructuredJSONLogger:
     """Phase 5: Structured JSON logging to persistent storage on /data."""
     def __init__(self, log_dir="/data"):
-        self.log_dir = log_dir
-        os.makedirs(self.log_dir, exist_ok=True)
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+            self.log_dir = log_dir
+        except OSError:
+            self.log_dir = "./data"
+            os.makedirs(self.log_dir, exist_ok=True)
         self.filepath = os.path.join(self.log_dir, "structured_logs.json")
 
     def _rotate_if_needed(self, max_bytes: int = 10 * 1024 * 1024):
