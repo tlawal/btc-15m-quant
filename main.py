@@ -2294,6 +2294,12 @@ class Engine:
             hb["signal"]["monster_signal"] = sig.monster_signal
             hb["signal"]["posterior_final_up"] = sig.posterior_final_up
             hb["signal"]["posterior_final_down"] = sig.posterior_final_down
+            hb["signal"]["yes_bid"] = getattr(sig, "yes_bid", None)
+            hb["signal"]["yes_ask"] = getattr(sig, "yes_ask", None)
+            hb["signal"]["no_bid"] = getattr(sig, "no_bid", None)
+            hb["signal"]["no_ask"] = getattr(sig, "no_ask", None)
+            hb["signal"]["yes_mid"] = getattr(sig, "yes_mid", None)
+            hb["signal"]["no_mid"] = getattr(sig, "no_mid", None)
 
         # ── Real performance metrics from trade history ──────────────
         trades = self.state.trade_history

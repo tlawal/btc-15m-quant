@@ -1057,14 +1057,18 @@
                 <div id="pos-tx-link" class="mt-2"></div>
 
                 <!-- Manual Entry Controls (Revamped) -->
-                <div id="manual-entry-panel" class="mt-3 rounded-lg border border-white/10 bg-black/20 px-4 py-4 space-y-3" style="display:none">
-                    <div class="flex items-center justify-between">
+                <details id="manual-entry-panel" class="mt-3 group" style="display:none" open>
+                    <summary class="cursor-pointer select-none rounded-lg border border-white/10 bg-black/20 px-3 py-2 hover:bg-black/30 transition-colors list-none flex justify-between items-center group-open:rounded-b-none group-open:border-b-transparent">
                         <div class="text-[0.65rem] text-slate-400 uppercase tracking-wide font-semibold">Manual Entry</div>
-                        <select id="entry-otype" class="rounded bg-black/40 border border-white/10 px-2 py-0.5 text-[0.6rem] mono text-slate-400 cursor-pointer">
-                            <option value="GTC">Limit</option>
-                            <option value="FOK">FOK</option>
-                        </select>
-                    </div>
+                        <div class="flex items-center gap-2">
+                            <select id="entry-otype" class="rounded bg-black/40 border border-white/10 px-2 py-0.5 text-[0.6rem] mono text-slate-400 cursor-pointer pointer-events-auto" onclick="event.stopPropagation()">
+                                <option value="GTC">Limit</option>
+                                <option value="FOK">FOK</option>
+                            </select>
+                            <span class="text-slate-600 transition-transform duration-200 group-open:rotate-180">▼</span>
+                        </div>
+                    </summary>
+                    <div class="rounded-b-lg border border-white/10 border-t-0 bg-black/20 px-4 py-4 space-y-3">
 
                     <!-- 1. YES/NO Toggle Pills -->
                     <input type="hidden" id="entry-side" value="YES">
@@ -1099,7 +1103,7 @@
                             <div class="text-[0.65rem] text-slate-500 uppercase">Size (USD)</div>
                             <button class="text-[0.58rem] text-sky-500 hover:text-sky-400 mono" style="background:none;border:none;cursor:pointer;padding:0" onclick="setMaxSize()">Max</button>
                         </div>
-                        <input id="entry-size" type="number" step="0.01" min="1" max="100" placeholder="5.00" oninput="updatePayoff()" class="w-full rounded bg-black/40 border border-white/10 px-3 py-2 text-sm mono text-slate-200" />
+                        <input id="entry-size" type="number" step="1" min="1" max="100" placeholder="5" oninput="updatePayoff()" class="w-full rounded bg-black/40 border border-white/10 px-3 py-2 text-sm mono text-slate-200" />
                         <div class="quick-size">
                             <button onclick="setSize(1)">$1</button>
                             <button onclick="setSize(3)">$3</button>
@@ -1119,11 +1123,16 @@
 
                     <!-- 7. Inline Toast -->
                     <div id="entry-toast" class="entry-toast hidden"></div>
-                </div>
+                    </div>
+                </details>
 
                 <!-- Manual Exit Controls (exit-only) -->
-                <div id="manual-exit-panel" class="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3" style="display:none">
-                    <div class="text-[0.6rem] text-slate-400 uppercase tracking-wide mb-2">Manual Exit (Exit-Only)</div>
+                <details id="manual-exit-panel" class="mt-3 group" style="display:none">
+                    <summary class="cursor-pointer select-none rounded-lg border border-white/10 bg-black/20 px-3 py-2 hover:bg-black/30 transition-colors list-none flex justify-between items-center group-open:rounded-b-none group-open:border-b-transparent">
+                        <div class="text-[0.6rem] text-slate-400 uppercase tracking-wide font-semibold">Manual Exit (Exit-Only)</div>
+                        <span class="text-slate-600 transition-transform duration-200 group-open:rotate-180">▼</span>
+                    </summary>
+                    <div class="rounded-b-lg border border-white/10 border-t-0 bg-black/20 px-3 py-3">
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-2 items-end">
                         <div class="md:col-span-2">
                             <div class="text-[0.55rem] text-slate-500 uppercase mb-1">Admin Token</div>
@@ -1159,7 +1168,8 @@
                     <div id="manual-exit-hint" class="mt-2 text-[0.6rem] text-slate-500">
                         Open a position to enable manual exit controls.
                     </div>
-                </div>
+                    </div>
+                </details>
 
                 <!-- Sweep Resolved → Proxy (admin) -->
                 <div id="sweep-dust-panel" class="mt-3 rounded-lg border border-white/10 bg-black/20 px-3 py-3">
@@ -2233,15 +2243,14 @@ function stepPrice(delta) {
 
 // 3. Quick size preset
 function setSize(val) {
-    $('entry-size').value = val.toFixed(2);
+    $('entry-size').value = Math.floor(val);
     updatePayoff();
 }
 
 // 4. Max size (use wallet balance)
 function setMaxSize() {
     if (_walletBalance > 0) {
-        const max = Math.floor(_walletBalance * 100) / 100;
-        $('entry-size').value = max.toFixed(2);
+        $('entry-size').value = Math.floor(_walletBalance);
     }
     updatePayoff();
 }
@@ -2353,10 +2362,11 @@ function showEntryConfirm(side, px, sz, ot, shares, toWin) {
 async function manualEntry() {
     const side = ($('entry-side')?.value)||'YES';
     const px = parseFloat(($('entry-price')?.value)||'');
-    const sz = parseFloat(($('entry-size')?.value)||'');
+    let sz = parseFloat(($('entry-size')?.value)||'');
     const ot = ($('entry-otype')?.value)||'GTC';
     if (!isFinite(px) || px <= 0 || px >= 1) { showEntryToast('Enter a valid price (0.01–0.99)', 'error'); return; }
     if (!isFinite(sz) || sz < 1) { showEntryToast('Enter a valid size (min $1)', 'error'); return; }
+    sz = Math.floor(sz);
     const shares = Math.floor((sz / px) * 100) / 100;
     const toWin = Math.floor(shares * (1 - px) * 100) / 100;
     showEntryConfirm(side, px, sz, ot, shares, toWin);
