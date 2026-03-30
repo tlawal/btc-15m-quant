@@ -2585,21 +2585,34 @@ class Engine:
                             profit_usd         = _remaining_size * (1.0 - ep)  # only count unsold shares
                             tr.exit_price = round(_blended_exit_px, 4)
                             tr.pnl = _blended_pnl
-                            tr.outcome = "WIN"
-                            tr.exit_reason = "AUTO_SETTLE_WIN"
                             tr.partial_exits = list(pos.partial_exits)
-                            self.state.total_wins += 1
-                            self.state.loss_streak = 0
-                            self.state.total_pnl_usd += profit_usd
-                            log.info(f"AUTO_SETTLE_WIN: {pos.side} entry={ep:.3f} blended_exit={tr.exit_price:.3f} pnl={tr.pnl*100:.1f}% remaining={_remaining_size:.4f} settle_px={settle_px}")
+                            # Audit Change 4: If blended PnL < 0 despite winning direction,
+                            # label as LOSS — panic-selling a winner is still a loss.
+                            if _blended_pnl < 0:
+                                tr.outcome = "LOSS"
+                                tr.exit_reason = "AUTO_SETTLE_LOSS"
+                                loss_usd = abs(_blended_pnl * _total_cost)
+                                self.state.total_losses += 1
+                                self.state.loss_streak += 1
+                                self.state.total_pnl_usd -= loss_usd
+                                log.warning(f"AUTO_SETTLE_LOSS (won but PnL negative): {pos.side} entry={ep:.3f} blended_exit={tr.exit_price:.3f} pnl={tr.pnl*100:.1f}% — panic sell damage")
+                            else:
+                                tr.outcome = "WIN"
+                                tr.exit_reason = "AUTO_SETTLE_WIN"
+                                self.state.total_wins += 1
+                                self.state.loss_streak = 0
+                                self.state.total_pnl_usd += profit_usd
+                                log.info(f"AUTO_SETTLE_WIN: {pos.side} entry={ep:.3f} blended_exit={tr.exit_price:.3f} pnl={tr.pnl*100:.1f}% remaining={_remaining_size:.4f} settle_px={settle_px}")
+                            _rec_pnl = profit_usd if _blended_pnl >= 0 else -abs(_blended_pnl * _total_cost)
+                            _rec_win = 1 if _blended_pnl >= 0 else 0
                             await self.state_mgr.record_closed_trade(
                                 ts=int(time.time()),
                                 market_slug=self.state.last_market_slug or "unknown",
                                 size=tr.size or pos.size or 0,
                                 entry_price=ep,
                                 exit_price=round(_blended_exit_px, 4),
-                                pnl_usd=profit_usd,
-                                outcome_win=1,
+                                pnl_usd=_rec_pnl,
+                                outcome_win=_rec_win,
                                 regime=getattr(self.state, "entry_regime", None),
                             )
                         else:
@@ -3020,14 +3033,27 @@ class Engine:
                         "NEAR_CERTAIN_LOCK", "PROB_CONVERGENCE",
                         "REVERSE_CONVERGENCE", "STRIKE_DISTANCE_EXCEEDED",
                         "CLOSE_ON_EXPIRY", "PRICE_SURGE_TAKE_PROFIT")
-        if reason in _fok_reasons:
+
+        # Audit Change 5: Pre-exit depth check — if bid depth < sell_size, skip FOK
+        # and go straight to chunked 1-share approach (avoids predictable FOK failure).
+        _skip_fok_thin_book = False
+        _ob_bid_depth = ob.total_bid_size if ob else 0.0
+        if reason in _fok_reasons and _ob_bid_depth > 0 and _ob_bid_depth < sell_size:
+            log.warning(
+                "PRE_EXIT_DEPTH_CHECK: bid_depth=%.1f < sell_size=%.0f — skipping FOK, will use chunked approach",
+                _ob_bid_depth, sell_size,
+            )
+            _skip_fok_thin_book = True
+
+        _ladder_on = bool(getattr(Config, "CRITICAL_EXIT_FOK_LADDER_ENABLED", True))
+        _ladder_steps = int(getattr(Config, "CRITICAL_EXIT_FOK_LADDER_STEPS", 3) or 3)
+        _ladder_tick = float(getattr(Config, "CRITICAL_EXIT_FOK_LADDER_TICK", 0.01) or 0.01)
+
+        if reason in _fok_reasons and not _skip_fok_thin_book:
             order_id = await self.pm.limit_sell(pos.token_id, exit_bid, sell_size, order_type="FOK")
             exit_px = exit_bid
 
             # Critical-exit fallback ladder: if FOK fails to fully fill, cross deeper in controlled steps.
-            _ladder_on = bool(getattr(Config, "CRITICAL_EXIT_FOK_LADDER_ENABLED", True))
-            _ladder_steps = int(getattr(Config, "CRITICAL_EXIT_FOK_LADDER_STEPS", 3) or 3)
-            _ladder_tick = float(getattr(Config, "CRITICAL_EXIT_FOK_LADDER_TICK", 0.01) or 0.01)
             if _ladder_on and (reason in _critical_exit_reasons) and not order_id:
                 _bid0 = float(exit_bid)
                 for _i in range(1, max(1, _ladder_steps)):
@@ -3052,6 +3078,35 @@ class Engine:
         else:
             order_id = await self.pm.limit_sell(pos.token_id, exit_px_gtc, sell_size, order_type="GTC")
             exit_px = exit_px_gtc
+
+        # Audit Change 3: IOC chunked fallback — after FOK ladder fails, split into 1-share chunks
+        # Polymarket maps IOC→FOK, but smaller sizes fill easier in thin books near expiry.
+        if not order_id and reason in _fok_reasons and sell_size > 1:
+            _chunk_size = 1.0
+            _filled_chunks = 0
+            _chunk_px = round(max(0.01, min(0.99, exit_bid - (_ladder_tick * _ladder_steps if _ladder_on else 0.02))), 2)
+            _chunks_to_try = int(sell_size)
+            log.warning(
+                "IOC_CHUNKED_FALLBACK: FOK failed for %.0f shares — trying %d × 1-share FOK @ %.2f",
+                sell_size, _chunks_to_try, _chunk_px,
+            )
+            for _ci in range(_chunks_to_try):
+                try:
+                    _chunk_oid = await self.pm.limit_sell(pos.token_id, _chunk_px, _chunk_size, order_type="FOK")
+                    if _chunk_oid:
+                        _filled_chunks += 1
+                except Exception:
+                    pass
+            if _filled_chunks > 0:
+                log.info(f"IOC_CHUNKED_RESULT: filled {_filled_chunks}/{_chunks_to_try} chunks @ {_chunk_px}")
+                if _filled_chunks >= _chunks_to_try:
+                    order_id = "chunked_fill_complete"
+                    sell_size = float(_filled_chunks)
+                    exit_px = _chunk_px
+                else:
+                    # Partial chunk fill — update sell_size to remaining
+                    sell_size = float(_chunks_to_try - _filled_chunks)
+                    log.warning(f"IOC_CHUNKED_PARTIAL: {_filled_chunks} filled, {sell_size:.0f} remaining")
 
         if not order_id:
             pos.consecutive_sell_failures += 1

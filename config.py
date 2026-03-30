@@ -69,6 +69,7 @@ class Config:
     LATE_CONVICTION_EDGE       = 0.006    # relaxed edge requirement (was 0.020 — too high for near-certain late trades)
     LATE_CONVICTION_DISTANCE_ATR_MULT = 0.25 # dynamic ATR-based distance requirement
     LATE_CONVICTION_MIN_SCORE  = 1.25     # strict safety floor to prevent pure noise entries
+    LATE_CONVICTION_MAX_ENTRY_PRICE = 0.95  # Audit 4: cap entry price — paying >$0.95 gives <5% upside vs catastrophic slippage risk near expiry
     MIN_ENTRY_DISTANCE_ATR_MULT = 0.50    # Audit 2 P2: raised from 0.40 — blocks noise-range entries (<0.5 ATR from strike)
 
     # ── ADX trend filter (FIX #5) ─────────────────────────────────────────────
@@ -140,7 +141,7 @@ class Config:
     # ── Late-Window Entry Hardening ─────────────────────────────────────────
     LATE_WINDOW_FOK_MIN_REM        = 4.0    # Force FOK (not GTC) for entries < 4 min remaining
     ONE_SIDED_CONFIRM_CYCLES       = 2      # Require 2+ consecutive cycles of one-sided clearance
-    MIN_HOLD_BEFORE_DRAWDOWN_SEC   = 60     # Don't fire FORCED_DRAWDOWN / VOL_HARD_STOP / STRIKE_DISTANCE in first 60s
+    MIN_HOLD_BEFORE_DRAWDOWN_SEC   = 30     # Base grace — scaled down near expiry (Audit Change 2)
     SCORE_STABILITY_MIN_CYCLES     = 3      # Require score above threshold for 3+ consecutive cycles (IC stability gate)
     MAX_ENTRY_PRICE_GTC            = 0.92   # Block GTC entries above this price (tiny upside, huge downside risk)
     STREAK_POSTERIOR_MIN_BOOST     = 0.05   # Extra posterior required after 2+ consecutive losses

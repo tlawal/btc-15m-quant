@@ -1174,6 +1174,18 @@ def compute_signals(
             f"→ score_req relaxed to 0.5, edge relaxed to {Config.LATE_CONVICTION_EDGE:.3f}"
         )
 
+    # Late-conviction entry price cap — block entries above $0.95 near expiry.
+    # Paying >$0.95 for a binary with <3min left gives <5% upside but catastrophic
+    # slippage risk if CLOB liquidity evaporates (Audit 4: 7:28 AM trade).
+    if is_late_conviction:
+        _max_late_px = float(getattr(Config, "LATE_CONVICTION_MAX_ENTRY_PRICE", 0.95))
+        _entry_px = yes_ask if res.direction == "UP" else no_ask
+        if _entry_px is not None and _entry_px > _max_late_px:
+            gates.append(f"late_entry_price_too_high={_entry_px:.2f}_max={_max_late_px:.2f}")
+            log.info(
+                f"LATE_CONVICTION_PRICE_CAP: {res.direction} ask={_entry_px:.2f} > cap={_max_late_px:.2f} — blocking entry"
+            )
+
     # Score gate — relaxed for late-conviction
     if is_late_conviction:
         late_effective_score = res.abs_score + late_micro_boost

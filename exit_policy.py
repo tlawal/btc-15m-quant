@@ -199,7 +199,8 @@ def evaluate_exit(
         Config.VOL_STOP_BASE_PCT * max(1.0, atr_ratio),
         Config.VOL_STOP_MAX_PCT,
     )
-    _min_hold = getattr(Config, "MIN_HOLD_BEFORE_DRAWDOWN_SEC", 60)
+    _base_hold = getattr(Config, "MIN_HOLD_BEFORE_DRAWDOWN_SEC", 30)
+    _min_hold = min(_base_hold, max(5, minutes_remaining * 15))  # Scale with time: 2min→30s, 1min→15s, 0.5min→7s
     if unrealized_pct < -vol_stop_pct:
         if hold_seconds < _min_hold:
             log.info(
