@@ -594,13 +594,14 @@ def evaluate_exit(
                 )
             else:
                 return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
-        # 0.95+ conviction exemption near expiry with large distance
-        elif (posterior is not None and posterior > 0.95 and minutes_remaining < 2.0
-                and distance is not None and abs(distance) > 50.0):
+        # 0.95+ conviction exemption near expiry — hold to settlement when model
+        # is near-certain.  Audit finding: FORCED_DRAWDOWN panic-sold a winning
+        # position at $0.66 that settled at $1.00.  (Trade #1, Mar 30 2026)
+        elif (posterior is not None and posterior > 0.95 and minutes_remaining < 3.0):
             log.info(
-                "DRAWDOWN_EXEMPT: posterior=%.3f > 0.95, distance=%.1f > 50, rem=%.1f "
-                "— ignoring drawdown exit near expiry",
-                posterior, abs(distance), minutes_remaining,
+                "DRAWDOWN_EXEMPT: posterior=%.3f > 0.95, rem=%.1f < 3.0 "
+                "— suppressing drawdown near expiry (hold to settlement)",
+                posterior, minutes_remaining,
             )
         else:
             if unrealized_pct < -0.20:

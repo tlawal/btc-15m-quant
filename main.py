@@ -433,6 +433,17 @@ class Engine:
         
         for tr in reversed(self.state.trade_history):
             if tr.outcome in ("OPEN", "LOSS"):
+                # Fix: skip trades already closed by a sell order.
+                # If exit_price is set and exit_reason exists, this trade was already
+                # closed via market/limit sell and its PnL was already recorded.
+                # Overwriting exit_price to $1.00 would double-count the profit.
+                if (tr.exit_price is not None and tr.exit_price > 0
+                        and tr.exit_reason is not None and tr.exit_reason != ""):
+                    log.info(
+                        "REDEMPTION_SKIP: trade already closed via %s at %.3f — not overwriting with $1.00",
+                        tr.exit_reason, tr.exit_price,
+                    )
+                    continue
                 # Always force entry price to a sane value if zero
                 ep = tr.entry_price if tr.entry_price and tr.entry_price > 0 else 0.5
                 tr.exit_price = 1.0  # Polymarket winning shares are always redeemed at $1
@@ -3507,10 +3518,26 @@ class Engine:
                 return
 
         if _override_active:
-            log.info(
-                f"LOW_BAL_NEAR_CERTAIN_OVERRIDE: posterior={_best_posterior:.4f} "
-                f"edge={sig.target_edge:.4f} gates_bypassed={sig.skip_gates}"
-            )
+            # Audit fix: cap override at entry price $0.94.  Entering above this
+            # leaves too little edge to survive CLOB microstructure noise.
+            # (Trade #1, Mar 30 2026: entered @ $0.96, panic-sold @ $0.66 → -31%)
+            _override_max_entry = 0.94
+            _approx_entry = None
+            if sig.direction == "UP" and ob.yes_ask is not None:
+                _approx_entry = ob.yes_ask
+            elif sig.direction == "DOWN" and ob.no_ask is not None:
+                _approx_entry = ob.no_ask
+            if _approx_entry is not None and _approx_entry > _override_max_entry:
+                log.info(
+                    "LOW_BAL_OVERRIDE_BLOCKED: approx_entry=%.3f > %.2f cap — disabling override",
+                    _approx_entry, _override_max_entry,
+                )
+                _override_active = False
+            else:
+                log.info(
+                    f"LOW_BAL_NEAR_CERTAIN_OVERRIDE: posterior={_best_posterior:.4f} "
+                    f"edge={sig.target_edge:.4f} gates_bypassed={sig.skip_gates}"
+                )
         elif skip_gates:
             primary_gate = skip_gates[0] if skip_gates else "unknown"
             log.info(f"Entry blocked by gate: {primary_gate} (all={skip_gates})")
