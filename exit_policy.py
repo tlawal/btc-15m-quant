@@ -108,6 +108,11 @@ def evaluate_exit(
     # ── Fix #7: opposing side prices for reverse convergence ──
     no_bid:           Optional[float] = None,
     yes_bid:          Optional[float] = None,
+    # ── Audit Apr 1: BTC cross-validation & MM bait detection ──
+    btc_price:        Optional[float] = None,
+    strike_price:     Optional[float] = None,
+    held_direction:   Optional[str]   = None,  # "UP" or "DOWN"
+    entry_spread_pct: Optional[float] = None,  # spread % at entry time
 ) -> Optional[dict]:
     """Evaluate whether to exit the current position.
 
@@ -558,6 +563,26 @@ def evaluate_exit(
     # LAYER 5: EXISTING POSTERIOR-GATED EXITS (with ATR-adapted drawdown)
     # ══════════════════════════════════════════════════════════════════════════
 
+    # ── 5.pre: Market-Maker Bait detection (Audit Apr 1) ─────────────────────
+    # If bid/ask spread has widened >15% from entry, classify as adversarial
+    # market-making and suppress ALL Layer 5 exits for 60s.
+    # Biais, Hillion & Spatt (1995): CLOB spread widening near events is
+    # market-maker inventory management, not information arrival.
+    _mm_bait_suppressed = False
+    if (entry_spread_pct is not None and entry_spread_pct > 0
+            and bid_price is not None and ask_price is not None
+            and bid_price > 0 and hold_seconds < 60):
+        _curr_spread_pct = (ask_price - bid_price) / bid_price
+        _spread_widen_ratio = _curr_spread_pct / entry_spread_pct if entry_spread_pct > 0.001 else 1.0
+        if _spread_widen_ratio > 1.15:
+            _mm_bait_suppressed = True
+            log.info(
+                "MM_BAIT_DETECTED: spread widened %.0f%% (entry=%.1f%% now=%.1f%%) "
+                "hold=%.0fs < 60s — suppressing Layer 5 exits",
+                (_spread_widen_ratio - 1) * 100, entry_spread_pct * 100,
+                _curr_spread_pct * 100, hold_seconds,
+            )
+
     # 5a. Forced drawdown — volatility-adapted, posterior-gated
     # Use ATR-scaled drawdown instead of the old static MAX_DRAWDOWN_PCT.
     adapted_drawdown = min(
@@ -576,15 +601,22 @@ def evaluate_exit(
         mae_tightened = True
     log.debug(
         "DRAWDOWN_THRESHOLD: adapted=%.1f%% (base=%.1f%% atr_ratio=%.2f mae_tight=%s) "
-        "unrealized=%.1f%% mae=%.1f%% hold=%.0fs grace=%s",
+        "unrealized=%.1f%% mae=%.1f%% hold=%.0fs grace=%s mm_bait=%s",
         adapted_drawdown * 100, Config.MAX_DRAWDOWN_PCT * 100, atr_ratio,
         mae_tightened, unrealized_pct * 100, mae_pct * 100, hold_seconds, _in_grace,
+        _mm_bait_suppressed,
     )
     if unrealized_pct < -adapted_drawdown:
+        # ── MM Bait suppression: skip all Layer 5 exits if spread widened adversarially ──
+        if _mm_bait_suppressed:
+            log.info(
+                "DRAWDOWN_MM_BAIT_HOLD: unrealized=%.1f%% but spread widened — holding",
+                unrealized_pct * 100,
+            )
         # Grace period: within first N seconds, only fire if loss > HARD_STOP
         # or model conviction dropped significantly (>10pp from entry).
         # Hard stops (Layer 0/1) still fire normally — this only gates Layer 5.
-        if _in_grace and unrealized_pct > -Config.HARD_STOP_PCT:
+        elif _in_grace and unrealized_pct > -Config.HARD_STOP_PCT:
             if posterior is not None and posterior > _entry_post - 0.10:
                 log.info(
                     "DRAWDOWN_GRACE: unrealized=%.1f%% but hold=%.0fs < %.0fs grace "
@@ -595,25 +627,59 @@ def evaluate_exit(
             else:
                 return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
         # 0.95+ conviction exemption near expiry — hold to settlement when model
-        # is near-certain.  Audit finding: FORCED_DRAWDOWN panic-sold a winning
-        # position at $0.66 that settled at $1.00.  (Trade #1, Mar 30 2026)
-        elif (posterior is not None and posterior > 0.95 and minutes_remaining < 3.0):
+        # is near-certain.  Audit: FORCED_DRAWDOWN panic-sold winning positions
+        # at deep losses that settled at $1.00.  (Trade #1 Mar 30, Trade Apr 1 4:10)
+        elif (posterior is not None and posterior > 0.95 and minutes_remaining < 5.0):
             log.info(
-                "DRAWDOWN_EXEMPT: posterior=%.3f > 0.95, rem=%.1f < 3.0 "
+                "DRAWDOWN_EXEMPT: posterior=%.3f > 0.95, rem=%.1f < 5.0 "
                 "— suppressing drawdown near expiry (hold to settlement)",
                 posterior, minutes_remaining,
             )
-        else:
-            if unrealized_pct < -0.20:
-                return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
-            # Gate with posterior: only hold if model still convinced
-            if posterior is None or posterior <= _entry_post - 0.05:
-                return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
-            log.info(
-                "DRAWDOWN_HELD: unrealized=%.1f%% but posterior=%.3f"
-                " still near entry=%.3f — holding",
-                unrealized_pct * 100, posterior, _entry_post,
+        # ── BTC cross-validation (Audit Apr 1 Fix #3) ────────────────────────
+        # If the underlying BTC price still confirms our position direction,
+        # the CLOB drawdown is microstructure noise — suppress exit.
+        # De Long et al. (1990): noise trader deviations revert near terminal time.
+        elif (btc_price is not None and strike_price is not None
+                and held_direction is not None and posterior is not None
+                and posterior > 0.80):
+            _btc_confirms = (
+                (held_direction == "DOWN" and btc_price < strike_price)
+                or (held_direction == "UP" and btc_price > strike_price)
             )
+            if _btc_confirms:
+                log.info(
+                    "DRAWDOWN_BTC_CONFIRMED: unrealized=%.1f%% but BTC=$%.2f %s strike=$%.2f "
+                    "posterior=%.3f — CLOB noise, holding",
+                    unrealized_pct * 100, btc_price,
+                    "<" if held_direction == "DOWN" else ">",
+                    strike_price, posterior,
+                )
+            else:
+                # BTC does NOT confirm — drawdown may be real
+                return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
+        else:
+            # Gate the -20% hard override on posterior (Audit Apr 1 Fix #2):
+            # If model is 85%+ confident, a -20% paper loss is CLOB noise.
+            # De Long et al. (1990): noise-driven deviations are value-destroying
+            # to trade on when fundamentals are clear.
+            if unrealized_pct < -0.20:
+                if posterior is None or posterior < 0.85:
+                    return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
+                else:
+                    log.info(
+                        "DRAWDOWN_POSTERIOR_HOLD: unrealized=%.1f%% < -20%% but "
+                        "posterior=%.3f >= 0.85 — trusting model over CLOB",
+                        unrealized_pct * 100, posterior,
+                    )
+            # Gate with posterior: only hold if model still convinced
+            elif posterior is None or posterior <= _entry_post - 0.05:
+                return _exit("FORCED_DRAWDOWN", use_maker=use_maker)
+            else:
+                log.info(
+                    "DRAWDOWN_HELD: unrealized=%.1f%% but posterior=%.3f"
+                    " still near entry=%.3f — holding",
+                    unrealized_pct * 100, posterior, _entry_post,
+                )
 
     # 5b. Explicit adverse selection / book flip.
     _book_flip_cycles = getattr(Config, "BOOK_FLIP_CONFIRM_CYCLES", None)

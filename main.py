@@ -2774,6 +2774,11 @@ class Engine:
                 # Fix #7: opposing side prices for reverse convergence
                 no_bid            = ob.no_bid,
                 yes_bid           = ob.yes_bid,
+                # Audit Apr 1: BTC cross-validation & MM bait detection
+                btc_price         = btc_price,
+                strike_price      = self.state.locked_strike_price,
+                held_direction    = "UP" if pos.side == "YES" else "DOWN",
+                entry_spread_pct  = getattr(pos, "entry_spread_pct", None),
             )
         # Unpack structured exit result (dict or None)
         if not exit_result:
@@ -3817,6 +3822,12 @@ class Engine:
                 market_expiry      = market_info.expiry_ts,
                 entry_min_rem      = min_rem,
             )
+            # Audit Apr 1: store entry-time spread for MM bait detection
+            _entry_bid = ob.yes_bid if side_name == "YES" else ob.no_bid
+            _entry_ask = ob.yes_ask if side_name == "YES" else ob.no_ask
+            if _entry_bid and _entry_ask and _entry_bid > 0:
+                setattr(self.state.held_position, "entry_spread_pct",
+                        (_entry_ask - _entry_bid) / _entry_bid)
             self.state.entry_features = sig.to_feature_dict()
             self.state.entry_regime = sig.regime
             self.state.trades_this_window += 1
@@ -3893,6 +3904,12 @@ class Engine:
             market_expiry      = market_info.expiry_ts,
             entry_min_rem      = min_rem,
         )
+        # Audit Apr 1: store entry-time spread for MM bait detection
+        _entry_bid = ob.yes_bid if side_name == "YES" else ob.no_bid
+        _entry_ask = ob.yes_ask if side_name == "YES" else ob.no_ask
+        if _entry_bid and _entry_ask and _entry_bid > 0:
+            setattr(self.state.held_position, "entry_spread_pct",
+                    (_entry_ask - _entry_bid) / _entry_bid)
         # Store entry features for matching when closed
         self.state.entry_features = sig.to_feature_dict()
         self.state.entry_regime = sig.regime
