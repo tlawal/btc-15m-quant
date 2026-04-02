@@ -113,6 +113,7 @@ def evaluate_exit(
     strike_price:     Optional[float] = None,
     held_direction:   Optional[str]   = None,  # "UP" or "DOWN"
     entry_spread_pct: Optional[float] = None,  # spread % at entry time
+    entry_bid_px:     Optional[float] = None,  # bid price at entry time
 ) -> Optional[dict]:
     """Evaluate whether to exit the current position.
 
@@ -569,19 +570,48 @@ def evaluate_exit(
     # Biais, Hillion & Spatt (1995): CLOB spread widening near events is
     # market-maker inventory management, not information arrival.
     _mm_bait_suppressed = False
-    if (entry_spread_pct is not None and entry_spread_pct > 0
-            and bid_price is not None and ask_price is not None
-            and bid_price > 0 and hold_seconds < 60):
-        _curr_spread_pct = (ask_price - bid_price) / bid_price
-        _spread_widen_ratio = _curr_spread_pct / entry_spread_pct if entry_spread_pct > 0.001 else 1.0
-        if _spread_widen_ratio > 1.15:
-            _mm_bait_suppressed = True
-            log.info(
-                "MM_BAIT_DETECTED: spread widened %.0f%% (entry=%.1f%% now=%.1f%%) "
-                "hold=%.0fs < 60s — suppressing Layer 5 exits",
-                (_spread_widen_ratio - 1) * 100, entry_spread_pct * 100,
-                _curr_spread_pct * 100, hold_seconds,
+    if hold_seconds < 60:
+        if (entry_spread_pct is not None and entry_spread_pct > 0
+                and bid_price is not None and ask_price is not None
+                and bid_price > 0):
+            _curr_spread_pct = (ask_price - bid_price) / bid_price
+            _spread_widen_ratio = _curr_spread_pct / entry_spread_pct if entry_spread_pct > 0.001 else 1.0
+            if _spread_widen_ratio > 1.15:
+                _mm_bait_suppressed = True
+                log.info(
+                    "MM_BAIT_DETECTED: spread widened %.0f%% (entry=%.1f%% now=%.1f%%) "
+                    "hold=%.0fs < 60s — suppressing Layer 5 exits",
+                    (_spread_widen_ratio - 1) * 100, entry_spread_pct * 100,
+                    _curr_spread_pct * 100, hold_seconds,
+                )
+        
+        # Bid-pull detection: if the bid has completely collapsed (>20% drop from entry bid)
+        if not _mm_bait_suppressed and entry_bid_px is not None and bid_price is not None:
+            if bid_price < entry_bid_px * 0.80:
+                _mm_bait_suppressed = True
+                log.info(
+                    "MM_BAIT_DETECTED: bid pulled >20%% (entry=%.3f now=%.3f) "
+                    "hold=%.0fs < 60s — suppressing Layer 5 exits",
+                    entry_bid_px, bid_price, hold_seconds,
+                )
+
+    # ── 5.pre2: Sub-3-minute BTC confirmation hold (Audit Apr 2) ─────────────
+    # If < 3 mins remain, posterior is high (> 0.85), and BTC confirms direction,
+    # suppress ALL Layer 5 exits (including FORCED_DRAWDOWN, TRAIL_POSTERIOR, BOOK_FLIP).
+    _sub3_suppressed = False
+    if minutes_remaining < 3.0 and posterior is not None and posterior > 0.85:
+        if (btc_price is not None and strike_price is not None and held_direction is not None):
+            _btc_confirms_sub3 = (
+                (held_direction == "DOWN" and btc_price < strike_price)
+                or (held_direction == "UP" and btc_price > strike_price)
             )
+            if _btc_confirms_sub3:
+                _sub3_suppressed = True
+                log.info(
+                    "SUB_3_MIN_HOLD: rem=%.1fm < 3.0, post=%.3f > 0.85, BTC confirms — "
+                    "suppressing Layer 5 exits",
+                    minutes_remaining, posterior
+                )
 
     # 5a. Forced drawdown — volatility-adapted, posterior-gated
     # Use ATR-scaled drawdown instead of the old static MAX_DRAWDOWN_PCT.
@@ -606,7 +636,7 @@ def evaluate_exit(
         mae_tightened, unrealized_pct * 100, mae_pct * 100, hold_seconds, _in_grace,
         _mm_bait_suppressed,
     )
-    if unrealized_pct < -adapted_drawdown:
+    if not _sub3_suppressed and unrealized_pct < -adapted_drawdown:
         # ── MM Bait suppression: skip all Layer 5 exits if spread widened adversarially ──
         if _mm_bait_suppressed:
             log.info(
@@ -685,7 +715,7 @@ def evaluate_exit(
     _book_flip_cycles = getattr(Config, "BOOK_FLIP_CONFIRM_CYCLES", None)
     _book_flip_imb = getattr(Config, "BOOK_FLIP_IMB_THRESH", None)
     if _book_flip_cycles is not None and _book_flip_imb is not None:
-        if book_flip_count >= _book_flip_cycles and abs(obi) >= _book_flip_imb:
+        if not _sub3_suppressed and book_flip_count >= _book_flip_cycles and abs(obi) >= _book_flip_imb:
             if held_side == "YES" and obi < 0:
                 return _exit("BOOK_FLIP", use_maker=use_maker)
             if held_side == "NO" and obi > 0:
@@ -715,7 +745,7 @@ def evaluate_exit(
         trail_atr_scale = max(0.0, min(2.0, eff_atr / max(Config.TRAIL_ATR_REF, 1e-6)))
         allow_drop = Config.TRAIL_BASE_POST_DROP + Config.TRAIL_ATR_SCALE * (trail_atr_scale - 1.0)
         allow_drop = max(Config.TRAIL_MIN_POST_DROP, min(Config.TRAIL_MAX_POST_DROP, allow_drop))
-        if posterior <= _peak_post - allow_drop:
+        if not _sub3_suppressed and posterior <= _peak_post - allow_drop:
             return _exit("TRAIL_POSTERIOR", use_maker=use_maker)
 
 

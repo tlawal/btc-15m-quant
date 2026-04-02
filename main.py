@@ -2025,8 +2025,18 @@ class Engine:
                     pos.exit_reason = None
                 else:
                     # Entry was partially filled — update size to matched and clear pending.
+                    log.info(f"ENTRY SIZE ADJUSTED (PARTIAL ENTRY): requested={pos.size} filled={matched}")
                     pos.size = matched
                     pos.is_pending = False
+                    # Audit 2 fix: Update trade history to reflect the true partial size so the dashboard
+                    # doesn't ghost or misrepresent the position.
+                    for tr in reversed(self.state.trade_history):
+                        if tr.side == pos.side and tr.outcome == "OPEN":
+                            tr.size = matched
+                            # Also update entry price if partial fill price is available
+                            if fill_price and fill_price > 0:
+                                tr.entry_price = fill_price
+                            break
             else:
                 log.info(f"PENDING ORDER {st}: clearing position state")
                 if not pos.exit_reason:
@@ -3375,6 +3385,13 @@ class Engine:
             return
 
         # ── Phase 3: Time-to-Expiry Gate ────────────────────────────────────────
+        # Hard cap: Never enter with < 1.5 min remaining (Audit recommendation).
+        # Ensures exit policy has enough time to operate and avoids noisy terminal CLOB action.
+        if min_rem < 1.5:
+            log.warning(f"LATE_ENTRY_BLOCKED: Time to expiry ({min_rem:.1f}m) < 1.5m — too little room for exit policy")
+            _entry_skipped("time_to_expiry_hard_limit", min_rem=float(min_rem) if min_rem is not None else None)
+            return
+
         # Require >= 3.0 min for standard signals, >= 2.0 min for near-certain (post >= 0.90),
         # >= 2.0 min for monster signals. At < 3 min, a BTC reversal has no recovery time.
         _min_entry_min_rem = float(getattr(Config, "MIN_ENTRY_MINUTES_REM", 3.0))
