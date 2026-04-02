@@ -70,6 +70,14 @@ All 10 findings from the institutional forensic audit are implemented:
 | **#9** | **VPOC proximity gate** — blocks entry when BTC is >1.5% from volume POC | `data_feeds.py`, `signals.py` |
 | **#10** | **Candlestick pattern gate** — blocks entry on engulfing/shooting star/hammer reversal signals | `indicators.py`, `signals.py` |
 
+### April 2 Audit Improvements
+| Fix | Change | File |
+|-----|--------|------|
+| **#1** | **Late-Entry Gate** — rejects positions with < 1.5 minutes remaining. | `main.py` |
+| **#2** | **Partial Fill Tracking** — accurately carries forward partial balances out of failed entry orders. | `main.py` |
+| **#3** | **Sub-3 Minute Exit Suppression** — completely suppresses Layer 5 exits near expiry if the model conviction is high (posterior > 0.85) AND the underlying BTC price confirms the direction. Resolves noise-induced panic selling on winning trades. | `exit_policy.py` |
+| **#4** | **Bid-Side Collapse Detection (MM Bait)** — suppresses Layer 5 exits for 60s if the bid price suddenly drops >20% below our entry bid or the spread widens >15%. Survives localized order-book shocks. | `exit_policy.py` |
+
 ### Exit Engine (`exit_policy.py`)
 Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior override) and **soft exits** (suppressed by trailing posterior guard while model is still confident).
 
@@ -112,6 +120,7 @@ References:
 3. **Cont, R., Stoikov, S., & Talreja, R. (2014). "A stochastic model for order book dynamics." _Operations Research_, 62(6), 1263–1283.** (order book imbalance and short-horizon price impact)
 4. **Bacry, E., Mastromatteo, I., & Muzy, J.-F. (2015). "Hawkes processes in finance." _Market Microstructure and Liquidity_, 1(1).** (event-time clustering / intensity models)
 5. **Zhang, Z., Zohren, S., & Roberts, S. (2019). "DeepLOB: Deep Convolutional Neural Networks for Limit Order Books." _IEEE Transactions on Signal Processing_, 67(11), 3001–3012.** (deep LOB features outperform lagged candle features)
+6. **Biais, B., Hillion, P., & Spatt, C. (1995). "An Empirical Analysis of the Limit Order Book and the Order Flow in the Paris Bourse." _Journal of Finance_, 50(5).** (CLOB spread widening near events is market-maker inventory management, driving our bid-pull / MM bait detection logic)
 
 **Prediction markets:**
 6. **Pennock, D. M. & Sami, R. (2007). "Computational Aspects of Prediction Markets." Ch. 26 in _Algorithmic Game Theory_, Cambridge University Press.** (transient spikes in thin prediction markets are noise; multi-observation confirmation)
@@ -137,7 +146,8 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **MAE tightening grace exemption** — the MAE ×0.60 tightening factor only applies after the grace period. Instant post-fill drawdowns represent price discovery, not a "second adverse move."
 
 ### Adaptive Entry Pricing
-- **Pump reversion detection** — when the relevant side's mid-price pumps >5% in a single cycle, the bot places a limit buy $0.03 below mid instead of at `bid + $0.01`. Captures mean-reversion instead of buying at the peak. Per Tetlock (2004) and Avellaneda & Stoikov (2008).
+- **Pump reversion detection** — when the relevant side's mid-price pumps >5% in a single cycle, the bot places a limit buy $0.03 below mid instead of at `bid + $0.01`. Captures mean-reversion instead of buying at the peak. Per Tetlock (2004) and Avellaneda & Stoikov (2008). 
+- **Dip-Catching Limit Algorithm** — as the default behavior, the bot sets the entry order conditionally based on the order book. By default it sits on the passively safe `bid + $0.01` tick to ensure it enters cautiously, relying on limit orders rather than crossing the spread natively (saving on fees). It waits up to 30 seconds for price oscillations to fill the limit bid before escalating.
 - **FOK vs passive limit decision framework** — monster signals or late-window (<4 min) → FOK at ask; pump detected → limit below mid; normal → passive `bid + tick`. Based on Cont & Kukanov (2017): aggressive fills when alpha is strong + time is short; passive when signal is moderate + time permits.
 - **Data-driven offset optimization (planned)** — optimizer.py will log fill rates and entry conditions, and tune `PUMP_REVERSION_OFFSET` adaptively based on historical fill probability vs. edge captured. Per Gueant, Lehalle & Fernandez-Tapia (2013), the optimal offset from fair value is larger in thin markets (low order arrival intensity).
 
