@@ -84,7 +84,9 @@ def compute_position_size(
 
     # Position = fraction of bankroll to bet, capped at risk budget
     position_usd = balance * quarter_kelly
-    
+    if position_usd is None:
+        return None
+
     # Phase 6: Institutional execution buffer (haircut)
     position_usd *= (1.0 - Config.SLIPPAGE_BUFFER_PCT)
 

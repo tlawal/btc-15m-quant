@@ -507,7 +507,7 @@ def evaluate_exit(
 
     _opp_bid = no_bid if held_side == "YES" else yes_bid
     _opp_label = "NO" if held_side == "YES" else "YES"
-    if _opp_bid is not None and _opp_bid >= _rev_conv_threshold and _rev_conv_hold_ok:
+    if _opp_bid is not None and _opp_bid >= _rev_conv_threshold and _rev_conv_hold_ok and unrealized_pct < -0.02:
         # Track sustained convergence via counter stored on function (cheap stateless approach)
         _prev = getattr(evaluate_exit, "_rev_conv_count", 0)
         evaluate_exit._rev_conv_count = _prev + 1  # type: ignore[attr-defined]
@@ -552,13 +552,29 @@ def evaluate_exit(
             _reversal_threshold = Config.MODEL_REVERSAL_DROP_PCT  # 0.15 mid-window
         else:
             _reversal_threshold = 0.20   # looser late — spread noise dominates near expiry
+        # Audit Apr 3: Suppress MODEL_REVERSAL for monster entries near expiry.
+        # At < 5 min remaining with a monster signal, posterior noise from CLOB spread
+        # widening dominates — hold to settlement instead of panic-selling.
+        _monster_suppress_min_rem = float(getattr(Config, "MODEL_REVERSAL_MONSTER_SUPPRESS_MIN_REM", 5.0))
+        _is_monster_entry = (
+            (entry_score is not None and abs(entry_score) >= 8.0)
+            or (_entry_post is not None and _entry_post >= 0.90)
+        )
         if posterior_drop >= _reversal_threshold:
-            log.warning(
-                "MODEL_REVERSAL: posterior=%.3f dropped %.1fpp from entry=%.3f "
-                "(threshold=%.0fpp, %.1fmin elapsed) — exiting",
-                posterior, posterior_drop * 100, _entry_post, _reversal_threshold * 100, minutes_elapsed,
-            )
-            return _exit("MODEL_REVERSAL", use_maker=use_maker)
+            if _is_monster_entry and minutes_remaining < _monster_suppress_min_rem:
+                log.info(
+                    "MODEL_REVERSAL_SUPPRESSED_MONSTER: drop=%.1fpp (threshold=%.0fpp) but monster entry "
+                    "(score=%.1f, entry_post=%.3f) with %.1f min rem — holding to expiry",
+                    posterior_drop * 100, _reversal_threshold * 100,
+                    entry_score or 0, _entry_post or 0, minutes_remaining,
+                )
+            else:
+                log.warning(
+                    "MODEL_REVERSAL: posterior=%.3f dropped %.1fpp from entry=%.3f "
+                    "(threshold=%.0fpp, %.1fmin elapsed) — exiting",
+                    posterior, posterior_drop * 100, _entry_post, _reversal_threshold * 100, minutes_elapsed,
+                )
+                return _exit("MODEL_REVERSAL", use_maker=use_maker)
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 5: EXISTING POSTERIOR-GATED EXITS (with ATR-adapted drawdown)

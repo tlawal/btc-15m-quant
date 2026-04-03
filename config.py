@@ -290,6 +290,7 @@ class Config:
 
     # ── Structural Model Reversal ────────────────────────────────────────
     MODEL_REVERSAL_DROP_PCT    = 0.15     # exit if posterior drops 15pp from entry
+    MODEL_REVERSAL_MONSTER_SUPPRESS_MIN_REM = 5.0  # suppress MODEL_REVERSAL for monster entries with < 5 min remaining
 
     # ── Exponential Time-Decay Multiplier ────────────────────────────────
     TIME_DECAY_WINDOW_MIN      = 2.0      # activate in final 2 minutes

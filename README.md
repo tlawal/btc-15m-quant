@@ -78,6 +78,21 @@ All 10 findings from the institutional forensic audit are implemented:
 | **#3** | **Sub-3 Minute Exit Suppression** — completely suppresses Layer 5 exits near expiry if the model conviction is high (posterior > 0.85) AND the underlying BTC price confirms the direction. Resolves noise-induced panic selling on winning trades. | `exit_policy.py` |
 | **#4** | **Bid-Side Collapse Detection (MM Bait)** — suppresses Layer 5 exits for 60s if the bid price suddenly drops >20% below our entry bid or the spread widens >15%. Survives localized order-book shocks. | `exit_policy.py` |
 
+### April 3 Audit Findings & Fixes
+**Problem**: 1 catastrophic loss (-38.9%) on a winning trade (12:41 PM, NO @ $0.87 sold @ $0.54, market resolved at $1.00), plus 3/3 other wins had premature exits cutting profits early. Total money left on table: $4.07 across 6 trades.
+
+**Root causes**:
+- **MODEL_REVERSAL fired after 21s** on a monster-signal entry due to posterior drop from CLOB liquidity noise, not genuine model failure
+- **REVERSE_CONVERGENCE exited winning positions** because opposing bid spiked transientally; didn't check if held position was profitable
+- **TypeError in sizing.py** silently crashing position-size computation
+
+**Fixes implemented (Apr 3, 2026)**:
+| Fix | Change | File |
+|-----|--------|------|
+| **#A** | **MODEL_REVERSAL monster suppression** — suppress exit when entry score ≥ 8.0 OR entry_posterior ≥ 0.90 AND minutes_remaining < 5.0. Near-expiry CLOB noise dominates; hold to settlement. | `exit_policy.py`, `config.py` |
+| **#B** | **REVERSE_CONVERGENCE profit guard** — only fire when held position is losing (unrealized < -2%). Opposing bid spikes on thin books are noise. | `exit_policy.py` |
+| **#C** | **Sizing robustness** — None guard before SLIPPAGE_BUFFER multiplication to prevent TypeError crash. | `sizing.py` |
+
 ### Exit Engine (`exit_policy.py`)
 Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior override) and **soft exits** (suppressed by trailing posterior guard while model is still confident).
 
@@ -107,6 +122,8 @@ Evaluated every 3 seconds. Two tiers: **hard circuit breakers** (no posterior ov
 - **Runner protection after TP1** — after TP1 fills, remainder is protected via:
   - `TP1_TRAIL_PRICE_STOP` (tighter price-based trailing)
   - `RUNNER_POSTERIOR_COLLAPSE` (exit remainder if posterior collapses from entry by `RUNNER_POSTERIOR_DROP_PCT` while still in profit by `RUNNER_MIN_PROFIT_PCT`).
+- **MODEL_REVERSAL monster suppression (Apr 3, 2026)** — when a monster signal (score ≥ 8.0 OR posterior ≥ 0.90) is entered with < 5 min remaining, suppress MODEL_REVERSAL exits entirely. Near expiry, CLOB spreads widen 20-30%, making posterior drops reflect liquidity dynamics, not genuine belief changes. Holding to settlement is +EV. Gate: `MODEL_REVERSAL_MONSTER_SUPPRESS_MIN_REM = 5.0`.
+- **REVERSE_CONVERGENCE profit guard (Apr 3, 2026)** — only fire REVERSE_CONVERGENCE when the held position is losing (unrealized < -2%). Opposing-side bid spikes in thin markets are transient noise; selling a profitable position because the opponent's bid spiked destroys edge. Prevents profit-taking too early on winning trades.
 
 References:
 
@@ -172,6 +189,7 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Blended PnL on auto-settle** — `AUTO_SETTLE_WIN` and `AUTO_SETTLE_LOSS` now compute `blended_exit_price` and `blended_pnl` weighted across all partial exits plus the remaining shares at settlement ($1.00 or $0.00). Previously, auto-settle overwrote `pnl = -1.0` even when 90%+ of the position had already been sold at recovery prices, causing the dashboard to show -100% instead of the real ~-15%.
 - **Slippage tracking** — actual fill price vs intended price logged per trade; warns if > 1%
 - **Market quality filter** — skips cycle if spreads > 8%, book depth < 20 USDC, or klines > 5 min stale
+- **Position sizing robustness (Apr 3, 2026)** — added None guard in `compute_position_size()` before SLIPPAGE_BUFFER multiplication to prevent TypeError crashes when balance or Kelly fraction becomes None
 
 **Implemented:**
 - **Critical-exit FOK fallback ladder** — for critical exits (e.g., hard-stops / strike-distance / close-on-expiry), if the initial FOK sell fails, the bot retries up to 2 additional FOK attempts crossing deeper: `bid`, then `bid - 1 tick`, then `bid - 2 ticks`.
