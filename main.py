@@ -433,17 +433,26 @@ class Engine:
         
         for tr in reversed(self.state.trade_history):
             if tr.outcome in ("OPEN", "LOSS"):
-                # Fix: skip trades already closed by a sell order.
-                # If exit_price is set and exit_reason exists, this trade was already
-                # closed via market/limit sell and its PnL was already recorded.
-                # Overwriting exit_price to $1.00 would double-count the profit.
-                if (tr.exit_price is not None and tr.exit_price > 0
-                        and tr.exit_reason is not None and tr.exit_reason != ""):
+                # Fix: skip trades already closed by a genuine sell order (TP, stop, etc).
+                # AUTO_SETTLE_LOSS/WIN are CLOB-price guesses — allow the redemption to
+                # override them with the real $1.00 payout when the market actually resolves.
+                _auto_settle_reasons = {"AUTO_SETTLE_LOSS", "AUTO_SETTLE_WIN"}
+                _already_closed = (
+                    tr.exit_price is not None and tr.exit_price > 0
+                    and tr.exit_reason is not None and tr.exit_reason != ""
+                    and tr.exit_reason not in _auto_settle_reasons
+                )
+                if _already_closed:
                     log.info(
                         "REDEMPTION_SKIP: trade already closed via %s at %.3f — not overwriting with $1.00",
                         tr.exit_reason, tr.exit_price,
                     )
                     continue
+                if tr.exit_reason in _auto_settle_reasons:
+                    log.info(
+                        "REDEMPTION_OVERRIDE: correcting AUTO_SETTLE guess (%s at %.3f) with real redemption $1.00",
+                        tr.exit_reason, tr.exit_price or 0,
+                    )
                 # Always force entry price to a sane value if zero
                 ep = tr.entry_price if tr.entry_price and tr.entry_price > 0 else 0.5
                 tr.exit_price = 1.0  # Polymarket winning shares are always redeemed at $1
@@ -2572,9 +2581,27 @@ class Engine:
 
                 # If settle_px is None but unclaimed_usdc > 0, the market resolved in our favour
                 # (redemption is pending) — treat as WIN rather than falsely recording LOSS.
-                position_won = (settle_px is not None and settle_px >= 0.50) or (
-                    settle_px is None and self.state.unclaimed_usdc > 0.01
+                # Audit fix (Apr 6): only declare position_won=False if settle_px is CLEARLY below 0.15 (near-certain loss).
+                # For ambiguous prices (0.15–0.50), the live CLOB mid != actual resolution, so defer to redemption path.
+                _SETTLE_WIN_THRESHOLD = 0.50
+                _SETTLE_LOSS_THRESHOLD = 0.15
+                _settle_certain = (settle_px is not None and
+                                   (settle_px >= _SETTLE_WIN_THRESHOLD or settle_px < _SETTLE_LOSS_THRESHOLD))
+                position_won = (
+                    (settle_px is not None and settle_px >= _SETTLE_WIN_THRESHOLD)
+                    or (settle_px is None and self.state.unclaimed_usdc > 0.01)
                 )
+
+                # If settle_px is ambiguous (0.15–0.50), defer AUTO_SETTLE recording — let redemption determine outcome
+                if (not _settle_certain and settle_px is not None and
+                        not (settle_px is None and self.state.unclaimed_usdc > 0.01)):
+                    log.info(
+                        "AUTO_SETTLE_DEFERRED: settle_px=%.3f is ambiguous (0.15–0.50 threshold) — "
+                        "clearing position, redemption path will record outcome",
+                        settle_px,
+                    )
+                    self.state.held_position = HeldPosition()
+                    return False
 
                 for tr in reversed(self.state.trade_history):
                     if tr.side == pos.side and tr.outcome == "OPEN":
