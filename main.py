@@ -49,6 +49,7 @@ from optimizer import SignalOptimizer
 from attribution import FeatureAttributor
 from reviewer import run_nightly_review
 import metrics_exporter
+from trade_utils import compute_auto_settle_outcome
 
 setup_logging()
 log = logging.getLogger("engine")
@@ -423,7 +424,76 @@ class Engine:
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _record_redemption(self, size_usd: float):
+    @staticmethod
+    def _trade_pnl_usd(tr: TradeRecord) -> float:
+        try:
+            if tr.pnl is None:
+                return 0.0
+            entry_price = float(tr.entry_price or 0.0)
+            size = float(tr.size or 0.0)
+            return float(tr.pnl) * entry_price * size
+        except Exception:
+            return 0.0
+
+    def rebuild_state_totals_from_trade_history(self):
+        closed = [t for t in self.state.trade_history if t.outcome in ("WIN", "LOSS")]
+        self.state.total_trades = len(closed)
+        self.state.total_wins = sum(1 for t in closed if t.outcome == "WIN")
+        self.state.total_losses = sum(1 for t in closed if t.outcome == "LOSS")
+        self.state.total_pnl_usd = round(sum(self._trade_pnl_usd(t) for t in closed), 6)
+
+        loss_streak = 0
+        for tr in reversed(closed):
+            if tr.outcome == "LOSS":
+                loss_streak += 1
+            else:
+                break
+        self.state.loss_streak = loss_streak
+
+    def _closed_trade_row_from_record(
+        self,
+        tr: TradeRecord,
+        market_slug: Optional[str],
+        *,
+        timestamp: Optional[int] = None,
+    ) -> dict:
+        return {
+            "timestamp": int(timestamp or time.time()),
+            "market_slug": market_slug or "unknown",
+            "size": float(tr.size or 0.0),
+            "entry_price": float(tr.entry_price or 0.0),
+            "exit_price": float(tr.exit_price or 0.0),
+            "pnl_usd": self._trade_pnl_usd(tr),
+            "outcome_win": 1 if tr.outcome == "WIN" else 0,
+            "slippage": getattr(tr, "slippage", None),
+            "exit_reason": getattr(tr, "exit_reason", None),
+            "regime": getattr(self.state, "entry_regime", None),
+            "features": getattr(self.state, "entry_features", None),
+            "kelly_fraction": getattr(self.state, "last_kelly_fraction", None),
+        }
+
+    async def _sync_closed_trade_from_record(
+        self,
+        tr: TradeRecord,
+        market_slug: Optional[str],
+        *,
+        match_exit_reasons: tuple[str, ...] = (),
+        delete_extra: bool = True,
+        timestamp: Optional[int] = None,
+    ):
+        if not self.state_mgr or tr.outcome not in ("WIN", "LOSS"):
+            return None
+        row = self._closed_trade_row_from_record(tr, market_slug, timestamp=timestamp)
+        result = await self.state_mgr.resync_closed_trades_from_canonical(
+            [row],
+            market_slug=row["market_slug"],
+            match_exit_reasons=list(match_exit_reasons) if match_exit_reasons else None,
+            delete_extra=delete_extra,
+        )
+        await self.state_mgr.calculate_performance_metrics()
+        return result
+
+    async def _record_redemption(self, size_usd: float):
         """Find the matching OPEN trade from the previous window and mark it as a WIN."""
         # We usually redeem full sizes, meaning entry price was ~0.40 to 0.60
         # If we redeemed $10 for example, the position was 10 shares.
@@ -458,26 +528,13 @@ class Engine:
                 tr.exit_price = 1.0  # Polymarket winning shares are always redeemed at $1
                 tr.pnl = (tr.exit_price - ep) / ep
                 
-                # Fix stats depending on prior outcome
-                if tr.outcome == "LOSS":
-                    # Was already counted as a trade+loss — flip to win
-                    self.state.total_losses = max(0, self.state.total_losses - 1)
-                    self.state.total_wins += 1
-                    self.state.total_pnl_usd += size_usd  # reverse the loss PnL
-                else:
-                    # OPEN → WIN: not yet counted — add as new trade + win
-                    self.state.total_trades += 1
-                    self.state.total_wins += 1
-
                 tr.outcome = "WIN"
                 tr.exit_reason = "REDEMPTION_WIN"
-
-                self.state.loss_streak = 0
                 self.state.session_start_balance = None  # force re-record on next cycle so drawdown resets
                 
                 # Approximate PnL logic (size_usd is the *payout*)
                 profit_usd = size_usd * tr.pnl if tr.pnl else 0.0
-                self.state.total_pnl_usd += profit_usd
+                self.rebuild_state_totals_from_trade_history()
                 
                 log.info(f"Recorded redemption win: +{tr.pnl*100:.2f}% (approx profit: ${profit_usd:.2f})")
                 try:
@@ -485,20 +542,12 @@ class Engine:
                 except Exception:
                     pass
 
-                # Record to closed_trades DB so performance metrics stay in sync
                 if self.state_mgr:
-                    asyncio.create_task(self.state_mgr.record_closed_trade(
-                        ts=int(time.time()),
-                        market_slug=self.state.last_market_slug or "unknown",
-                        size=tr.size or size_usd,
-                        entry_price=ep,
-                        exit_price=1.0,
-                        pnl_usd=profit_usd,
-                        outcome_win=1,
-                        slippage=getattr(tr, "slippage", None),
-                        exit_reason=getattr(tr, "exit_reason", None) or "REDEMPTION_WIN",
-                        regime=getattr(self.state, "entry_regime", None),
-                    ))
+                    await self._sync_closed_trade_from_record(
+                        tr,
+                        self.state.last_market_slug or "unknown",
+                        match_exit_reasons=("AUTO_SETTLE_LOSS", "AUTO_SETTLE_WIN", "REDEMPTION_WIN"),
+                    )
 
                 # Clear held position — the old market has settled
                 self.state.held_position = HeldPosition()
@@ -506,10 +555,6 @@ class Engine:
                 # Phase 6: Log trade for self-learning
                 if self._last_sig:
                     self.optimizer.log_trade(self._last_sig, "WIN")
-
-                # Immediately recalculate and store metrics inside the event loop if possible
-                if self.state_mgr:
-                    asyncio.create_task(self.state_mgr.calculate_performance_metrics())
                 return
                 
         log.warning("Redeemed position but no matching OPEN trade found in history.")
@@ -801,7 +846,7 @@ class Engine:
             redeemed_usd = await self.pm.redeem_winning_positions()
             if redeemed_usd > 0:
                 log.info(f"✅ AUTO-CLAIMED ${redeemed_usd:.2f} at window start!")
-                self._record_redemption(redeemed_usd)
+                await self._record_redemption(redeemed_usd)
 
             # Phase A: fill settlement outcome for previous window's exit records
             # prev_win_start is the window that just expired
@@ -847,7 +892,7 @@ class Engine:
                 claimed = await self.pm.redeem_winning_positions()
                 if claimed > 0:
                     log.info(f"✅ EARLY_CLAIM SUCCESS: ${claimed:.2f}")
-                    self._record_redemption(claimed)
+                    await self._record_redemption(claimed)
                     self.state.unclaimed_usdc = 0.0
                     self._last_early_claim_window = win_start  # only lock out once TX confirmed
                 else:
@@ -1694,6 +1739,7 @@ class Engine:
                         self.state.loss_streak += 1
                     else:
                         self.state.loss_streak = 0
+                    closed_trade = None
                     for tr in reversed(self.state.trade_history):
                         if tr.side == pos.side and tr.outcome == "OPEN":
                             tr.exit_price = actual_px
@@ -1701,24 +1747,14 @@ class Engine:
                             tr.outcome = outcome
                             tr.exit_reason = pos.exit_reason
                             tr.partial_exits = list(pos.partial_exits)
+                            closed_trade = tr
                             break
-                    self.state.total_trades += 1
-                    if outcome == "WIN":
-                        self.state.total_wins += 1
-                    else:
-                        self.state.total_losses += 1
-                    self.state.total_pnl_usd += (actual_px - entry_px) * (pos.size or 0)
-                    await self.state_mgr.record_closed_trade(
-                        ts=int(time.time()),
-                        market_slug=self.state.last_market_slug or "unknown",
-                        size=pos.size or 0,
-                        entry_price=entry_px,
-                        exit_price=actual_px,
-                        pnl_usd=(actual_px - entry_px) * (pos.size or 0),
-                        outcome_win=1 if outcome == "WIN" else 0,
-                        slippage=None,
-                        exit_reason=pos.exit_reason,
-                    )
+                    self.rebuild_state_totals_from_trade_history()
+                    if closed_trade is not None:
+                        await self._sync_closed_trade_from_record(
+                            closed_trade,
+                            self.state.last_market_slug or "unknown",
+                        )
                     log.info(f"RECONCILE FORCE EXIT: {outcome} pnl={pnl_pct*100:.1f}%")
                     self.state.held_position = HeldPosition()
                 elif age_s > 30:
@@ -1866,6 +1902,7 @@ class Engine:
                     wavg_exit = sum(e["size"] * e["price"] for e in all_exits) / total_sold if total_sold > 0 else actual_px
                     final_pnl = (wavg_exit - entry_px) / entry_px if entry_px > 0 else 0.0
                     final_outcome = "WIN" if final_pnl > 0 else "LOSS"
+                    closed_trade = None
 
                     for tr in reversed(self.state.trade_history):
                         if tr.side == pos.side and tr.outcome == "OPEN":
@@ -1875,24 +1912,10 @@ class Engine:
                             tr.outcome    = final_outcome
                             tr.exit_reason = pos.exit_reason
                             tr.partial_exits = list(pos.partial_exits)
+                            closed_trade = tr
                             break
 
-                    # Record final exit portion to DB
                     entry_feats = getattr(self.state, "entry_features", None)
-                    await self.state_mgr.record_closed_trade(
-                        ts=int(time.time()),
-                        market_slug=self.state.last_market_slug or "unknown",
-                        size=sell_size,
-                        entry_price=entry_px,
-                        exit_price=actual_px,
-                        pnl_usd=(actual_px - entry_px) * sell_size,
-                        outcome_win=1 if final_outcome == "WIN" else 0,
-                        slippage=slippage,
-                        exit_reason=pos.exit_reason,
-                        regime=getattr(self.state, "entry_regime", None),
-                        features=entry_feats,
-                        kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
-                    )
                     # Feed optimizer
                     if entry_feats:
                         if self._last_sig:
@@ -1925,13 +1948,12 @@ class Engine:
                     except Exception:
                         pass
 
-                    self.state.total_trades += 1
-                    if final_outcome == "WIN":
-                        self.state.total_wins += 1
-                        self.state.loss_streak = 0
-                    else:
-                        self.state.total_losses += 1
-                        self.state.loss_streak += 1
+                    self.rebuild_state_totals_from_trade_history()
+                    if closed_trade is not None:
+                        await self._sync_closed_trade_from_record(
+                            closed_trade,
+                            self.state.last_market_slug or "unknown",
+                        )
 
                     # Full exit — clear position
                     self.state.held_position = HeldPosition()
@@ -2603,92 +2625,56 @@ class Engine:
                     self.state.held_position = HeldPosition()
                     return False
 
+                closed_trade = None
                 for tr in reversed(self.state.trade_history):
                     if tr.side == pos.side and tr.outcome == "OPEN":
                         ep = tr.entry_price or pos.entry_price or pos.avg_entry_price or 0.5
-                        # Blended PnL: weight partial exits already filled + remaining at settlement.
-                        # Prevents AUTO_SETTLE from overwriting pnl=-1.0 when most shares were sold.
-                        # Use tr.size (immutable entry fill size) not pos.size (adjusted by reconciliation).
-                        _entry_size        = tr.size or pos.size or 0
-                        _partial_recovered = sum(p["price"] * p["size"] for p in pos.partial_exits)
-                        _partial_size      = sum(p["size"] for p in pos.partial_exits)
-                        _remaining_size    = max(0.0, _entry_size - _partial_size)
-                        _total_cost        = ep * _entry_size if ep > 0 else 0.0
-                        # Safety override: if all shares were already sold at a profit, force WIN
-                        # regardless of settle_px availability. Handles the pos_expired race condition
-                        # where fill was confirmed on CLOB but settle_px is unavailable post-expiry.
-                        if (not position_won and _partial_size >= _entry_size * 0.99
-                                and _total_cost > 0 and _partial_recovered >= _total_cost):
-                            position_won = True
+                        settle_summary = compute_auto_settle_outcome(
+                            entry_price=ep,
+                            entry_size=tr.size or pos.size or 0.0,
+                            partial_exits=pos.partial_exits,
+                            position_won=position_won,
+                        )
+
+                        tr.exit_price = round(settle_summary["blended_exit_price"], 4)
+                        tr.pnl = settle_summary["blended_pnl"]
+                        tr.partial_exits = list(pos.partial_exits)
+                        tr.outcome = settle_summary["outcome"]
+                        tr.exit_reason = settle_summary["exit_reason"]
+                        closed_trade = tr
+
+                        if tr.outcome == "WIN":
                             log.info(
-                                "AUTO_SETTLE: all shares exited at profit — forcing WIN "
-                                "(partial_size=%.2f entry_size=%.2f recovered=%.3f cost=%.3f)",
-                                _partial_size, _entry_size, _partial_recovered, _total_cost,
-                            )
-                        if position_won:
-                            _settle_recovered  = _remaining_size * 1.0
-                            _total_recovered   = _partial_recovered + _settle_recovered
-                            _blended_exit_px   = _total_recovered / _entry_size if _entry_size else 0.0
-                            _blended_pnl       = (_total_recovered / _total_cost - 1.0) if _total_cost > 0 else 0.0
-                            profit_usd         = _remaining_size * (1.0 - ep)  # only count unsold shares
-                            tr.exit_price = round(_blended_exit_px, 4)
-                            tr.pnl = _blended_pnl
-                            tr.partial_exits = list(pos.partial_exits)
-                            # Audit Change 4: If blended PnL < 0 despite winning direction,
-                            # label as LOSS — panic-selling a winner is still a loss.
-                            if _blended_pnl < 0:
-                                tr.outcome = "LOSS"
-                                tr.exit_reason = "AUTO_SETTLE_LOSS"
-                                loss_usd = abs(_blended_pnl * _total_cost)
-                                self.state.total_losses += 1
-                                self.state.loss_streak += 1
-                                self.state.total_pnl_usd -= loss_usd
-                                log.warning(f"AUTO_SETTLE_LOSS (won but PnL negative): {pos.side} entry={ep:.3f} blended_exit={tr.exit_price:.3f} pnl={tr.pnl*100:.1f}% — panic sell damage")
-                            else:
-                                tr.outcome = "WIN"
-                                tr.exit_reason = "AUTO_SETTLE_WIN"
-                                self.state.total_wins += 1
-                                self.state.loss_streak = 0
-                                self.state.total_pnl_usd += profit_usd
-                                log.info(f"AUTO_SETTLE_WIN: {pos.side} entry={ep:.3f} blended_exit={tr.exit_price:.3f} pnl={tr.pnl*100:.1f}% remaining={_remaining_size:.4f} settle_px={settle_px}")
-                            _rec_pnl = profit_usd if _blended_pnl >= 0 else -abs(_blended_pnl * _total_cost)
-                            _rec_win = 1 if _blended_pnl >= 0 else 0
-                            await self.state_mgr.record_closed_trade(
-                                ts=int(time.time()),
-                                market_slug=self.state.last_market_slug or "unknown",
-                                size=tr.size or pos.size or 0,
-                                entry_price=ep,
-                                exit_price=round(_blended_exit_px, 4),
-                                pnl_usd=_rec_pnl,
-                                outcome_win=_rec_win,
-                                regime=getattr(self.state, "entry_regime", None),
+                                "AUTO_SETTLE_WIN: %s entry=%.3f blended_exit=%.3f pnl=%.1f%% "
+                                "remaining=%.4f settle_px=%s settle_win=%s",
+                                pos.side,
+                                ep,
+                                tr.exit_price,
+                                tr.pnl * 100,
+                                settle_summary["remaining_size"],
+                                f"{settle_px:.3f}" if settle_px is not None else "None",
+                                position_won,
                             )
                         else:
-                            # Remaining shares expired at $0; partial exits already booked separately.
-                            _blended_exit_px   = _partial_recovered / _entry_size if _entry_size else 0.0
-                            _blended_pnl       = (_partial_recovered / _total_cost - 1.0) if _total_cost > 0 else -1.0
-                            loss_usd           = _remaining_size * ep  # only count unsold shares lost
-                            tr.exit_price = round(_blended_exit_px, 4)
-                            tr.pnl = _blended_pnl
-                            tr.outcome = "LOSS"
-                            tr.exit_reason = "AUTO_SETTLE_LOSS"
-                            tr.partial_exits = list(pos.partial_exits)
-                            self.state.total_losses += 1
-                            self.state.loss_streak += 1
-                            self.state.total_pnl_usd -= loss_usd
-                            log.warning(f"AUTO_SETTLE_LOSS: {pos.side} entry={ep:.3f} blended_exit={tr.exit_price:.3f} pnl={tr.pnl*100:.1f}% remaining={_remaining_size:.4f} settle_px={settle_px} — position lost")
-                            await self.state_mgr.record_closed_trade(
-                                ts=int(time.time()),
-                                market_slug=self.state.last_market_slug or "unknown",
-                                size=tr.size or pos.size or 0,
-                                entry_price=ep,
-                                exit_price=round(_blended_exit_px, 4),
-                                pnl_usd=-loss_usd,
-                                outcome_win=0,
-                                regime=getattr(self.state, "entry_regime", None),
+                            log.warning(
+                                "AUTO_SETTLE_LOSS: %s entry=%.3f blended_exit=%.3f pnl=%.1f%% "
+                                "remaining=%.4f settle_px=%s settle_win=%s",
+                                pos.side,
+                                ep,
+                                tr.exit_price,
+                                tr.pnl * 100,
+                                settle_summary["remaining_size"],
+                                f"{settle_px:.3f}" if settle_px is not None else "None",
+                                position_won,
                             )
-                        self.state.total_trades += 1
                         break
+                if closed_trade is not None:
+                    self.rebuild_state_totals_from_trade_history()
+                    await self._sync_closed_trade_from_record(
+                        closed_trade,
+                        self.state.last_market_slug or "unknown",
+                        match_exit_reasons=("AUTO_SETTLE_LOSS", "AUTO_SETTLE_WIN", "REDEMPTION_WIN"),
+                    )
                 self.state.held_position = HeldPosition()
                 return False
 
@@ -2955,21 +2941,14 @@ class Engine:
                         _pnl_usd = _dust_partial_rec - _dust_total_cost
                     tr.partial_exits = list(pos.partial_exits)
 
-                    # Fix: update cumulative state PNL so dashboard matches trade results
-                    self.state.total_pnl_usd += _pnl_usd
-                    
-                    # Record to DB
+                    self.rebuild_state_totals_from_trade_history()
                     if self.state_mgr:
-                        asyncio.create_task(self.state_mgr.record_closed_trade(
-                            ts=int(time.time()),
-                            market_slug=self.state.last_market_slug or "unknown",
-                            size=tr.size or 0,
-                            entry_price=entry_px,
-                            exit_price=tr.exit_price,
-                            pnl_usd=_pnl_usd,
-                            outcome_win=1 if tr.outcome == "WIN" else 0,
-                            regime=getattr(self.state, "entry_regime", None),
-                        ))
+                        asyncio.create_task(
+                            self._sync_closed_trade_from_record(
+                                tr,
+                                self.state.last_market_slug or "unknown",
+                            )
+                        )
                     break
             self.state.held_position = HeldPosition()
             return True
@@ -2984,6 +2963,7 @@ class Engine:
                 self.state.loss_streak = 0
 
             outcome = "WIN" if pnl_pct >= 0 else "LOSS"
+            closed_trade = None
             for tr in reversed(self.state.trade_history):
                 if tr.side == pos.side and tr.outcome == "OPEN":
                     tr.exit_price = current_px
@@ -2991,33 +2971,20 @@ class Engine:
                     tr.outcome    = outcome
                     tr.exit_reason = pos.exit_reason
                     tr.partial_exits = list(pos.partial_exits)
+                    closed_trade = tr
                     break
 
-            # Record to DB for performance stats
-            try:
-                await self.state_mgr.record_closed_trade(
-                    ts=int(time.time()),
-                    market_slug=self.state.last_market_slug or "unknown",
-                    size=sell_size,
-                    entry_price=entry_px,
-                    exit_price=current_px,
-                    pnl_usd=(current_px - entry_px) * sell_size if entry_px > 0 else 0.0,
-                    outcome_win=1 if outcome == "WIN" else 0,
-                    regime=getattr(self.state, "entry_regime", None),
-                    features=getattr(self.state, "entry_features", None),
-                    kelly_fraction=getattr(self.state, "last_kelly_fraction", None)
-                )
-            except Exception as e:
-                log.error(f"Failed to record paper exit to DB: {e}")
-
-            self.state.total_trades += 1
             if outcome == "WIN":
-                self.state.total_wins += 1
                 self.state.session_start_balance = balance  # reset drawdown baseline on win
-            else:
-                self.state.total_losses += 1
-
-            self.state.total_pnl_usd += (current_px - entry_px) * sell_size if entry_px > 0 else 0.0
+            self.rebuild_state_totals_from_trade_history()
+            if closed_trade is not None:
+                try:
+                    await self._sync_closed_trade_from_record(
+                        closed_trade,
+                        self.state.last_market_slug or "unknown",
+                    )
+                except Exception as e:
+                    log.error(f"Failed to record paper exit to DB: {e}")
 
             # Update TP tier state and handle partial vs full exits
             if reason in ("TP1", "TP2", "TP3", "TP_FULL", "TP_LATE_ENTRY") and partial_pct < 1.0:
@@ -4084,19 +4051,13 @@ class Engine:
                             regime = getattr(self.state, "entry_regime", "unknown")
                             feats = getattr(self.state, "entry_features", {})
                             kelly = getattr(self.state, "last_kelly_fraction", None)
-                            
-                            size = tr.size or 0.0
-                            await self.state_mgr.record_closed_trade(
-                                ts=int(time.time()),
-                                market_slug=self.state.last_market_slug or "unknown",
-                                size=size,
-                                entry_price=tr.entry_price,
-                                exit_price=0.0,
-                                pnl_usd=-size * tr.entry_price, # Roughly
-                                outcome_win=0,
-                                regime=regime,
-                                features=feats,
-                                kelly_fraction=kelly
+                            self.state.entry_regime = regime
+                            self.state.entry_features = feats
+                            self.state.last_kelly_fraction = kelly
+                            self.rebuild_state_totals_from_trade_history()
+                            await self._sync_closed_trade_from_record(
+                                tr,
+                                self.state.last_market_slug or "unknown",
                             )
                             # Feed optimizer for expired loss
                             if self._last_sig:

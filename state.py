@@ -13,6 +13,7 @@ except ImportError:
 import os
 import logging
 import asyncio
+import time
 from dataclasses import dataclass, field, is_dataclass, asdict
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -482,6 +483,136 @@ class StateManager:
                         "ts": ts, "slug": market_slug, "sz": size,
                         "ep": entry_price, "xp": exit_price, "pnl": pnl_usd, "win": outcome_win,
                     })
+
+    async def fetch_closed_trades(
+        self,
+        market_slug: Optional[str] = None,
+        limit: Optional[int] = None,
+    ) -> list[dict]:
+        query = (
+            "SELECT id, timestamp, market_slug, size, entry_price, exit_price, pnl_usd, "
+            "outcome_win, slippage, exit_reason, regime, features, kelly_fraction "
+            "FROM closed_trades"
+        )
+        params: dict[str, Any] = {}
+        clauses = []
+        if market_slug:
+            clauses.append("market_slug = :slug")
+            params["slug"] = market_slug
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY timestamp DESC, id DESC"
+        if limit is not None:
+            query += " LIMIT :limit"
+            params["limit"] = int(limit)
+        async with self._session_factory() as session:
+            result = await session.execute(text(query), params)
+            rows = result.fetchall()
+        return [dict(r._mapping) for r in rows]
+
+    async def update_closed_trade(self, trade_id: int, **fields) -> bool:
+        allowed = {
+            "timestamp", "market_slug", "size", "entry_price", "exit_price", "pnl_usd",
+            "outcome_win", "slippage", "exit_reason", "regime", "features", "kelly_fraction",
+        }
+        updates = {k: v for k, v in fields.items() if k in allowed}
+        if not updates:
+            return False
+        if "features" in updates and updates["features"] is not None and not isinstance(updates["features"], str):
+            updates["features"] = _dumps_str(updates["features"])
+        assignments = ", ".join(f"{k} = :{k}" for k in updates)
+        params = dict(updates)
+        params["trade_id"] = int(trade_id)
+        async with self.engine.begin() as conn:
+            result = await conn.execute(
+                text(f"UPDATE closed_trades SET {assignments} WHERE id = :trade_id"),
+                params,
+            )
+        return bool(getattr(result, "rowcount", 0))
+
+    async def delete_closed_trades(self, trade_ids: List[int]) -> int:
+        ids = [int(tid) for tid in trade_ids if tid is not None]
+        if not ids:
+            return 0
+        placeholders = ", ".join(f":id_{i}" for i in range(len(ids)))
+        params = {f"id_{i}": tid for i, tid in enumerate(ids)}
+        async with self.engine.begin() as conn:
+            result = await conn.execute(
+                text(f"DELETE FROM closed_trades WHERE id IN ({placeholders})"),
+                params,
+            )
+        return int(getattr(result, "rowcount", 0) or 0)
+
+    async def resync_closed_trades_from_canonical(
+        self,
+        canonical_rows: List[dict],
+        market_slug: Optional[str] = None,
+        match_exit_reasons: Optional[List[str]] = None,
+        delete_extra: bool = True,
+    ) -> dict:
+        canonical = [dict(r) for r in canonical_rows if r]
+        if not canonical:
+            return {"updated": [], "inserted": 0, "deleted_ids": [], "deleted": 0}
+
+        existing = await self.fetch_closed_trades(
+            market_slug=market_slug,
+            limit=None if market_slug else max(10, len(canonical) * 4),
+        )
+        if match_exit_reasons:
+            allowed = set(match_exit_reasons)
+            existing = [r for r in existing if (r.get("exit_reason") or "") in allowed]
+
+        existing = list(reversed(existing))
+        canonical = sorted(canonical, key=lambda r: (int(r.get("timestamp") or 0), float(r.get("size") or 0.0)))
+
+        updated: list[dict] = []
+        inserted = 0
+        used_ids: set[int] = set()
+
+        for row in canonical:
+            row = dict(row)
+            target = None
+            for candidate in reversed(existing):
+                cid = int(candidate["id"])
+                if cid in used_ids:
+                    continue
+                target = candidate
+                break
+
+            if target is not None:
+                await self.update_closed_trade(int(target["id"]), **row)
+                used_ids.add(int(target["id"]))
+                updated.append({"id": int(target["id"]), "market_slug": row.get("market_slug") or target.get("market_slug")})
+                continue
+
+            await self.record_closed_trade(
+                ts=int(row.get("timestamp") or time.time()),
+                market_slug=row.get("market_slug") or market_slug or "unknown",
+                size=float(row.get("size") or 0.0),
+                entry_price=float(row.get("entry_price") or 0.0),
+                exit_price=float(row.get("exit_price") or 0.0),
+                pnl_usd=float(row.get("pnl_usd") or 0.0),
+                outcome_win=int(row.get("outcome_win") or 0),
+                slippage=row.get("slippage"),
+                exit_reason=row.get("exit_reason"),
+                regime=row.get("regime"),
+                features=row.get("features"),
+                kelly_fraction=row.get("kelly_fraction"),
+            )
+            inserted += 1
+
+        deleted_ids = []
+        if delete_extra:
+            deleted_ids = [int(r["id"]) for r in existing if int(r["id"]) not in used_ids]
+            if deleted_ids:
+                await self.delete_closed_trades(deleted_ids)
+
+        return {
+            "updated": updated,
+            "inserted": inserted,
+            "deleted_ids": deleted_ids,
+            "deleted": len(deleted_ids),
+        }
 
     async def calculate_performance_metrics(self) -> dict:
         async with self._session_factory() as session:

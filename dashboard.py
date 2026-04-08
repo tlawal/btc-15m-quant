@@ -602,6 +602,197 @@ def _require_admin(request: Request) -> Optional[JSONResponse]:
     return None
 
 
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
+def _serialize_trade_record(tr) -> dict:
+    return {
+        "ts": getattr(tr, "ts", None),
+        "side": getattr(tr, "side", None),
+        "entry_price": getattr(tr, "entry_price", None),
+        "exit_price": getattr(tr, "exit_price", None),
+        "pnl": getattr(tr, "pnl", None),
+        "outcome": getattr(tr, "outcome", None),
+        "slippage": getattr(tr, "slippage", None),
+        "size": getattr(tr, "size", None),
+        "tx_hash": getattr(tr, "tx_hash", None),
+        "exit_reason": getattr(tr, "exit_reason", None),
+        "partial_exits": list(getattr(tr, "partial_exits", []) or []),
+    }
+
+
+def _trade_pnl_usd(tr) -> float:
+    pnl = getattr(tr, "pnl", None)
+    if pnl is None:
+        return 0.0
+    return _safe_float(pnl) * _safe_float(getattr(tr, "entry_price", 0.0)) * _safe_float(getattr(tr, "size", 0.0))
+
+
+def _summarize_trade_history(trades) -> dict:
+    closed = [t for t in trades if getattr(t, "outcome", None) in ("WIN", "LOSS")]
+    loss_streak = 0
+    for tr in reversed(closed):
+        if getattr(tr, "outcome", None) == "LOSS":
+            loss_streak += 1
+        else:
+            break
+    return {
+        "total_trades": len(closed),
+        "total_wins": sum(1 for t in closed if getattr(t, "outcome", None) == "WIN"),
+        "total_losses": sum(1 for t in closed if getattr(t, "outcome", None) == "LOSS"),
+        "total_pnl_usd": round(sum(_trade_pnl_usd(t) for t in closed), 6),
+        "loss_streak": loss_streak,
+    }
+
+
+def _loads_json_array(raw):
+    if isinstance(raw, list):
+        return raw
+    if isinstance(raw, str) and raw:
+        try:
+            val = json.loads(raw)
+            return val if isinstance(val, list) else []
+        except Exception:
+            return []
+    return []
+
+
+def _effective_activity_price(row: dict) -> float:
+    size = _safe_float((row or {}).get("size"))
+    usdc_size = _safe_float((row or {}).get("usdcSize"))
+    if size > 0 and usdc_size > 0:
+        return usdc_size / size
+    return _safe_float((row or {}).get("price"))
+
+
+def _winning_outcome_from_event(event: dict) -> Optional[str]:
+    markets = (event or {}).get("markets") or []
+    if not markets:
+        return None
+    outcomes = _loads_json_array(markets[0].get("outcomes"))
+    prices = _loads_json_array(markets[0].get("outcomePrices"))
+    for idx, raw_price in enumerate(prices):
+        try:
+            if float(raw_price) >= 0.999:
+                return outcomes[idx] if idx < len(outcomes) else None
+        except Exception:
+            continue
+    return None
+
+
+def _side_matches_outcome(side: str, outcome_label: Optional[str]) -> bool:
+    label = str(outcome_label or "").strip().lower()
+    side = str(side or "").upper()
+    if side == "YES":
+        return ("yes" in label) or ("up" in label)
+    if side == "NO":
+        return ("no" in label) or ("down" in label)
+    return False
+
+
+async def _fetch_trade_repair_inputs(wallet: str, market_slug: str) -> dict:
+    activity_url = f"https://data-api.polymarket.com/activity?user={wallet.lower()}"
+    event_url = f"https://gamma-api.polymarket.com/events/slug/{market_slug}"
+
+    async with httpx.AsyncClient(timeout=20) as client:
+        activity_resp, event_resp = await asyncio.gather(
+            client.get(activity_url),
+            client.get(event_url),
+        )
+
+    activity_resp.raise_for_status()
+    event_resp.raise_for_status()
+    activity = activity_resp.json() or []
+    event = event_resp.json() or {}
+
+    rows = sorted(
+        [
+            r for r in activity
+            if r.get("slug") == market_slug and r.get("type") == "TRADE"
+        ],
+        key=lambda r: int(r.get("timestamp") or 0),
+    )
+    buys = [r for r in rows if str(r.get("side") or "").upper() == "BUY"]
+    if not buys:
+        raise ValueError(f"No BUY activity found for {market_slug}")
+
+    buy = buys[-1]
+    buy_asset = str(buy.get("asset") or "")
+    sells = [
+        r for r in rows
+        if str(r.get("side") or "").upper() == "SELL"
+        and int(r.get("timestamp") or 0) >= int(buy.get("timestamp") or 0)
+        and (not buy_asset or str(r.get("asset") or "") == buy_asset)
+    ]
+    if not sells:
+        raise ValueError(f"No SELL activity found for {market_slug}")
+
+    winner = _winning_outcome_from_event(event)
+    if not winner:
+        raise ValueError(f"Could not determine winning outcome for {market_slug}")
+
+    sell_size = sum(_safe_float(r.get("size")) for r in sells)
+    sell_usdc = sum(_safe_float(r.get("usdcSize")) for r in sells)
+    if sell_size <= 0 or sell_usdc <= 0:
+        raise ValueError(f"Matched SELL activity for {market_slug} has zero size/notional")
+
+    return {
+        "buy": buy,
+        "sells": sells,
+        "event": event,
+        "winning_outcome": winner,
+        "buy_size": _safe_float(buy.get("size")),
+        "buy_usdc": _safe_float(buy.get("usdcSize")),
+        "buy_effective_price": _effective_activity_price(buy),
+        "sell_size": sell_size,
+        "sell_usdc": sell_usdc,
+        "sell_effective_price": sell_usdc / sell_size,
+        "sell_ts": max(int(r.get("timestamp") or 0) for r in sells),
+    }
+
+
+def _build_repaired_trade(tr, repair_inputs: dict) -> dict:
+    buy_size = repair_inputs["buy_size"]
+    buy_usdc = repair_inputs["buy_usdc"]
+    sell_size = repair_inputs["sell_size"]
+    sell_usdc = repair_inputs["sell_usdc"]
+    side_won = _side_matches_outcome(getattr(tr, "side", None), repair_inputs["winning_outcome"])
+    remaining_size = max(0.0, buy_size - sell_size)
+    settle_px = 1.0 if side_won else 0.0
+    settle_recovered = remaining_size * settle_px
+    total_recovered = sell_usdc + settle_recovered
+    blended_exit_price = total_recovered / buy_size if buy_size > 0 else 0.0
+    blended_pnl = (total_recovered / buy_usdc - 1.0) if buy_usdc > 0 else 0.0
+    partial_reason = (
+        ((getattr(tr, "partial_exits", None) or [{}])[0] or {}).get("reason")
+        or "TP_FULL"
+    )
+    return {
+        "size": buy_size,
+        "entry_price": repair_inputs["buy_effective_price"],
+        "exit_price": blended_exit_price,
+        "pnl": blended_pnl,
+        "outcome": "WIN" if blended_pnl >= 0 else "LOSS",
+        "exit_reason": "AUTO_SETTLE_WIN" if blended_pnl >= 0 else "AUTO_SETTLE_LOSS",
+        "partial_exits": [
+            {
+                "size": sell_size,
+                "price": repair_inputs["sell_effective_price"],
+                "reason": partial_reason,
+                "ts": repair_inputs["sell_ts"],
+            }
+        ],
+        "side_won": side_won,
+        "remaining_size": remaining_size,
+        "settle_price": settle_px,
+        "pnl_usd": total_recovered - buy_usdc,
+    }
+
+
 @app.post("/api/sweep-dust")
 async def sweep_dust(request: Request):
     deny = _require_admin(request)
@@ -1641,6 +1832,156 @@ async def fix_last_trade(request: Request):
         "exit_price": exit_price,
         "pnl_pct": round(target.pnl * 100, 2),
         "outcome": target.outcome,
+    }
+
+
+@app.post("/api/repair-trade")
+async def repair_trade(request: Request):
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    if not engine or not engine.state or not engine.state_mgr:
+        return JSONResponse({"status": "error", "message": "Engine not ready"}, status_code=503)
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    market_slug = str((body or {}).get("market_slug") or "").strip()
+    dry_run = bool((body or {}).get("dry_run", False))
+    if not market_slug:
+        return JSONResponse({"status": "error", "message": "market_slug is required"}, status_code=400)
+
+    from config import Config
+    from eth_account import Account
+
+    try:
+        wallet = Account.from_key(Config.POLYMARKET_PRIVATE_KEY).address
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f"Could not derive wallet from config: {e}"}, status_code=500)
+
+    target = None
+    for tr in reversed(engine.state.trade_history):
+        if getattr(tr, "exit_reason", None) == "AUTO_SETTLE_LOSS" and _safe_float(getattr(tr, "pnl", 0.0)) > 0:
+            target = tr
+            break
+    if target is None:
+        return JSONResponse(
+            {"status": "error", "message": "No positive-PnL AUTO_SETTLE_LOSS trade found to repair"},
+            status_code=404,
+        )
+
+    try:
+        repair_inputs = await _fetch_trade_repair_inputs(wallet, market_slug)
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": str(e)}, status_code=502)
+
+    buy_ts = int((repair_inputs.get("buy") or {}).get("timestamp") or 0)
+    if getattr(target, "ts", None) and buy_ts and abs(int(target.ts) - buy_ts) > 3600:
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": (
+                    f"Candidate trade timestamp {int(target.ts)} does not align with "
+                    f"matched BUY timestamp {buy_ts} for {market_slug}"
+                ),
+            },
+            status_code=409,
+        )
+
+    trade_before = _serialize_trade_record(target)
+    state_before = _summarize_trade_history(engine.state.trade_history)
+    repaired = _build_repaired_trade(target, repair_inputs)
+
+    def _apply_trade_snapshot(trade, snapshot: dict):
+        trade.size = snapshot["size"]
+        trade.entry_price = snapshot["entry_price"]
+        trade.exit_price = snapshot["exit_price"]
+        trade.pnl = snapshot["pnl"]
+        trade.outcome = snapshot["outcome"]
+        trade.exit_reason = snapshot["exit_reason"]
+        trade.partial_exits = list(snapshot["partial_exits"])
+
+    _apply_trade_snapshot(target, repaired)
+    state_after = _summarize_trade_history(engine.state.trade_history)
+    trade_after = _serialize_trade_record(target)
+
+    if dry_run:
+        _apply_trade_snapshot(target, trade_before)
+        return {
+            "status": "ok",
+            "dry_run": True,
+            "matched_activity": {
+                "buy": repair_inputs["buy"],
+                "sells": repair_inputs["sells"],
+                "winning_outcome": repair_inputs["winning_outcome"],
+                "side_won": repaired["side_won"],
+                "remaining_size": repaired["remaining_size"],
+                "settle_price": repaired["settle_price"],
+            },
+            "trade_before": trade_before,
+            "trade_after": trade_after,
+            "state_counter_diff": {
+                "before": state_before,
+                "after": state_after,
+                "delta": {
+                    k: round(state_after[k] - state_before[k], 6)
+                    for k in state_before.keys()
+                },
+            },
+            "closed_trade_updates": {
+                "candidate_ids": [
+                    r["id"] for r in await engine.state_mgr.fetch_closed_trades(market_slug=market_slug)
+                ],
+            },
+            "duplicates_removed": 0,
+        }
+
+    existing_rows = await engine.state_mgr.fetch_closed_trades(market_slug=market_slug)
+    engine.rebuild_state_totals_from_trade_history()
+    canonical_row = engine._closed_trade_row_from_record(
+        target,
+        market_slug,
+        timestamp=(existing_rows[0]["timestamp"] if existing_rows else int(time.time())),
+    )
+    if existing_rows:
+        latest = existing_rows[0]
+        for key in ("slippage", "regime", "features", "kelly_fraction"):
+            if canonical_row.get(key) in (None, "") and latest.get(key) not in (None, ""):
+                canonical_row[key] = latest.get(key)
+
+    sync_result = await engine.state_mgr.resync_closed_trades_from_canonical(
+        [canonical_row],
+        market_slug=market_slug,
+        delete_extra=True,
+    )
+    await engine.state_mgr.calculate_performance_metrics()
+    await engine.state_mgr.save(engine.state)
+
+    return {
+        "status": "ok",
+        "dry_run": False,
+        "matched_activity": {
+            "buy": repair_inputs["buy"],
+            "sells": repair_inputs["sells"],
+            "winning_outcome": repair_inputs["winning_outcome"],
+            "side_won": repaired["side_won"],
+            "remaining_size": repaired["remaining_size"],
+            "settle_price": repaired["settle_price"],
+        },
+        "trade_before": trade_before,
+        "trade_after": trade_after,
+        "state_counter_diff": {
+            "before": state_before,
+            "after": state_after,
+            "delta": {
+                k: round(state_after[k] - state_before[k], 6)
+                for k in state_before.keys()
+            },
+        },
+        "closed_trade_updates": sync_result,
+        "duplicates_removed": int(sync_result.get("deleted", 0)),
     }
 
 
