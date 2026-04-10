@@ -233,8 +233,23 @@ class SignalOptimizer:
                 for line in f:
                     data.append(json.loads(line))
             
-            if len(data) < 10: # Need a minimum sample size
-                log.info(f"Not enough trade data for retraining: {len(data)}/10")
+            # R10: Anti-learning loop fix.
+            # (1) Gate the retrain behind a meaningful sample size. A 10-row RF is
+            #     noise — with 10 trades the optimizer converged on score_offset=-1.0
+            #     and edge_offset=-0.01 (both floors) because in-sample precision was
+            #     0.984, which is 100% overfit, not signal.
+            # (2) Use cross-validated precision, NOT in-sample precision, so we stop
+            #     rewarding the model for memorizing the training set.
+            _min_samples = 30
+            if len(data) < _min_samples:
+                log.info(
+                    f"Not enough trade data for retraining: {len(data)}/{_min_samples} "
+                    f"— holding score_offset/edge_offset at baseline"
+                )
+                # Freeze offsets at 0.0 until we have real data. Better to keep the
+                # hand-tuned thresholds than to let an overfit RF relax them.
+                self.score_offset = 0.0
+                self.edge_offset  = 0.0
                 return
 
             # Flatten features for DataFrame
@@ -243,7 +258,7 @@ class SignalOptimizer:
                 row = entry["features"].copy()
                 row["target"] = entry["outcome"]
                 rows.append(row)
-            
+
             df = pd.DataFrame(rows)
             X = df.drop(columns=["target"])
             y = df["target"]
@@ -255,27 +270,37 @@ class SignalOptimizer:
             # Save model
             joblib.dump(model, self.model_path)
 
-            # Evaluate precision
-            preds = model.predict(X)
-            # Simple heuristic: if overall precision is high, we can relax. If low, tighten.
-            from sklearn.metrics import precision_score
-            precision = precision_score(y, preds, zero_division=0)
-            
-            log.info(f"Retrained optimizer model. Training Precision: {precision:.2f}")
+            # Evaluate precision via cross-validation (held-out), not in-sample.
+            from sklearn.model_selection import cross_val_score
+            _cv = max(2, min(5, len(y) // 6))  # cap cv folds to sample size
+            try:
+                cv_scores = cross_val_score(
+                    model, X, y, cv=_cv, scoring="precision"
+                )
+                precision = float(cv_scores.mean()) if len(cv_scores) else 0.0
+            except Exception as _cv_err:
+                log.warning(f"CV precision failed ({_cv_err}) — skipping threshold adjust")
+                self._last_retrain_ts = time.time()
+                return
+
+            log.info(
+                f"Retrained optimizer model. CV Precision: {precision:.2f} "
+                f"(folds={_cv}, n={len(y)})"
+            )
             self._last_retrain_ts = time.time()
             self._last_precision = precision
 
-            # Adjust thresholds
+            # Adjust thresholds using held-out precision
             if precision < 0.55:
                 # Tighten: increase required thresholds
                 self.score_offset = min(self.score_offset + 0.5, 2.5)
                 self.edge_offset = min(self.edge_offset + 0.005, 0.02)
-                log.warning(f"Low precision ({precision:.2f}) -> Tightening thresholds (score_off={self.score_offset}, edge_off={self.edge_offset})")
+                log.warning(f"Low CV precision ({precision:.2f}) -> Tightening thresholds (score_off={self.score_offset}, edge_off={self.edge_offset})")
             elif precision > 0.75:
                 # Relax: allow more trades
                 self.score_offset = max(self.score_offset - 0.25, -1.0)
                 self.edge_offset = max(self.edge_offset - 0.002, -0.01)
-                log.info(f"High precision ({precision:.2f}) -> Relaxing thresholds (score_off={self.score_offset}, edge_off={self.edge_offset})")
+                log.info(f"High CV precision ({precision:.2f}) -> Relaxing thresholds (score_off={self.score_offset}, edge_off={self.edge_offset})")
 
         except Exception as e:
             log.error(f"Retraining failed: {e}")

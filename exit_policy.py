@@ -294,12 +294,50 @@ def evaluate_exit(
                 return _exit("MAE_LATE_RECOVERY")
 
     # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 1.75: MID_WINDOW_PROFIT_LOCK (R6)
+    # Big peak + time still left + still meaningfully profitable → cash out rather
+    # than wait for strike-flip roulette. This is the user's exact ask after Trade 1:
+    # "it was at 0.98 with 6+ min remaining, why didn't it take it?"
+    # Forced taker (R7): profit-protection exits MUST cross the spread to avoid
+    # maker-failure → DUST_WRITEOFF chains when books vaporize.
+    # ══════════════════════════════════════════════════════════════════════════
+    _mw_lock_mfe      = float(getattr(Config, "MID_WINDOW_LOCK_MFE_PCT",     0.10) or 0.10)
+    _mw_lock_max_rem  = float(getattr(Config, "MID_WINDOW_LOCK_MAX_REM_MIN", 8.0)  or 8.0)
+    _mw_lock_min_pnl  = float(getattr(Config, "MID_WINDOW_LOCK_MIN_PNL_PCT", 0.06) or 0.06)
+    if (
+        mfe_pct >= _mw_lock_mfe
+        and minutes_remaining <= _mw_lock_max_rem
+        and unrealized_pct >= _mw_lock_min_pnl
+    ):
+        log.info(
+            "MID_WINDOW_PROFIT_LOCK: mfe=%.1f%% min_rem=%.1f unrealized=%.1f%% — locking mid-window profit",
+            mfe_pct * 100, minutes_remaining, unrealized_pct * 100,
+        )
+        return _exit("MID_WINDOW_PROFIT_LOCK", use_maker=False)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # LAYER 1.78: PROFIT_GIVEBACK_50PCT (R5)
+    # Independent of TRAIL_PRICE_DISTANCE: if we gave back ≥50% of a meaningful
+    # peak, exit. Catches the slow-drift failure mode that TRAIL_PRICE_STOP misses
+    # on thin books (and would have fired on Trade 1 before the crash leg).
+    # ══════════════════════════════════════════════════════════════════════════
+    _giveback_min_mfe  = float(getattr(Config, "PROFIT_GIVEBACK_MIN_MFE_PCT", 0.08) or 0.08)
+    _giveback_frac     = float(getattr(Config, "PROFIT_GIVEBACK_FRAC", 0.5) or 0.5)
+    if mfe_pct >= _giveback_min_mfe and unrealized_pct < (mfe_pct * _giveback_frac):
+        log.info(
+            "PROFIT_GIVEBACK_50PCT: mfe=%.1f%% unrealized=%.1f%% (<%.0f%% of peak) — locking remaining profit",
+            mfe_pct * 100, unrealized_pct * 100, _giveback_frac * 100,
+        )
+        return _exit("PROFIT_GIVEBACK_50PCT", use_maker=False)
+
+    # ══════════════════════════════════════════════════════════════════════════
     # LAYER 1.8: PRICE-BASED TRAILING STOP
     # Locks in profits if price drops significantly from the highest recorded peak.
+    # R7: forced taker (use_maker=False) — maker on a collapsing book → DUST.
     # ══════════════════════════════════════════════════════════════════════════
     _trail_active = getattr(Config, "TRAIL_PRICE_ACTIVATION_PCT", 0.05)
     _trail_dist   = getattr(Config, "TRAIL_PRICE_DISTANCE_PCT", 0.10)
-    
+
     if mfe_pct >= _trail_active:
         highest_price = entry_price * (1.0 + mfe_pct)
         trail_trigger_price = highest_price * (1.0 - _trail_dist)
@@ -308,7 +346,7 @@ def evaluate_exit(
                 "TRAIL_PRICE_STOP: mfe=%.1f%%, price=%.3f fell %.1f%% from peak=%.3f — protecting profit",
                 mfe_pct * 100, current_price, _trail_dist * 100, highest_price
             )
-            return _exit("TRAIL_PRICE_STOP", use_maker=use_maker)
+            return _exit("TRAIL_PRICE_STOP", use_maker=False)
 
     # ── Post-TP1 remainder protection: tighter trailing once TP1 has filled ──
     # After scaling out, protect the runner more aggressively to avoid giving
@@ -323,7 +361,7 @@ def evaluate_exit(
                 "TP1_TRAIL_PRICE_STOP: tp1_hit=1 mfe=%.1f%%, price=%.3f fell %.1f%% from peak=%.3f — protecting remainder",
                 mfe_pct * 100, current_price, _tp1_trail_dist * 100, highest_price
             )
-            return _exit("TP1_TRAIL_PRICE_STOP", use_maker=use_maker)
+            return _exit("TP1_TRAIL_PRICE_STOP", use_maker=False)
 
     # ── Earlier profit protection on runner: posterior collapse after TP1 ──
     # If we've already taken TP1 and then the model conviction collapses, exit the remainder
@@ -346,13 +384,25 @@ def evaluate_exit(
     # LAYER 2: TIERED TAKE-PROFITS (Req #1)
     # ══════════════════════════════════════════════════════════════════════════
 
-    # Late-entry override: entry >= $0.95 → single tight TP at +2%
+    # Late-entry override: entry in the 0.88–0.95+ "expensive" band gets a single
+    # price-scaled TP. This closes the old dead zone where entries at 0.90–0.94
+    # had no reachable profit target (TP1 at +5% required 0.945–0.987, which crosses
+    # strike-flip territory). Target scales from +4% at 0.88 down to +2% at 0.95.
     if entry_price >= Config.TP_LATE_ENTRY_THRESH:
-        tp_target = Config.TP_LATE_ENTRY_PCT
+        _late_floor = float(getattr(Config, "TP_LATE_ENTRY_PCT", 0.02) or 0.02)
+        _late_ceil  = float(getattr(Config, "TP_LATE_ENTRY_PCT_MAX", 0.04) or 0.04)
+        _band_lo    = float(getattr(Config, "TP_LATE_ENTRY_THRESH", 0.88) or 0.88)
+        _band_hi    = float(getattr(Config, "TP_LATE_ENTRY_BAND_TOP", 0.95) or 0.95)
+        if _band_hi <= _band_lo:
+            tp_target = _late_floor
+        else:
+            # Linear interp: entry=_band_lo → _late_ceil, entry=_band_hi+ → _late_floor.
+            frac = max(0.0, min(1.0, (entry_price - _band_lo) / (_band_hi - _band_lo)))
+            tp_target = _late_ceil + frac * (_late_floor - _late_ceil)
         if unrealized_pct >= tp_target:
             log.info(
                 "TP_LATE_ENTRY: entry=%.3f >= %.2f, unrealized=%.1f%% >= %.1f%% — exiting",
-                entry_price, Config.TP_LATE_ENTRY_THRESH,
+                entry_price, _band_lo,
                 unrealized_pct * 100, tp_target * 100,
             )
             return _exit("TP_LATE_ENTRY", use_maker=use_maker)
@@ -433,7 +483,10 @@ def evaluate_exit(
             # to fire normally when thresholds are reached.
             # (This also makes behavior resilient to partial-fill timing/order failures.)
         else:
-            # Full exit at TP1 threshold (fallback when partial disabled)
+            # Full exit at TP1 threshold (fallback when partial disabled).
+            # R2/R3: When partial exits are disabled, there is no "runner" to protect,
+            # so we MUST exit fully at every TP tier and ignore TP1_POSTERIOR_CEIL
+            # (the ceiling only makes sense when partials have already banked profit).
             if not tp3_hit and unrealized_pct >= Config.TP3_PCT:
                 log.info(
                     "TP3: unrealized=%.1f%% >= %.1f%% — full exit (partial disabled)",
@@ -443,24 +496,17 @@ def evaluate_exit(
                 return _exit("TP3", partial_pct=1.0, use_maker=use_maker)
             if not tp2_hit and unrealized_pct >= Config.TP2_PCT:
                 log.info(
-                    "TP2: unrealized=%.1f%% >= %.1f%% — selling 50%% (partial even when partial disabled)",
+                    "TP2: unrealized=%.1f%% >= %.1f%% — full exit (partial disabled)",
                     unrealized_pct * 100,
                     Config.TP2_PCT * 100,
                 )
-                return _exit("TP2", partial_pct=0.5, use_maker=use_maker)
+                return _exit("TP2", partial_pct=1.0, use_maker=use_maker)
             if unrealized_pct >= Config.TP1_PCT:
-                if tp1_allowed:
-                    log.info(
-                        "TP_FULL: unrealized=%.1f%% >= %.1f%% — full exit (partial disabled)",
-                        unrealized_pct * 100, Config.TP1_PCT * 100,
-                    )
-                    return _exit("TP_FULL", use_maker=use_maker)
                 log.info(
-                    "TP_FULL_SKIPPED_HIGH_CONVICTION: posterior=%.3f >= %.3f — holding despite unrealized=%.1f%%",
-                    float(posterior),
-                    tp1_post_ceil,
-                    unrealized_pct * 100,
+                    "TP_FULL: unrealized=%.1f%% >= %.1f%% — full exit (partial disabled, posterior ceiling bypassed)",
+                    unrealized_pct * 100, Config.TP1_PCT * 100,
                 )
+                return _exit("TP_FULL", use_maker=use_maker)
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 3: PROBABILITY-CONVERGENCE EXIT (Req #4)

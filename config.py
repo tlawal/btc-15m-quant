@@ -167,7 +167,9 @@ class Config:
     # Minimum minutes remaining for entry: 3.0 for normal, 2.0 for near-certain (post >= 0.90).
     MIN_ENTRY_MINUTES_REM          = 3.0    # raised from 2.0 — late entries have no recovery time
     # Sell escalation: market_sell after N consecutive 400-balance errors (was 10 — too slow).
-    ALLOWANCE_FAIL_MARKET_ESCALATION = 2    # escalate to market_sell after 2 failures
+    # R7: faster escalation to market_sell on failed maker legs. Two consecutive
+    # maker failures on a collapsing book is already enough dust to risk DUST_WRITEOFF.
+    ALLOWANCE_FAIL_MARKET_ESCALATION = 1    # escalate to market_sell after 1 failure
     # Late-window position sizing: 50% reduction for entries with < 3 min remaining (non-monster).
     LATE_WINDOW_SIZE_MULTIPLIER    = 0.50   # Kelly calibrated for 15m; at <3m variance is maximal
     # Cycle latency watchdog: skip sell if cycle has been running longer than this to avoid collisions.
@@ -239,15 +241,25 @@ class Config:
     TRAIL_MIN_HOLD_SEC         = 30.0     # minimum hold before trailing can trigger
 
     # ── Price-Based Trailing Stop ─────────────────────────────────────────────
-    TRAIL_PRICE_ACTIVATION_PCT = 0.05     # arm the trailing stop when in 5% profit
-    TRAIL_PRICE_DISTANCE_PCT   = 0.10     # trail 10% behind highest price
+    # R4: Tightened from 10% → 4% give-back. Exit-stats showed TRAIL_PRICE_STOP
+    # firing at avg −13.83% unrealized (i.e. AFTER profit already round-tripped to a
+    # loss). A 4% give-back on an 8% peak locks in +4%; the old 10% distance never
+    # protected against fast strike-flip reversions.
+    TRAIL_PRICE_ACTIVATION_PCT = 0.06     # arm only after a real 6% win
+    TRAIL_PRICE_DISTANCE_PCT   = 0.04     # trail 4% behind highest price
 
     # ── Tiered Take-Profit (percentage from entry) ─────────────────────────
     TP1_PCT                    = 0.05     # +5% → sell 1/3 (or full if partial disabled)
     TP2_PCT                    = 0.12     # +12% → sell 1/3
     TP3_PCT                    = 0.20     # +20% → sell remaining
-    TP_LATE_ENTRY_THRESH       = 0.95     # entry >= $0.95 triggers single TP
-    TP_LATE_ENTRY_PCT          = 0.02     # +2% single TP for late entries
+    # R1: extend late-entry single-TP to cover the 0.88–0.95 "dead zone" that
+    # used to fall between TP1 (+5% unreachable from 0.92 before strike-flip) and
+    # the old TP_LATE_ENTRY @ 0.95. Target is linearly scaled so cheap-late entries
+    # still target more upside while near-cap entries take tight exits.
+    TP_LATE_ENTRY_THRESH       = 0.88     # entry >= $0.88 triggers single-tier TP
+    TP_LATE_ENTRY_PCT          = 0.02     # floor target (applied at entry ~0.95)
+    TP_LATE_ENTRY_PCT_MAX      = 0.04     # ceiling target (applied at entry ~0.88)
+    TP_LATE_ENTRY_BAND_TOP     = 0.95     # entries at/above this hit the floor
     TP_PARTIAL_ENABLED         = False    # 1/3 partial scaling at TP1/TP2/TP3
     TP1_POSTERIOR_CEIL         = 0.93
 

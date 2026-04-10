@@ -186,7 +186,7 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Full-position sell rounding** — `limit_sell` uses `round(size)` (nearest integer) instead of `int(size)` (floor) for sizes > 1 share. `int(6.9905)` silently dropped 0.9905 shares per partial exit, leaving a rump that then triggered a separate HARD_STOP exit at a worse price.
 - **Dust write-off guard** — if `sell_size < MIN_SELL_SIZE (0.05 shares)` after all on-chain/API clamping, the position is written off as `DUST_WRITEOFF` with blended PnL rather than placing an order that will fail with a 400 allowance error.
 - **Fractional Dust Eradication** — `pos.size` subtractions on partial fills are strictly subjected to `math.floor(size * 10000) / 10000`, matching Polymarket's token precision limit natively and completely neutralizing recursive `DUST_SKIP` 82,000% PNL UI math bugs.
-- **Blended PnL on auto-settle** — `AUTO_SETTLE_WIN` and `AUTO_SETTLE_LOSS` now compute `blended_exit_price` and `blended_pnl` weighted across all partial exits plus the remaining shares at settlement ($1.00 or $0.00). Previously, auto-settle overwrote `pnl = -1.0` even when 90%+ of the position had already been sold at recovery prices, causing the dashboard to show -100% instead of the real ~-15%.
+- **Blended PnL on auto-settle** — `AUTO_SETTLE_WIN` and `AUTO_SETTLE_LOSS` now compute `blended_exit_price` and `blended_pnl` weighted across all partial exits plus the remaining shares at settlement ($1.00 or $0.00). Previously, auto-settle overwrote `pnl = -1.0` even when 90%+ of the position had already been sold at recovery prices, causing the dashboard to show -100% instead of the real ~-15%. If an older trade was misclassified, use `POST /api/repair-trade` instead of resetting the database.
 - **Slippage tracking** — actual fill price vs intended price logged per trade; warns if > 1%
 - **Market quality filter** — skips cycle if spreads > 8%, book depth < 20 USDC, or klines > 5 min stale
 - **Position sizing robustness (Apr 3, 2026)** — added None guard in `compute_position_size()` before SLIPPAGE_BUFFER multiplication to prevent TypeError crashes when balance or Kelly fraction becomes None
@@ -365,6 +365,7 @@ Mount a volume at `/data` to persist:
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/api/logs/clear` | POST | Truncates `structured_logs.json` (clears `/api/logs` history) |
+| `/api/repair-trade` | POST | Admin-token protected: repairs a misclassified historical trade in place (body: `{market_slug, dry_run}`) |
 | `/api/db/reset` | POST | Deletes `state.db` — wipes all trade history, positions, and state. Bot recreates DB with fresh migrations on next start. Restart the Railway service after calling this. |
 | `/api/kill` | POST | Password-protected kill switch |
 | `/api/resume` | POST | Password-protected resume (clears halt + loss streak) |
@@ -383,6 +384,111 @@ curl -X POST https://<your-app>.up.railway.app/api/db/reset
 
 # Then restart the service in the Railway dashboard so the bot picks up the clean state.
 ```
+
+---
+
+## Forensic Trade Audit (Live)
+
+All state that matters for a post-mortem lives on the Railway volume at `/data/state.db`, not the local repo copy. Use the dashboard admin endpoints to pull ground truth and reconstruct the exit-decision timeline. All endpoints below are **read-only**.
+
+### Prerequisites
+- `railway` CLI authenticated against the `pleasing-delight` project
+- Admin token from `railway variables | grep DASHBOARD_ADMIN_TOKEN`
+- Public URL from `railway variables | grep RAILWAY_PUBLIC_DOMAIN` (e.g. `btc-15-quant.up.railway.app`)
+
+### 1. Pull the live state DB
+```bash
+ADMIN_TOKEN=qosmio9176   # or read from: railway variables
+BASE=https://btc-15-quant.up.railway.app
+curl -sSL "$BASE/api/db/download" -H "x-admin-token: $ADMIN_TOKEN" -o /tmp/live_state.db
+```
+
+### 2. Query the trade(s) of interest
+```bash
+python3 - <<'PY'
+import sqlite3, json
+c = sqlite3.connect('/tmp/live_state.db').cursor()
+
+# List recent closed trades (id, time, slug, sizes, prices, exit reason)
+print("=== closed_trades (recent) ===")
+for r in c.execute(
+    "SELECT id, datetime(timestamp,'unixepoch','localtime'), market_slug, "
+    "size, entry_price, exit_price, pnl_usd, exit_reason "
+    "FROM closed_trades ORDER BY timestamp DESC LIMIT 20"
+):
+    print(r)
+
+# Full row + entry features for a specific market slug
+TARGET = "btc-updown-15m-1775823300"   # <-- edit
+print("\n=== closed_trades row + features for", TARGET, "===")
+for r in c.execute("SELECT * FROM closed_trades WHERE market_slug=?", (TARGET,)):
+    row = dict(zip([d[0] for d in c.description], r))
+    if row.get("features"):
+        try: row["features"] = json.loads(row["features"])
+        except Exception: pass
+    print(json.dumps(row, indent=2, default=str))
+
+# trade_history kv has the full partial_exits lineage per trade
+print("\n=== trade_history partial_exits ===")
+c.execute("SELECT value FROM kv WHERE key='trade_history'")
+for item in json.loads(c.fetchone()[0]):
+    if TARGET.endswith(str(item.get("window",""))):
+        print(json.dumps(item, indent=2))
+PY
+```
+
+The `partial_exits` list in `trade_history` is the single most valuable artifact — each item shows `{reason, price, size, ts}` for every exit leg. A sequence like `TP2 → HARD_STOP → DUST_WRITEOFF` tells the complete story of a losing runner.
+
+### 3. Pull aggregate context endpoints
+```bash
+curl -s "$BASE/api/optimizer-detail"   -H "x-admin-token: $ADMIN_TOKEN" | python3 -m json.tool
+curl -s "$BASE/api/exit-stats"         -H "x-admin-token: $ADMIN_TOKEN" | python3 -m json.tool
+curl -s "$BASE/api/regime-performance" -H "x-admin-token: $ADMIN_TOKEN" | python3 -m json.tool
+curl -s "$BASE/api/debug"              -H "x-admin-token: $ADMIN_TOKEN" | python3 -m json.tool | head -80
+```
+
+Red flags to scan for:
+- `/api/debug.last_cycle_error` — any active runtime exception bubbling out of `_cycle()` / `_handle_entry()` / `_handle_exits()`
+- `/api/optimizer-detail.score_offset` or `.edge_offset` **at their floors** (-1.0 / -0.01) — anti-learning loop: the optimizer is overfitting on a tiny in-sample and relaxing entry gates to the max
+- `/api/exit-stats.by_reason.TRAIL_PRICE_STOP.avg_unrealized_pct` **negative** — trailing stop is firing on already-losing trades instead of locking profits
+- `/api/exit-stats.by_reason.HARD_STOP.count` dominating — protective exits are failing upstream, leaving `HARD_STOP` to clean up
+
+### 4. Tail live logs (short retention)
+```bash
+(railway logs 2>&1 & sleep 15; kill $!) > /tmp/rail.log
+grep -E "TARGET_SLUG|TRAIL_PRICE_STOP|HARD_STOP|DUST|TP[123]|TP_FULL|EXIT" /tmp/rail.log
+```
+Railway only keeps ~minutes of logs on the `railway logs` stream, so for older trades the DB `partial_exits` lineage is the authoritative source.
+
+### 5. Prompt template for Claude Code forensic auditor
+
+Paste the following into Claude Code whenever a trade needs a forensic audit:
+
+> Run a forensic audit on the losing trade `<market_slug>` (approximately `<HH:MM>`, `<side>` entry `<price>`, observed PnL `<pct>%`).
+>
+> 1. `curl -sSL https://btc-15-quant.up.railway.app/api/db/download -H "x-admin-token: $ADMIN_TOKEN" -o /tmp/live_state.db`, then query `closed_trades` for that market slug and extract the matching item from `kv.trade_history`. Print every field, parse `features`, and show every `partial_exits` entry in order with their reason/price/size/ts.
+> 2. From `/api/debug` report `last_cycle_error` and any active runtime bugs.
+> 3. From `/api/optimizer-detail` report `score_offset`, `edge_offset`, `last_precision`, `total_features_logged`, `closed_trades`.
+> 4. From `/api/exit-stats` list the top exit reasons by count with their `avg_unrealized_pct`.
+> 5. Read `exit_policy.py`, `main.py _handle_exits`, and `config.py` and reconstruct the exact exit-decision timeline: for each `partial_exits` entry, identify which exit layer fired (e.g. `TP2`, `HARD_STOP`, `VOL_HARD_STOP`), which config thresholds it crossed, and cite `file.py:line`.
+> 6. Identify root causes — both the *strategic* failure (wrong rule fired / no rule fired) and the *execution* failure (maker sells on a collapsing book, dust residuals, etc.).
+> 7. Propose concrete, surgical fixes — config edits or code edits cited to `file.py:line` with a one-line *why* each. No generic "add logging" suggestions.
+> 8. Finish with a one-paragraph summary of what the user saw vs what the bot actually did, and name the single highest-impact fix.
+>
+> Only use read-only tools. Do not modify any files.
+
+---
+
+## FAQ
+
+**Why does the dashboard show the wrong win rate or an `AUTO_SETTLE_LOSS` on a trade that ended profitable?**  
+That usually means a historical settlement was classified before the blended PnL fix. Do not reset the database unless you want to lose trade history. Use the admin-protected `POST /api/repair-trade` endpoint to patch the bad trade in place and recompute metrics.
+
+**What does the repair endpoint do?**  
+It finds the matching historical trade, rewrites the canonical `trade_history` entry, updates the corresponding `closed_trades` row, removes duplicates created by older settlement logic, and recalculates performance counters.
+
+**When should I use `/api/db/reset`?**  
+Only when you intentionally want a clean slate. It deletes all stored trades and state, so it is not the right fix for a single bad settlement.
 
 ---
 
@@ -473,4 +579,3 @@ python main.py --reset
 | `HTF_TREND_GATE_ENABLED` | `true` | Enable/disable 1H EMA9/EMA20 trend conflict gate (Fix #6) |
 | `VPOC_PROXIMITY_GATE_PCT` | **0.015** | Max allowed % deviation from VPOC before blocking entry (Fix #9, 1.5%) |
 | `EMERGENCY_SELL_LOSS_PCT` | **0.08** | Emergency FOK market-sell threshold when first sell failed and loss > 8% (Fix #8) |
-

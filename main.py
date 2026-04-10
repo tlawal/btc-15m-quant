@@ -3682,6 +3682,36 @@ class Engine:
             _entry_skipped("entry_price_too_high", entry_px=entry_px, side=side_name)
             return
 
+        # R8: Flip-cliff guard. Expensive late-window entries near the strike have
+        # asymmetric payoffs (tiny upside / huge downside) — when BTC wobbles across
+        # the strike with <4 min left, a 0.92 NO can go 0.92 → 0.15 in seconds.
+        # Block regardless of monster status; this closes the exemption that let
+        # Trade 2 (btc-updown-15m-1775746800) through at 2.77 min remaining.
+        _flip_cliff_min_rem  = float(getattr(Config, "FLIP_CLIFF_MAX_MIN_REM",     4.0)  or 4.0)
+        _flip_cliff_min_px   = float(getattr(Config, "FLIP_CLIFF_MIN_ENTRY_PRICE", 0.88) or 0.88)
+        _flip_cliff_max_dist = float(getattr(Config, "FLIP_CLIFF_MAX_STRIKE_DIST", 50.0) or 50.0)
+        try:
+            _fc_dist = abs(float(getattr(sig, "distance", 0.0) or 0.0))
+        except Exception:
+            _fc_dist = 0.0
+        if (
+            min_rem is not None
+            and min_rem < _flip_cliff_min_rem
+            and entry_px >= _flip_cliff_min_px
+            and _fc_dist < _flip_cliff_max_dist
+        ):
+            log.warning(
+                "FLIP_CLIFF_BLOCK: min_rem=%.1f<%.1f entry=%.3f>=%.2f strike_dist=%.1f<%.1f — blocking late expensive near-strike entry",
+                min_rem, _flip_cliff_min_rem, entry_px, _flip_cliff_min_px, _fc_dist, _flip_cliff_max_dist,
+            )
+            _entry_skipped(
+                "flip_cliff_block",
+                min_rem=float(min_rem),
+                entry_px=entry_px,
+                strike_dist=_fc_dist,
+            )
+            return
+
         # Phase 8: Strict Edge Gate (Fix #8)
         # Block entry if target_edge is negative, regardless of score (unless monster)
         _target_edge = sig.edge_up if sig.direction == "UP" else sig.edge_down
@@ -3785,19 +3815,22 @@ class Engine:
             book = ob,
             edge = sig.edge_up if sig.direction == "UP" else sig.edge_down,
         )
+        # Short-circuit None/0 sizing before any multiplications — `compute_position_size`
+        # can legitimately return None when Kelly collapses or balance is unusable, and the
+        # downstream `*=` lines below would otherwise raise TypeError: NoneType * float.
+        if not position_usd:
+            log.info(f"Position size below minimum (bal={balance:.2f})")
+            _entry_skipped("position_size_below_min", balance=balance, entry_px=entry_px)
+            return
         if getattr(self.state, "daily_loss_soft_scale", 1.0) < 1.0:
             position_usd *= self.state.daily_loss_soft_scale
         # Late-window size reduction: at < 3 min remaining (non-monster), binary outcome variance
         # is at maximum — Kelly is calibrated for full 15-min windows. Apply 50% haircut.
         # Ref: Kelly (1956) + Thorp (2006) — fractional Kelly for high-variance binary payoffs.
-        _late_size_mult = float(getattr(Config, "LATE_WINDOW_SIZE_MULTIPLIER", 0.50))
+        _late_size_mult = float(getattr(Config, "LATE_WINDOW_SIZE_MULTIPLIER", 0.50) or 0.50)
         if min_rem is not None and min_rem < 3.0 and not sig.monster_signal:
             position_usd *= _late_size_mult
             log.info(f"LATE_WINDOW_SIZE: min_rem={min_rem:.1f}<3.0 → size × {_late_size_mult:.2f} = ${position_usd:.2f}")
-        if not position_usd:
-            log.info(f"Position size below minimum (bal={balance:.2f})")
-            _entry_skipped("position_size_below_min", balance=balance, entry_px=entry_px)
-            return
 
         # Integer shares for CLOB precision (maker_amount must have ≤2 decimals)
         # Use ceil when sizing is at floor levels to avoid dropping below CLOB minimum
