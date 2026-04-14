@@ -139,6 +139,11 @@ def evaluate_exit(
     # Pre-compute time-decay multiplier for microstructure exits
     td_mult = _time_decay_multiplier(minutes_remaining)
 
+    # R15: Universal endgame grace cap. At < 3 min remaining, grace/hold periods
+    # must scale with available time — a 45s grace at 1.67 min remaining means
+    # the stop physically can't fire until 45% of remaining time has elapsed.
+    _endgame_grace_cap = max(3, int(minutes_remaining * 5)) if minutes_remaining < 3.0 else 999
+
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 0: ABSOLUTE HARD STOP — unconditional circuit breaker, no gates
     # At -25% the position is unrecoverable on a 15m binary; cut always.
@@ -154,6 +159,7 @@ def evaluate_exit(
             and entry_min_rem < 3.0
             and hold_seconds < 60
             and posterior >= 0.65
+            and unrealized_pct > -0.35  # R12: absolute cap — no suppression past -35%
         )
         if _suppress_late:
             log.info(
@@ -170,9 +176,9 @@ def evaluate_exit(
             _grace_reduced = int(getattr(Config, "HARD_STOP_GRACE_REDUCED_SEC", 25))
 
             if posterior >= _grace_high:
-                _grace_sec = _grace_full
+                _grace_sec = min(_grace_full, _endgame_grace_cap)    # R15
             elif posterior >= _grace_low:
-                _grace_sec = _grace_reduced
+                _grace_sec = min(_grace_reduced, _endgame_grace_cap)  # R15
             else:
                 _grace_sec = 0  # model says we're wrong — fire immediately
 
@@ -206,7 +212,7 @@ def evaluate_exit(
         Config.VOL_STOP_MAX_PCT,
     )
     _base_hold = getattr(Config, "MIN_HOLD_BEFORE_DRAWDOWN_SEC", 30)
-    _min_hold = min(_base_hold, max(5, minutes_remaining * 15))  # Scale with time: 2min→30s, 1min→15s, 0.5min→7s
+    _min_hold = min(_base_hold, max(5, minutes_remaining * 15), _endgame_grace_cap)  # R15: endgame cap overrides
     if unrealized_pct < -vol_stop_pct:
         if hold_seconds < _min_hold:
             log.info(

@@ -3379,10 +3379,13 @@ class Engine:
             return
 
         # ── Phase 3: Time-to-Expiry Gate ────────────────────────────────────────
-        # Hard cap: Never enter with < 1.5 min remaining (Audit recommendation).
-        # Ensures exit policy has enough time to operate and avoids noisy terminal CLOB action.
-        if min_rem < 1.5:
-            log.warning(f"LATE_ENTRY_BLOCKED: Time to expiry ({min_rem:.1f}m) < 1.5m — too little room for exit policy")
+        # R13: Hard cap: Never enter with < 2.0 min remaining — unconditional, no
+        # monster override. At < 2 min, CLOB books thin to 1/5th of mid-window depth,
+        # market makers pull quotes, and one adverse BTC candle destroys the position
+        # with zero recovery time. Trade btc-updown-15m-1776086100 entered at 1.67 min,
+        # lost -51% in 11 seconds. Raised from 1.5 → 2.0.
+        if min_rem < 2.0:
+            log.warning(f"LATE_ENTRY_BLOCKED: Time to expiry ({min_rem:.1f}m) < 2.0m — too little room for exit policy")
             _entry_skipped("time_to_expiry_hard_limit", min_rem=float(min_rem) if min_rem is not None else None)
             return
 
