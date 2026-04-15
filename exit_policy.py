@@ -251,6 +251,14 @@ def evaluate_exit(
     # Fix #1: STRIKE_DISTANCE uses a shorter 20s grace (not the general 60s _min_hold).
     # Forensic audit: 60s allowed 17 consecutive suppressions while BTC moved against the trade.
     _strike_grace_sec = 20
+    # Fix 2 (Forensic Apr 15): Monster entries get extended grace — high-conviction
+    # signals should not be cut by distance alone in the first 45s (CLOB whipsaw window).
+    _is_monster_entry = (
+        (entry_score is not None and abs(entry_score) >= 8.0)
+        or (entry_posterior is not None and entry_posterior >= 0.90)
+    )
+    if _is_monster_entry:
+        _strike_grace_sec = int(getattr(Config, "MONSTER_STRIKE_GRACE_SEC", 45))
     if (
         distance is not None and atr14 is not None and atr14 > 0
         and unrealized_pct < -0.05
@@ -269,11 +277,39 @@ def evaluate_exit(
                     abs(distance), _strike_mult, _strike_mult * atr14, unrealized_pct * 100, hold_seconds, _strike_grace_sec,
                 )
             else:
-                log.warning(
-                    "STRIKE_DISTANCE_EXCEEDED: distance=%.1f > %.2f*ATR=%.1f, unrealized=%.1f%% — exiting",
-                    abs(distance), _strike_mult, _strike_mult * atr14, unrealized_pct * 100,
-                )
-                return _exit("STRIKE_DISTANCE_EXCEEDED")
+                # Fix 1 (Forensic Apr 15): BTC cross-validation gate.
+                # When BTC confirms the held direction, distance is a confirmation signal,
+                # not a loss signal — the CLOB price drop is microstructure noise.
+                # Same pattern as FORCED_DRAWDOWN BTC confirmation (line ~740-754).
+                if (btc_price is not None and strike_price is not None
+                        and held_direction is not None and posterior is not None
+                        and posterior > 0.80):
+                    _btc_confirms = (
+                        (held_direction == "DOWN" and btc_price < strike_price)
+                        or (held_direction == "UP" and btc_price > strike_price)
+                    )
+                    if _btc_confirms:
+                        log.info(
+                            "STRIKE_DISTANCE_BTC_CONFIRMED: distance=%.1f > %.2f*ATR=%.1f unrealized=%.1f%% "
+                            "but BTC=$%.2f %s strike=$%.2f posterior=%.3f — CLOB noise, holding",
+                            abs(distance), _strike_mult, _strike_mult * atr14, unrealized_pct * 100,
+                            btc_price, "<" if held_direction == "DOWN" else ">",
+                            strike_price, posterior,
+                        )
+                        # Skip exit — BTC confirms direction, CLOB drawdown is noise
+                    else:
+                        log.warning(
+                            "STRIKE_DISTANCE_EXCEEDED: distance=%.1f > %.2f*ATR=%.1f, unrealized=%.1f%% "
+                            "BTC does NOT confirm — exiting",
+                            abs(distance), _strike_mult, _strike_mult * atr14, unrealized_pct * 100,
+                        )
+                        return _exit("STRIKE_DISTANCE_EXCEEDED")
+                else:
+                    log.warning(
+                        "STRIKE_DISTANCE_EXCEEDED: distance=%.1f > %.2f*ATR=%.1f, unrealized=%.1f%% — exiting",
+                        abs(distance), _strike_mult, _strike_mult * atr14, unrealized_pct * 100,
+                    )
+                    return _exit("STRIKE_DISTANCE_EXCEEDED")
 
     # ══════════════════════════════════════════════════════════════════════════
     # LAYER 1.5: MAE-CONDITIONED EXITS

@@ -478,6 +478,69 @@ async def reset_db():
         removed = True
     return {"status": "reset", "path": db_path, "removed": removed}
 
+@app.get("/api/trade-detail")
+async def trade_detail(market_slug: str = "", request: Request = None):
+    """Forensic audit endpoint: full trade detail by market_slug, no DB download needed.
+    Returns partial_exits with reasons, entry features/indicators, entry telemetry, and PnL."""
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    if not engine:
+        return JSONResponse({"status": "loading"}, status_code=503)
+    if not market_slug:
+        return JSONResponse({"error": "market_slug query param required"}, status_code=400)
+
+    # Search in-memory trade_history
+    trade = None
+    for tr in reversed(engine.state.trade_history):
+        _slug = getattr(engine.state, "last_market_slug", "") or ""
+        _win = str(getattr(tr, "window", ""))
+        if _slug == market_slug or market_slug.endswith(_win):
+            trade = tr
+            break
+    if trade is None:
+        # Fallback: search closed_trades in DB
+        try:
+            rows = await engine.state_mgr.fetch_closed_trades(market_slug=market_slug)
+            if rows:
+                return {"source": "closed_trades_db", "trade": rows[0]}
+        except Exception:
+            pass
+        return JSONResponse({"error": f"Trade not found for {market_slug}"}, status_code=404)
+
+    result = {
+        "source": "trade_history",
+        "market_slug": market_slug,
+        "ts": getattr(trade, "ts", None),
+        "side": getattr(trade, "side", None),
+        "entry_price": getattr(trade, "entry_price", None),
+        "exit_price": getattr(trade, "exit_price", None),
+        "size": getattr(trade, "size", None),
+        "pnl": getattr(trade, "pnl", None),
+        "outcome": getattr(trade, "outcome", None),
+        "exit_reason": getattr(trade, "exit_reason", None),
+        "score": getattr(trade, "score", None),
+        "slippage": getattr(trade, "slippage", None),
+        "tx_hash": getattr(trade, "tx_hash", None),
+        "window": getattr(trade, "window", None),
+        "partial_exits": list(getattr(trade, "partial_exits", []) or []),
+    }
+
+    # Add entry features from closed_trades DB (has the full features JSON)
+    try:
+        rows = await engine.state_mgr.fetch_closed_trades(market_slug=market_slug)
+        if rows and rows[0].get("features"):
+            result["features"] = rows[0]["features"]
+    except Exception:
+        pass
+
+    # Add entry telemetry from state (if available)
+    _tel = getattr(engine.state, "last_entry_telemetry", None)
+    if _tel and _tel.get("market_slug") == market_slug:
+        result["entry_telemetry"] = _tel
+
+    return result
+
 @app.get("/api/db/download")
 async def download_db():
     db_path = "/data/state.db" if os.path.isdir("/data") else "state.db"
@@ -488,6 +551,37 @@ async def download_db():
         media_type="application/octet-stream",
         filename=os.path.basename(db_path),
     )
+
+@app.post("/api/purge-all")
+async def purge_all(request: Request):
+    """Purge ALL persistent state: DB, exit logs, optimizer model/features, calibration, structured logs.
+    After calling this, restart the service to reinitialize in-memory state."""
+    deny = _require_admin(request)
+    if deny:
+        return deny
+    base = "/data" if os.path.isdir("/data") else "."
+    files_to_purge = [
+        "state.db",
+        "exit_outcomes.jsonl",
+        "trade_features.jsonl",
+        "calibration_log.jsonl",
+        "optimizer_model.joblib",
+        "platt_scaler.json",
+        "structured_logs.json",
+        "outcomes.jsonl",
+    ]
+    purged = []
+    for fname in files_to_purge:
+        fpath = os.path.join(base, fname)
+        if os.path.exists(fpath):
+            try:
+                os.remove(fpath)
+                purged.append(fname)
+            except Exception as e:
+                purged.append(f"{fname} (error: {e})")
+        else:
+            purged.append(f"{fname} (not found)")
+    return {"status": "purged", "purged": purged, "note": "Restart service to reinitialize in-memory state"}
 
 @app.get("/api/logs")
 async def get_logs(limit: int = 240):

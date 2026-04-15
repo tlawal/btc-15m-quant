@@ -367,6 +367,8 @@ Mount a volume at `/data` to persist:
 | `/api/logs/clear` | POST | Truncates `structured_logs.json` (clears `/api/logs` history) |
 | `/api/repair-trade` | POST | Admin-token protected: repairs a misclassified historical trade in place (body: `{market_slug, dry_run}`) |
 | `/api/db/reset` | POST | Deletes `state.db` — wipes all trade history, positions, and state. Bot recreates DB with fresh migrations on next start. Restart the Railway service after calling this. |
+| `/api/purge-all` | POST | Deletes ALL persistent files: DB + exit logs + optimizer model/features + calibration + structured logs. Recommended over `/api/db/reset` for full reset. Restart after calling. |
+| `/api/trade-detail?market_slug=<slug>` | GET | Forensic audit endpoint: returns full trade detail (partial_exits with reasons, entry features/indicators, entry telemetry, PnL) without downloading the DB. Admin-token required. |
 | `/api/kill` | POST | Password-protected kill switch |
 | `/api/resume` | POST | Password-protected resume (clears halt + loss streak) |
 | `/api/manual/exit-limit` | POST | Admin-token protected: place exit limit order (body: `{price, order_type}`) |
@@ -376,13 +378,18 @@ Mount a volume at `/data` to persist:
 
 **Reset procedure (Railway):**
 ```bash
-# Clear logs
-curl -X POST https://<your-app>.up.railway.app/api/logs/clear
-
-# Reset database (wipes all state — irreversible)
-curl -X POST https://<your-app>.up.railway.app/api/db/reset
+# Full purge: deletes DB + all optimizer/exit/calibration logs in one call
+curl -X POST https://<your-app>.up.railway.app/api/purge-all -H "x-admin-token: $ADMIN_TOKEN"
 
 # Then restart the service in the Railway dashboard so the bot picks up the clean state.
+```
+
+The `/api/purge-all` endpoint removes: `state.db`, `exit_outcomes.jsonl`, `trade_features.jsonl`, `calibration_log.jsonl`, `optimizer_model.joblib`, `platt_scaler.json`, `structured_logs.json`, `outcomes.jsonl`. This is the recommended way to fully reset — the older `/api/db/reset` only deletes the database.
+
+**Individual resets (if you only need to clear one thing):**
+```bash
+curl -X POST https://<your-app>.up.railway.app/api/db/reset -H "x-admin-token: $ADMIN_TOKEN"      # DB only
+curl -X POST https://<your-app>.up.railway.app/api/logs/clear -H "x-admin-token: $ADMIN_TOKEN"     # structured logs only
 ```
 
 ---
@@ -395,6 +402,17 @@ All state that matters for a post-mortem lives on the Railway volume at `/data/s
 - `railway` CLI authenticated against the `pleasing-delight` project
 - Admin token from `railway variables | grep DASHBOARD_ADMIN_TOKEN`
 - Public URL from `railway variables | grep RAILWAY_PUBLIC_DOMAIN` (e.g. `btc-15-quant.up.railway.app`)
+
+### Quick Audit (no DB download)
+
+Use `/api/trade-detail` to get full trade data including partial exits, entry features, and telemetry in a single API call:
+```bash
+ADMIN_TOKEN=qosmio9176
+BASE=https://btc-15-quant.up.railway.app
+curl -s "$BASE/api/trade-detail?market_slug=btc-updown-15m-1776259800" -H "x-admin-token: $ADMIN_TOKEN" | python3 -m json.tool
+```
+
+### Full Audit (DB download)
 
 ### 1. Pull the live state DB
 ```bash

@@ -1743,9 +1743,20 @@ function updateUI() {
                     const partialStr = partials.length > 0
                         ? partials.map(p => `${p.size}@${p.price?.toFixed(3)||'?'}`).join(', ')
                         : '';
-                    const reasonCell = partials.length > 0
-                        ? `<td class="text-amber-400" title="Partials: ${partialStr}">${reason} (${partials.length}p)</td>`
-                        : `<td class="text-slate-400">${reason}</td>`;
+                    // Forensic Apr 15: show partial exit reason as primary, AUTO_SETTLE as secondary
+                    const partialReasons = partials.length > 0
+                        ? partials.map(p => p.reason || '?').filter((v,i,a) => a.indexOf(v) === i).join(', ')
+                        : '';
+                    const isAutoSettle = reason.startsWith('AUTO_SETTLE');
+                    const settleLabel = reason.replace('AUTO_SETTLE_', '').replace('_WIN',' WIN').replace('_LOSS',' LOSS');
+                    let reasonCell;
+                    if (partials.length > 0 && partialReasons) {
+                        reasonCell = `<td class="text-amber-400" title="Partials: ${partialStr}">${partialReasons} <span class="text-slate-500 text-[0.55rem]">→ ${settleLabel}</span></td>`;
+                    } else if (isAutoSettle) {
+                        reasonCell = `<td class="text-slate-400">${settleLabel}</td>`;
+                    } else {
+                        reasonCell = `<td class="text-slate-400">${reason}</td>`;
+                    }
                     return `<tr class="trade-row">
                         <td class="py-1.5 text-slate-400">${ts}</td>
                         <td class="${t.side==='YES'?'text-green-400':'text-red-400'}">${t.side||'--'}</td>
