@@ -220,6 +220,36 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Exit outcome logging (Phase A)** — every triggered exit is logged to `exit_outcomes.jsonl` (via `main.py` calling `optimizer.log_exit_attempt()`): exit reason, unrealized%, posteriors, time remaining, hold duration; filled with settlement outcome at each window roll for counterfactual analysis
 - **Nightly Trade Journal** — OpenRouter LLM (default: `anthropic/claude-3.5-sonnet`, configurable) reviews 24h performance at 00:05 UTC with 9 structured sections including BTC cross-validation audit and first-person trade journal reflections, saves to `/data/nightly_review_{date}.md`, sends Telegram summary
 
+---
+
+## Signal Scoring Reference
+
+All 15 sub-signals use the same convention: **positive = bullish/UP**, **negative = bearish/DOWN**. The aggregate `signed_score` is computed via `_signed_max` per group (only the strongest signal in each group contributes), then summed across groups.
+
+| Signal | Group | Range | Positive = | Negative = |
+|--------|-------|-------|-----------|------------|
+| `ema_score` | Trend | ±2 | EMA9 > EMA20, BTC rising | EMA9 < EMA20, BTC falling |
+| `vwap_score` | Trend | ±1 | Price above VWAP, bullish | Price below VWAP, bearish |
+| `macd_score` | Trend | ±1 | MACD histogram positive, bullish | MACD histogram negative, bearish |
+| `bb_position_score` | Trend | ±1 | Price near upper Bollinger band | Price near lower Bollinger band |
+| `mtf_momentum_score` | Trend | ±1 | Price above both VWAP + EMA9 | Price below both VWAP + EMA9 |
+| `rsi_score` | Momentum | ±2 | RSI < 50 (oversold → bullish reversal) | RSI > 50 (overbought → bearish reversal) |
+| `stoch_score` | Momentum | ±1.5 | Stoch < 50 (oversold → bullish reversal) | Stoch > 50 (overbought → bearish reversal) |
+| `mfi_score` | Momentum | ±2 | Bullish MFI divergence (price↓ MFI↑) | Bearish MFI divergence (price↑ MFI↓) |
+| `obv_score` | Momentum | ±2.5 | Bullish OBV divergence (price↓ volume↑) | Bearish OBV divergence (price↑ volume↓) |
+| `cvd_score` | Flow | ±2 | Buy volume dominates, bullish pressure | Sell volume dominates, bearish pressure |
+| `ofi_score` | Flow | ±2 | Buy-side order flow imbalance | Sell-side order flow imbalance |
+| `accum_ofi_score` | Flow | ±2 | Accumulated buy-side OFI over window | Accumulated sell-side OFI over window |
+| `imbalance_score` | Micro | ±1 | Bid depth > ask depth, bullish | Ask depth > bid depth, bearish |
+| `spread_pressure_score` | Micro | ±1 | Compressed spread + buy imbalance | Compressed spread + sell imbalance |
+| `liq_vacuum_score` | Micro | ±2 | Bid depth vacuum, bullish support | Ask depth vacuum, bearish pressure |
+
+**Group scoring**: Each group contributes its max-magnitude signal only (`_signed_max`). Final score = Trend + Momentum + Flow + Micro + timing modifiers (TOB, CVD velocity, PM flow).
+
+**Divergence gate** (`MONSTER_DIVERGENCE_MAX_NEGATIVE`, default 4): If 4+ sub-signals disagree with the chosen direction, `monster_signal` is downgraded to `False`. This removes late-window override privileges (entry blocked at < 3.0 min remaining) and full-size exemption. Logged as `MONSTER_DIVERGENCE: score=8.48 but 9/15 sub-signals disagree with DOWN (threshold=4)`.
+
+---
+
 ### Dashboard
 - Real-time FastAPI dashboard at `/`
 - WebSocket push every cycle + 2s polling fallback
@@ -251,34 +281,6 @@ Approval note (Polymarket conditional tokens):
 - Polygon mainnet addresses (from `py_clob_client` contract config):
   - ConditionalTokens (ERC-1155): `0x4D97DCd97eC945f40cF65F87097ACe5EA0476045`
   - Exchange / operator: `0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E`
-
----
-
-## Signal Scoring Reference
-
-All 15 sub-signals use the same convention: **positive = bullish/UP**, **negative = bearish/DOWN**. The aggregate `signed_score` is computed via `_signed_max` per group (only the strongest signal in each group contributes), then summed across groups.
-
-| Signal | Group | Range | Positive = | Negative = |
-|--------|-------|-------|-----------|-----------|
-| `ema_score` | Trend | ±2 | EMA9 > EMA20, BTC rising | EMA9 < EMA20, BTC falling |
-| `vwap_score` | Trend | ±1 | Price above VWAP, bullish | Price below VWAP, bearish |
-| `macd_score` | Trend | ±1 | MACD histogram positive, bullish | MACD histogram negative, bearish |
-| `bb_position_score` | Trend | ±1 | Price near upper Bollinger band | Price near lower Bollinger band |
-| `mtf_momentum_score` | Trend | ±1 | Price above both VWAP + EMA9 | Price below both VWAP + EMA9 |
-| `rsi_score` | Momentum | ±2 | RSI < 50 (oversold → bullish reversal) | RSI > 50 (overbought → bearish reversal) |
-| `stoch_score` | Momentum | ±1.5 | Stoch < 50 (oversold → bullish reversal) | Stoch > 50 (overbought → bearish reversal) |
-| `mfi_score` | Momentum | ±2 | Bullish MFI divergence (price↓ MFI↑) | Bearish MFI divergence (price↑ MFI↓) |
-| `obv_score` | Momentum | ±2.5 | Bullish OBV divergence (price↓ volume↑) | Bearish OBV divergence (price↑ volume↓) |
-| `cvd_score` | Flow | ±2 | Buy volume dominates, bullish pressure | Sell volume dominates, bearish pressure |
-| `ofi_score` | Flow | ±2 | Buy-side order flow imbalance | Sell-side order flow imbalance |
-| `accum_ofi_score` | Flow | ±2 | Accumulated buy-side OFI over window | Accumulated sell-side OFI over window |
-| `imbalance_score` | Micro | ±1 | Bid depth > ask depth, bullish | Ask depth > bid depth, bearish |
-| `spread_pressure_score` | Micro | ±1 | Compressed spread + buy imbalance | Compressed spread + sell imbalance |
-| `liq_vacuum_score` | Micro | ±2 | Bid depth vacuum, bullish support | Ask depth vacuum, bearish pressure |
-
-**Group scoring**: Each group contributes its max-magnitude signal only (`_signed_max`). Final score = Trend + Momentum + Flow + Micro + timing modifiers (TOB, CVD velocity, PM flow).
-
-**Divergence gate** (`MONSTER_DIVERGENCE_MAX_NEGATIVE`, default 4): If 4+ sub-signals disagree with the chosen direction, `monster_signal` is downgraded to `False`. This removes late-window override privileges (entry blocked at < 3.0 min remaining) and full-size exemption. Logged as `MONSTER_DIVERGENCE: score=8.48 but 9/15 sub-signals disagree with DOWN (threshold=4)`.
 
 ---
 

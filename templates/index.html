@@ -830,47 +830,46 @@
                     </span>
                     <span class="mrow-val" id="bvol-mult">1.00</span>
                 </div>
-            </div>
-        </div>
-
-        <!-- ━━━ PANEL 5: Signal Scoring Reference (collapsible) ━━━ -->
-        <div class="panel">
-            <div class="panel-head accordion-trigger" onclick="toggleAccordion('sigref-body')">
-                <span>Signal Scoring Reference</span>
-                <span class="text-slate-500 text-xs" id="sigref-arrow">▸</span>
-            </div>
-            <div class="panel-body" id="sigref-body" style="display:none">
-                <div class="text-[0.65rem] text-slate-400 mb-2">All sub-signals: <b class="text-green-400">positive = bullish/UP</b>, <b class="text-red-400">negative = bearish/DOWN</b>. Divergence gate downgrades monster when <b>4+</b> disagree with the chosen direction.</div>
-                <table class="w-full text-[0.65rem] mono">
-                    <thead>
-                        <tr class="text-slate-500 border-b border-slate-700/50">
-                            <th class="text-left py-1 pr-2">Signal</th>
-                            <th class="text-left py-1 pr-2">Group</th>
-                            <th class="text-center py-1 pr-2">Range</th>
-                            <th class="text-left py-1">Positive =</th>
-                        </tr>
-                    </thead>
-                    <tbody class="text-slate-300">
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">ema</td><td class="pr-2">Trend</td><td class="text-center pr-2">±2</td><td>EMA9 &gt; EMA20, BTC rising</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">vwap</td><td class="pr-2">Trend</td><td class="text-center pr-2">±1</td><td>Price above VWAP, bullish</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">macd</td><td class="pr-2">Trend</td><td class="text-center pr-2">±1</td><td>MACD histogram positive, bullish</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">bb_pos</td><td class="pr-2">Trend</td><td class="text-center pr-2">±1</td><td>Price near upper Bollinger band</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">mtf_mom</td><td class="pr-2">Trend</td><td class="text-center pr-2">±1</td><td>Price above both VWAP+EMA9</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">rsi</td><td class="pr-2">Momentum</td><td class="text-center pr-2">±2</td><td>RSI &lt; 50 (oversold → bullish reversal)</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">stoch</td><td class="pr-2">Momentum</td><td class="text-center pr-2">±1.5</td><td>Stoch &lt; 50 (oversold → bullish reversal)</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">mfi</td><td class="pr-2">Momentum</td><td class="text-center pr-2">±2</td><td>Bullish MFI divergence (price↓ MFI↑)</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">obv</td><td class="pr-2">Momentum</td><td class="text-center pr-2">±2.5</td><td>Bullish OBV divergence (price↓ volume↑)</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">cvd</td><td class="pr-2">Flow</td><td class="text-center pr-2">±2</td><td>Buy volume dominates, bullish pressure</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">ofi</td><td class="pr-2">Flow</td><td class="text-center pr-2">±2</td><td>Buy-side order flow imbalance</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">accum_ofi</td><td class="pr-2">Flow</td><td class="text-center pr-2">±2</td><td>Accumulated buy-side OFI over window</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">imbalance</td><td class="pr-2">Micro</td><td class="text-center pr-2">±1</td><td>Bid depth &gt; ask depth, bullish</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">spread_pres</td><td class="pr-2">Micro</td><td class="text-center pr-2">±1</td><td>Compressed spread + buy imbalance</td></tr>
-                        <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">liq_vac</td><td class="pr-2">Micro</td><td class="text-center pr-2">±2</td><td>Bid depth vacuum, bullish support</td></tr>
-                    </tbody>
-                </table>
-                <div class="text-[0.6rem] text-slate-500 mt-2 border-t border-slate-700/50 pt-2">
-                    <b>Scoring:</b> Each group contributes its max-magnitude signal only (_signed_max). Groups: Trend + Momentum + Flow + Micro + timing modifiers.<br>
-                    <b>Divergence gate:</b> If <b>MONSTER_DIVERGENCE_MAX_NEGATIVE</b> (default 4) sub-signals disagree with the chosen direction, monster is downgraded → loses late-window override &amp; full-size privileges.
+                <!-- Signal Scoring Reference (nested sub-section) -->
+                <div class="border-t border-slate-700/40 mt-3 pt-3">
+                    <div class="flex items-center justify-between cursor-pointer select-none" onclick="toggleAccordion('sigref-body')">
+                        <span class="text-[0.7rem] text-slate-400 font-semibold">Signal Scoring Reference</span>
+                        <span class="text-slate-500 text-[0.6rem]" id="sigref-arrow">▸</span>
+                    </div>
+                    <div id="sigref-body" style="display:none" class="mt-2">
+                        <div class="text-[0.65rem] text-slate-400 mb-2">All sub-signals: <b class="text-green-400">positive = bullish/UP</b>, <b class="text-red-400">negative = bearish/DOWN</b>. Divergence gate downgrades monster when <b>4+</b> disagree with the chosen direction.</div>
+                        <table class="w-full text-[0.65rem] mono">
+                            <thead>
+                                <tr class="text-slate-500 border-b border-slate-700/50">
+                                    <th class="text-left py-1 pr-2">Signal</th>
+                                    <th class="text-left py-1 pr-2">Group</th>
+                                    <th class="text-center py-1 pr-2">Range</th>
+                                    <th class="text-left py-1">Positive =</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-slate-300">
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">ema</td><td class="pr-2">Trend</td><td class="text-center pr-2">±2</td><td>EMA9 &gt; EMA20, BTC rising</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">vwap</td><td class="pr-2">Trend</td><td class="text-center pr-2">±1</td><td>Price above VWAP, bullish</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">macd</td><td class="pr-2">Trend</td><td class="text-center pr-2">±1</td><td>MACD histogram positive, bullish</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">bb_pos</td><td class="pr-2">Trend</td><td class="text-center pr-2">±1</td><td>Price near upper Bollinger band</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">mtf_mom</td><td class="pr-2">Trend</td><td class="text-center pr-2">±1</td><td>Price above both VWAP+EMA9</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">rsi</td><td class="pr-2">Momentum</td><td class="text-center pr-2">±2</td><td>RSI &lt; 50 (oversold → bullish reversal)</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">stoch</td><td class="pr-2">Momentum</td><td class="text-center pr-2">±1.5</td><td>Stoch &lt; 50 (oversold → bullish reversal)</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">mfi</td><td class="pr-2">Momentum</td><td class="text-center pr-2">±2</td><td>Bullish MFI divergence (price↓ MFI↑)</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">obv</td><td class="pr-2">Momentum</td><td class="text-center pr-2">±2.5</td><td>Bullish OBV divergence (price↓ volume↑)</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">cvd</td><td class="pr-2">Flow</td><td class="text-center pr-2">±2</td><td>Buy volume dominates, bullish pressure</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">ofi</td><td class="pr-2">Flow</td><td class="text-center pr-2">±2</td><td>Buy-side order flow imbalance</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">accum_ofi</td><td class="pr-2">Flow</td><td class="text-center pr-2">±2</td><td>Accumulated buy-side OFI over window</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">imbalance</td><td class="pr-2">Micro</td><td class="text-center pr-2">±1</td><td>Bid depth &gt; ask depth, bullish</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">spread_pres</td><td class="pr-2">Micro</td><td class="text-center pr-2">±1</td><td>Compressed spread + buy imbalance</td></tr>
+                                <tr class="border-b border-slate-800/40"><td class="py-0.5 pr-2 text-white">liq_vac</td><td class="pr-2">Micro</td><td class="text-center pr-2">±2</td><td>Bid depth vacuum, bullish support</td></tr>
+                            </tbody>
+                        </table>
+                        <div class="text-[0.6rem] text-slate-500 mt-2 border-t border-slate-700/50 pt-2">
+                            <b>Scoring:</b> Each group contributes its max-magnitude signal only (_signed_max). Groups: Trend + Momentum + Flow + Micro + timing modifiers.<br>
+                            <b>Divergence gate:</b> If <b>MONSTER_DIVERGENCE_MAX_NEGATIVE</b> (default 4) sub-signals disagree with the chosen direction, monster is downgraded → loses late-window override &amp; full-size privileges.
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
