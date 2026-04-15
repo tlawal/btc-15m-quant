@@ -133,6 +133,8 @@ class Config:
     MONSTER_STRIKE_GRACE_SEC       = 45     # Forensic Apr 15: monster entries get 45s grace
                                              # before STRIKE_DISTANCE_EXCEEDED can fire
                                              # (CLOB whipsaw on high-conviction signals)
+    MONSTER_DIVERGENCE_MAX_NEGATIVE = 4     # Forensic Apr 15: downgrade monster if 4+ sub-signals
+                                             # disagree with aggregate direction (internally conflicted)
 
     # ── MAE (Maximum Adverse Excursion) framework ────────────────────────────
     MAE_TIGHTEN_THRESHOLD          = 0.10   # MAE >= 10% → tighten drawdown tolerance 40%

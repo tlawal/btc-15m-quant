@@ -1218,6 +1218,42 @@ def compute_signals(
     if res.monster_signal and minutes_remaining > 11.0:
         gates.append(f"monster_too_early_rem={minutes_remaining:.1f}min")
 
+    # ── Sub-signal divergence gate (Forensic Apr 15) ─────────────────────────
+    # If many individual signals disagree with the aggregate direction, the signal
+    # is internally conflicted — downgrade from monster to prevent late-window
+    # override privileges on a divergent signal.
+    _sub_signal_names = [
+        "ema", "vwap", "macd", "bb_pos", "mtf_mom",
+        "rsi", "stoch", "mfi", "obv",
+        "cvd", "ofi", "accum_ofi",
+        "imbalance", "spread_pres", "liq_vac",
+    ]
+    _sub_signal_scores = [
+        res.ema_score, res.vwap_score, res.macd_score, res.bb_position_score,
+        res.mtf_momentum_score,  # trend group
+        res.rsi_score, res.stoch_score, res.mfi_score, res.obv_score,  # momentum group
+        res.cvd_score, res.ofi_score, res.accum_ofi_score,  # flow group
+        res.imbalance_score, res.spread_pressure_score, res.liq_vacuum_score,  # micro group
+    ]
+    # All sub-signals use the same convention: positive = bullish/UP, negative = bearish/DOWN.
+    # For DOWN direction, positive sub-signals disagree (they say UP while we bet DOWN).
+    # For UP direction, negative sub-signals disagree (they say DOWN while we bet UP).
+    _dir_sign = -1.0 if res.direction == "DOWN" else 1.0
+    _disagree_pairs = [(n, s) for n, s in zip(_sub_signal_names, _sub_signal_scores)
+                       if s is not None and s * _dir_sign < 0]
+    _negative_count = len(_disagree_pairs)
+    _divergence_threshold = int(getattr(Config, "MONSTER_DIVERGENCE_MAX_NEGATIVE", 4))
+    if res.monster_signal and _negative_count >= _divergence_threshold:
+        res.monster_signal = False
+        _disagree_str = " ".join(f"{n}={s:+.2f}" for n, s in _disagree_pairs)
+        gates.append(f"monster_divergence={_negative_count}_negatives≥{_divergence_threshold}")
+        log.info(
+            "MONSTER_DIVERGENCE: score=%.2f but %d/%d sub-signals disagree with %s (threshold=%d) "
+            "— downgrading from monster [%s]",
+            res.signed_score, _negative_count, len(_sub_signal_scores),
+            res.direction, _divergence_threshold, _disagree_str,
+        )
+
     # Bollinger squeeze (regime-adaptive threshold)
     if indic.bb_width is not None and not res.monster_signal:
         if res.regime == "low":
