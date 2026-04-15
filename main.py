@@ -1614,13 +1614,13 @@ class Engine:
 
         # Heartbeat is written by _write_heartbeat() earlier in _cycle()
 
-        # ── Nightly AI review (00:05 UTC) ─────────────────────────────────────
+        # ── Nightly Trade Journal (00:05 UTC) ─────────────────────────────────
         utc_now = datetime.now(timezone.utc)
         today_str = utc_now.strftime("%Y-%m-%d")
         if utc_now.hour == 0 and utc_now.minute == 5 and self.state.last_review_date != today_str:
             self.state.last_review_date = today_str
             asyncio.create_task(run_nightly_review(session=self.feeds.session))
-            log.info(f"Nightly AI review triggered for {today_str}")
+            log.info(f"Nightly Trade Journal triggered for {today_str}")
 
         # ── Save state (fire-and-forget to avoid blocking next cycle) ─────────
         asyncio.create_task(self._save_state_bg())

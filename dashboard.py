@@ -314,7 +314,7 @@ async def get_signal_history(limit: int = 240):
 
 @app.get("/api/review")
 async def get_review():
-    """Return the latest nightly AI review markdown."""
+    """Return the latest nightly trade journal markdown."""
     data_dir = "/data" if os.path.isdir("/data") else "."
     try:
         # Find latest nightly_review_*.md

@@ -417,8 +417,8 @@ class Config:
     POLYMARKET_API_PASSPHRASE  = os.getenv("POLYMARKET_API_PASSPHRASE", "")
     TELEGRAM_TOKEN             = os.getenv("TELEGRAM_TOKEN", "")
     TELEGRAM_CHAT_ID           = os.getenv("TELEGRAM_CHAT_ID", "")
-    ANTHROPIC_API_KEY          = os.getenv("ANTHROPIC_API_KEY", "")
-    GEMINI_API_KEY              = os.getenv("GEMINI_API_KEY", "")
+    OPENROUTER_API_KEY         = os.getenv("OPENROUTER_API_KEY", "")
+    NIGHTLY_JOURNAL_MODEL      = os.getenv("NIGHTLY_JOURNAL_MODEL", "anthropic/claude-3.5-sonnet")
     DATABASE_URL               = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./state.db")
     LOG_LEVEL                  = os.getenv("LOG_LEVEL", "INFO")
 

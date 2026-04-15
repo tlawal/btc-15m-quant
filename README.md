@@ -18,7 +18,7 @@ indicators.py        — Local RSI, ATR, MACD, OBV, MFI computation
 optimizer.py         — Self-learning: signal accuracy, exit outcome logging, Kelly recal
 inference.py         — LightGBM/RF ML probability overlay
 attribution.py       — Logistic regression feature attribution on closed trades
-reviewer.py          — Nightly Claude AI performance review
+reviewer.py          — Nightly Trade Journal (OpenRouter LLM)
 dashboard.py         — FastAPI web dashboard + WebSocket push + REST endpoints
 metrics_exporter.py  — Prometheus metrics exporter (port 9090)
 state.py             — Async SQLite/Postgres state manager
@@ -218,7 +218,7 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - **Auto-disable** — signals with < 45% accuracy over 20+ samples are zeroed out
 - **Kelly recalibration** — Kelly multiplier adjusts to Sharpe (0.4x / 0.7x / 1.0x)
 - **Exit outcome logging (Phase A)** — every triggered exit is logged to `exit_outcomes.jsonl` (via `main.py` calling `optimizer.log_exit_attempt()`): exit reason, unrealized%, posteriors, time remaining, hold duration; filled with settlement outcome at each window roll for counterfactual analysis
-- **Nightly AI review** — Claude `claude-sonnet-4-6` reviews 24h performance at 00:05 UTC, saves to `/data/nightly_review_{date}.md`, sends Telegram summary
+- **Nightly Trade Journal** — OpenRouter LLM (default: `anthropic/claude-3.5-sonnet`, configurable) reviews 24h performance at 00:05 UTC with 9 structured sections including BTC cross-validation audit and first-person trade journal reflections, saves to `/data/nightly_review_{date}.md`, sends Telegram summary
 
 ### Dashboard
 - Real-time FastAPI dashboard at `/`
@@ -229,7 +229,7 @@ Addresses adverse selection and stale-fill vulnerabilities in the final minutes 
 - Active position panel: entry price, shares held, unrealized PnL, tx link to Polygonscan
 - Manual exit-only management: place/replace/cancel an exit limit order, or “exit now” (admin-token protected)
 - Trade history table: side, entry/exit price, shares, PnL%, tx link, outcome
-- Nightly AI review panel
+- Nightly Trade Journal panel
 - `/api/metrics` — live engine state; falls back to heartbeat file; returns 503 with `engine_stale: true` if heartbeat > 30s old
 - `/api/tx/{tx_hash}` — debug/forensics: fetch Polygon transaction receipt JSON for on-chain ground truth when reconciling missed fills.
 
@@ -316,7 +316,8 @@ TELEGRAM_CHAT_ID             — Target chat/channel ID
 ### Optional
 
 ```
-ANTHROPIC_API_KEY            — Enables nightly Claude AI review
+OPENROUTER_API_KEY           — Enables nightly Trade Journal (OpenRouter API key)
+NIGHTLY_JOURNAL_MODEL        — LLM model for Trade Journal (default: anthropic/claude-3.5-sonnet)
 BINANCE_API_KEY              — Binance API (public endpoints work without)
 COINBASE_API_KEY             — Coinbase candle fallback
 DATABASE_URL                 — Default: sqlite+aiosqlite:////data/state.db
@@ -335,7 +336,7 @@ Mount a volume at `/data` to persist:
 - `structured_logs.json` — structured JSON event log (rotates at 10MB)
 - `trade_features.jsonl` — ML training data (entry signal features + outcome)
 - `exit_outcomes.jsonl` — exit learning data (Phase A: reason, prices, posteriors, settlement)
-- `nightly_review_{date}.md` — AI review files
+- `nightly_review_{date}.md` — Trade Journal files
 - `optimizer_model.joblib` — trained RandomForest model
 
 > **Note:** The container runs as root due to a Railway limitation: the persistent volume is mounted at runtime, which would overwrite any `chown` set during the Docker build, leaving the non-root user unable to write to `/data`.
@@ -347,7 +348,7 @@ Mount a volume at `/data` to persist:
 | `/` | GET | Live dashboard |
 | `/api/metrics` | GET | Full engine metrics JSON (503 + `engine_stale: true` if heartbeat > 30s old) |
 | `/api/signal-history` | GET | Last 240 signal log entries |
-| `/api/review` | GET | Latest nightly AI review |
+| `/api/review` | GET | Latest nightly trade journal |
 | `/api/logs` | GET | Structured log tail |
 | `/api/debug` | GET | Environment + balance debug |
 | `/api/signal-accuracy` | GET | 7-day rolling accuracy per signal |

@@ -1328,14 +1328,14 @@
         </div>
     </div>
 
-    <!-- ── NIGHTLY AI REVIEW ── -->
+    <!-- ── NIGHTLY TRADE JOURNAL ── -->
     <div class="chart-strip">
         <div class="flex items-center justify-between mb-3">
-            <div class="text-[0.65rem] uppercase tracking-widest font-semibold text-slate-400">Nightly AI Review</div>
+            <div class="text-[0.65rem] uppercase tracking-widest font-semibold text-slate-400">Nightly Trade Journal</div>
             <span class="mono text-[0.6rem] text-slate-500" id="review-date">runs 00:05 UTC</span>
         </div>
         <div id="review-content" class="text-[0.7rem] text-slate-300 mono leading-relaxed overflow-auto whitespace-pre-wrap" style="max-height:220px">
-Waiting for first nightly review…
+Waiting for first nightly trade journal…
         </div>
     </div>
 
@@ -2026,7 +2026,7 @@ function updateRadarChart(metrics, sig) {
     } catch(e){}
 }
 
-// ── Nightly review ─────────────────────────────────────────────────────
+// ── Nightly Trade Journal ─────────────────────────────────────────────
 async function updateReviewPanel() {
     try {
         const res=await fetch('/api/review');
