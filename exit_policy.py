@@ -595,26 +595,64 @@ def evaluate_exit(
 
     _opp_bid = no_bid if held_side == "YES" else yes_bid
     _opp_label = "NO" if held_side == "YES" else "YES"
+
+    # Forensic 2026-04-17 (btc-updown-15m-1776432600): REVERSE_CONVERGENCE fired on a
+    # YES position at 2s past expiry while BTC was +$296 above strike. YES then settled
+    # at $1.00. The rule had no BTC-confirmation gate and no proximity-to-expiry
+    # suppression. Two gates added below, mirroring STRIKE_DISTANCE_EXCEEDED (~line 284)
+    # and the SUB_3_MIN_HOLD pattern in Layer 5 (~line 702).
+    _rev_conv_btc_confirms = False
+    _rev_conv_distance_atr = 0.0
+    if (btc_price is not None and strike_price is not None
+            and held_direction is not None and eff_atr > 0):
+        _rev_conv_btc_confirms = (
+            (held_direction == "UP" and btc_price > strike_price)
+            or (held_direction == "DOWN" and btc_price < strike_price)
+        )
+        _rev_conv_distance_atr = abs(btc_price - strike_price) / eff_atr
+
     if _opp_bid is not None and _opp_bid >= _rev_conv_threshold and _rev_conv_hold_ok and unrealized_pct < -0.02:
-        # Track sustained convergence via counter stored on function (cheap stateless approach)
-        _prev = getattr(evaluate_exit, "_rev_conv_count", 0)
-        evaluate_exit._rev_conv_count = _prev + 1  # type: ignore[attr-defined]
-        if evaluate_exit._rev_conv_count >= _REV_CONV_SUSTAINED_CYCLES:
-            log.warning(
-                "REVERSE_CONVERGENCE: %s bid=%.3f >= %.2f (sustained %d cycles) while holding %s, "
-                "unrealized=%.1f%%, hold=%.0fs — exiting",
+        # Gate 1: BTC-confirmation. If BTC is clearly ITM (≥ 0.5×ATR in our favor),
+        # the opposing-bid spike is MM inventory / retail panic, not information arrival.
+        if _rev_conv_btc_confirms and _rev_conv_distance_atr >= 0.50:
+            log.info(
+                "REVERSE_CONVERGENCE_BTC_CONFIRMED: %s bid=%.3f >= %.2f but BTC=$%.2f %s strike=$%.2f "
+                "(distance=%.2f×ATR, %.1fmin rem) — CLOB noise on ITM position, holding to settlement",
                 _opp_label, _opp_bid, _rev_conv_threshold,
-                evaluate_exit._rev_conv_count, held_side,
-                unrealized_pct * 100, hold_seconds,
+                btc_price, ">" if held_direction == "UP" else "<",
+                strike_price, _rev_conv_distance_atr, minutes_remaining,
             )
             evaluate_exit._rev_conv_count = 0  # type: ignore[attr-defined]
-            return _exit("REVERSE_CONVERGENCE", use_maker=False)
-        else:
+        # Gate 2: final-30s suppression on ITM. Inside 30s, Chainlink is about to print;
+        # any CLOB swing is untimely and settlement is the dominant source of truth.
+        elif minutes_remaining * 60.0 <= 30.0 and _rev_conv_btc_confirms:
             log.info(
-                "REVERSE_CONVERGENCE: %s bid=%.3f >= %.2f but only %d/%d sustained cycles — holding",
+                "REVERSE_CONVERGENCE_FINAL_30S: %s bid=%.3f >= %.2f but %.0fs to expiry and BTC=$%.2f "
+                "confirms %s — holding for oracle settlement",
                 _opp_label, _opp_bid, _rev_conv_threshold,
-                evaluate_exit._rev_conv_count, _REV_CONV_SUSTAINED_CYCLES,
+                minutes_remaining * 60.0, btc_price, held_direction,
             )
+            evaluate_exit._rev_conv_count = 0  # type: ignore[attr-defined]
+        else:
+            # Track sustained convergence via counter stored on function (cheap stateless approach)
+            _prev = getattr(evaluate_exit, "_rev_conv_count", 0)
+            evaluate_exit._rev_conv_count = _prev + 1  # type: ignore[attr-defined]
+            if evaluate_exit._rev_conv_count >= _REV_CONV_SUSTAINED_CYCLES:
+                log.warning(
+                    "REVERSE_CONVERGENCE: %s bid=%.3f >= %.2f (sustained %d cycles) while holding %s, "
+                    "unrealized=%.1f%%, hold=%.0fs — exiting",
+                    _opp_label, _opp_bid, _rev_conv_threshold,
+                    evaluate_exit._rev_conv_count, held_side,
+                    unrealized_pct * 100, hold_seconds,
+                )
+                evaluate_exit._rev_conv_count = 0  # type: ignore[attr-defined]
+                return _exit("REVERSE_CONVERGENCE", use_maker=False)
+            else:
+                log.info(
+                    "REVERSE_CONVERGENCE: %s bid=%.3f >= %.2f but only %d/%d sustained cycles — holding",
+                    _opp_label, _opp_bid, _rev_conv_threshold,
+                    evaluate_exit._rev_conv_count, _REV_CONV_SUSTAINED_CYCLES,
+                )
     else:
         # Reset sustained counter when condition not met
         evaluate_exit._rev_conv_count = 0  # type: ignore[attr-defined]
@@ -981,6 +1019,36 @@ def evaluate_exit(
 
     # 6e. Time-decay exit — only exit LOSING positions very near expiry.
     if minutes_remaining < 2.0 and unrealized_pct < -0.02:
+        # BTC-confirmation gate (Tier 1 #2): if the underlying is ITM on the held
+        # side, NEVER fire TIME_DECAY — Chainlink settlement is the ground truth
+        # and short-dated CLOB marks do not reflect oracle resolution.
+        if (btc_price is not None and strike_price is not None
+                and held_direction is not None):
+            _td_btc_confirms = (
+                (held_direction == "UP" and btc_price > strike_price)
+                or (held_direction == "DOWN" and btc_price < strike_price)
+            )
+            # In the final 30s, suppress unconditionally when BTC confirms —
+            # CLOB noise is maximal, decisions are untimely, oracle is imminent.
+            if _td_btc_confirms and minutes_remaining * 60.0 <= 30.0:
+                log.info(
+                    "TIME_DECAY_FINAL_30S_ITM: %.1fs rem, btc=%.2f %s strike=%.2f — holding for oracle settlement",
+                    minutes_remaining * 60.0, btc_price,
+                    ">" if held_direction == "UP" else "<",
+                    strike_price,
+                )
+                return None
+            # With >30s remaining but BTC still ITM, require confirming ATR margin.
+            if _td_btc_confirms and eff_atr > 0:
+                _td_dist_atr = abs(btc_price - strike_price) / eff_atr
+                if _td_dist_atr >= 0.50:
+                    log.info(
+                        "TIME_DECAY_BTC_CONFIRMED: %.1fmin rem, btc=%.2f %s strike=%.2f, dist=%.2f×ATR — holding to settlement",
+                        minutes_remaining, btc_price,
+                        ">" if held_direction == "UP" else "<",
+                        strike_price, _td_dist_atr,
+                    )
+                    return None
         # Final posterior check: if model is still >60% confident, hold
         if posterior is not None and posterior > 0.60:
             log.info(

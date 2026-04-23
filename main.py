@@ -525,20 +525,53 @@ class Engine:
                     )
                 # Always force entry price to a sane value if zero
                 ep = tr.entry_price if tr.entry_price and tr.entry_price > 0 else 0.5
-                tr.exit_price = 1.0  # Polymarket winning shares are always redeemed at $1
-                tr.pnl = (tr.exit_price - ep) / ep
-                
-                tr.outcome = "WIN"
-                tr.exit_reason = "REDEMPTION_WIN"
+                # Tier 1 #3 fix: blend partial exits with the $1.00 settlement payout
+                # instead of overwriting with exit_price=1.0. This prevents the bug
+                # where a winner with an early partial-exit leg (e.g. REVERSE_CONVERGENCE
+                # @ 0.94 for 5.98/6.00 shares, residual 0.02 auto-settled at $1.00) is
+                # reported as a pure +3% win, when realized PnL is actually blended.
+                entry_sz = tr.size if (tr.size and tr.size > 0) else 0.0
+                partials = list(tr.partial_exits or [])
+                if entry_sz > 0 and partials:
+                    settle_summary = compute_auto_settle_outcome(
+                        entry_price=ep,
+                        entry_size=entry_sz,
+                        partial_exits=partials,
+                        position_won=True,
+                    )
+                    tr.exit_price = round(settle_summary["blended_exit_price"], 4)
+                    tr.pnl = settle_summary["blended_pnl"]
+                    log.info(
+                        "REDEMPTION_BLENDED: entry=%.3f×%.4f, partials_recovered=$%.4f, "
+                        "residual=%.4f@$1.00, blended_exit=%.4f, pnl=%.2f%%",
+                        ep, entry_sz,
+                        settle_summary["partial_recovered"],
+                        settle_summary["remaining_size"],
+                        tr.exit_price, tr.pnl * 100,
+                    )
+                else:
+                    tr.exit_price = 1.0  # Polymarket winning shares are always redeemed at $1
+                    tr.pnl = (tr.exit_price - ep) / ep
+
+                # Classify by actual realized PnL — a partial exit at a bad price
+                # can leave the blended trade as a LOSS even though the residual won.
+                tr.outcome = "WIN" if (tr.pnl or 0.0) >= 0 else "LOSS"
+                tr.exit_reason = "REDEMPTION_WIN" if tr.outcome == "WIN" else "REDEMPTION_BLENDED_LOSS"
                 self.state.session_start_balance = None  # force re-record on next cycle so drawdown resets
                 
                 # Approximate PnL logic (size_usd is the *payout*)
                 profit_usd = size_usd * tr.pnl if tr.pnl else 0.0
                 self.rebuild_state_totals_from_trade_history()
                 
-                log.info(f"Recorded redemption win: +{tr.pnl*100:.2f}% (approx profit: ${profit_usd:.2f})")
+                log.info(
+                    "Recorded redemption %s: %+0.2f%% (approx pnl: $%.2f)",
+                    tr.outcome, (tr.pnl or 0.0) * 100, profit_usd,
+                )
                 try:
-                    asyncio.create_task(emit_event(EventType.REDEMPTION, f"Auto-settle WIN +{tr.pnl*100:.2f}% (${profit_usd:.2f})"))
+                    asyncio.create_task(emit_event(
+                        EventType.REDEMPTION,
+                        f"Auto-settle {tr.outcome} {(tr.pnl or 0.0)*100:+.2f}% (${profit_usd:.2f})",
+                    ))
                 except Exception:
                     pass
 
@@ -546,15 +579,18 @@ class Engine:
                     await self._sync_closed_trade_from_record(
                         tr,
                         self.state.last_market_slug or "unknown",
-                        match_exit_reasons=("AUTO_SETTLE_LOSS", "AUTO_SETTLE_WIN", "REDEMPTION_WIN"),
+                        match_exit_reasons=(
+                            "AUTO_SETTLE_LOSS", "AUTO_SETTLE_WIN",
+                            "REDEMPTION_WIN", "REDEMPTION_BLENDED_LOSS",
+                        ),
                     )
 
                 # Clear held position — the old market has settled
                 self.state.held_position = HeldPosition()
 
-                # Phase 6: Log trade for self-learning
+                # Phase 6: Log trade for self-learning (use actual outcome, not always WIN)
                 if self._last_sig:
-                    self.optimizer.log_trade(self._last_sig, "WIN")
+                    self.optimizer.log_trade(self._last_sig, tr.outcome)
                 return
                 
         log.warning("Redeemed position but no matching OPEN trade found in history.")
@@ -1565,8 +1601,8 @@ class Engine:
             px_up = ob.yes_ask or 0.99
             px_dn = ob.no_ask or 0.99
             
-            s_up = compute_position_size(posterior=p_up, entry_price=px_up, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, book=ob, edge=sig.edge_up) or 0.0
-            s_down = compute_position_size(posterior=p_dn, entry_price=px_dn, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, book=ob, edge=sig.edge_down) or 0.0
+            s_up = compute_position_size(posterior=p_up, entry_price=px_up, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, monster_conviction=sig.monster_conviction, book=ob, edge=sig.edge_up) or 0.0
+            s_down = compute_position_size(posterior=p_dn, entry_price=px_dn, balance=balance, loss_streak=self.state.loss_streak, monster_signal=sig.monster_signal, monster_conviction=sig.monster_conviction, book=ob, edge=sig.edge_down) or 0.0
             sig.sizing = max(s_up, s_down)
         else:
             sig.sizing = self.state.held_position.size_usd or 0.0
@@ -3812,6 +3848,7 @@ class Engine:
             balance     = balance,
             loss_streak = self.state.loss_streak,
             monster_signal = sig.monster_signal,
+            monster_conviction = sig.monster_conviction,
             win_rate    = win_rate,
             profit_factor = profit_factor,
             kelly_multiplier = self.optimizer.get_kelly_multiplier(),

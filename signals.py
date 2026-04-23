@@ -126,6 +126,12 @@ class SignalResult:
     # Skip gates
     skip_gates:           list   = field(default_factory=list)
     monster_signal:       bool   = False
+    # Tier 1 #4: continuous conviction in [0, 1] derived from (abs_score, posterior,
+    # distance/ATR, time_remaining). `monster_signal` is a back-compat binary view of
+    # this score crossing 0.50 — but downstream sizing/gating can (and should)
+    # increasingly consume the continuous `monster_conviction` to avoid the old
+    # 8.00-cliff where 7.99 vs 8.01 flips the whole regime on noise.
+    monster_conviction:   float  = 0.0
 
     # Micro
     vpin_proxy:           float  = 0.0
@@ -199,6 +205,7 @@ class SignalResult:
             "obi":                self.obi,
             "yes_mid":            self.yes_mid,
             "no_mid":             self.no_mid,
+            "monster_conviction": self.monster_conviction,
         }
         # Filter out Nones
         return {k: v for k, v in d.items() if v is not None}
@@ -941,15 +948,50 @@ def compute_signals(
         res.posterior_final_up   if res.direction == "UP" else
         res.posterior_final_down if res.direction == "DOWN" else 0.0
     ) or 0.0
-    # Standard monster: high technical score + high posterior
-    _standard_monster = (
-        res.abs_score >= Config.MONSTER_SCORE and
-        chosen_posterior >= Config.MONSTER_POSTERIOR
-    )
-    # Near-certain override: posterior >= 0.995 with any meaningful directional signal.
-    # At 99.5%+ conviction the posterior is more reliable than a technical score of 8.0.
-    _near_certain_override = (chosen_posterior >= 0.995 and res.abs_score >= 1.0)
-    res.monster_signal = _standard_monster or _near_certain_override
+
+    # ── Tier 1 #4: continuous conviction score in [0, 1] ─────────────────────
+    # Replaces the binary 8.00-cliff (where score=7.99 vs 8.01 flipped the whole
+    # regime on 5s noise). Factors combined via smooth logistic terms so small
+    # oscillations near any single threshold do not flip monster state.
+    #   score term:      logistic((abs_score − MONSTER_SCORE) / 0.75)
+    #   posterior term:  logistic((posterior − MONSTER_POSTERIOR) / 0.04)
+    #   distance term:   1 − exp(−max(0, dist/ATR)) — favors deep-ITM moves
+    #   time term:       favors later-in-window (t_frac high → more conviction)
+    # The four are multiplied so ALL must be at least partially satisfied.
+    import math as _math
+    def _logistic(x: float) -> float:
+        try:
+            return 1.0 / (1.0 + _math.exp(-x))
+        except OverflowError:
+            return 0.0 if x < 0 else 1.0
+
+    _score_term = _logistic((res.abs_score - Config.MONSTER_SCORE) / 0.75)
+    _post_term  = _logistic((chosen_posterior - Config.MONSTER_POSTERIOR) / 0.04)
+
+    _dist_atr = 0.0
+    if (res.distance is not None and indic.atr14 is not None and indic.atr14 > 0
+            and res.direction is not None):
+        # Signed: only ITM distance counts toward conviction.
+        _signed_dist = res.distance if res.direction == "UP" else -res.distance
+        _dist_atr = max(0.0, _signed_dist / indic.atr14)
+    _dist_term = 1.0 - _math.exp(-_dist_atr)  # 0 at strike, 0.63 at 1×ATR, 0.86 at 2×ATR
+
+    # t_frac is minutes_remaining / window_min — HIGH at window start, 0.0 at expiry.
+    # We want conviction to grow as time-to-expiry shrinks (less remaining vol →
+    # posterior more reliable), so weight by (1 − t_frac).
+    _elapsed_frac = 1.0 - max(0.0, min(1.0, t_frac))
+    _time_term = 0.25 + 0.75 * _elapsed_frac
+
+    _conviction = _score_term * _post_term * _dist_term * _time_term
+    # Near-certain posterior (≥0.995) bypasses score/distance starvation — the
+    # posterior itself is the strongest signal at that level.
+    if chosen_posterior >= 0.995 and res.abs_score >= 1.0:
+        _conviction = max(_conviction, 0.85)
+    res.monster_conviction = float(max(0.0, min(1.0, _conviction)))
+    # Back-compat binary: `monster_signal` continues to gate the ~20 call sites
+    # that predate conviction. Threshold 0.50 is the midpoint; hysteresis lives
+    # in the smooth logistic, so 7.99 vs 8.01 no longer flips this boolean.
+    res.monster_signal = res.monster_conviction >= 0.50
 
     # ── Skip gates ────────────────────────────────────────────────────────────
     gates = []

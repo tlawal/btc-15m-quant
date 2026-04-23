@@ -16,6 +16,7 @@ def compute_position_size(
     balance:        float,
     loss_streak:    int,
     monster_signal: bool = False,
+    monster_conviction: float = 0.0,
     win_rate:       Optional[float] = None,
     profit_factor:  Optional[float] = None,
     kelly_multiplier: float = 1.0,
@@ -27,13 +28,28 @@ def compute_position_size(
     Uses quarter-Kelly with tiered risk_pct cap.
     """
     # === MONSTER SIZING OVERRIDE ===
+    # Tier 1 #4: size scales linearly with continuous conviction in [0.5, 1.0],
+    # eliminating the 8.00-cliff where 7.99 → 0% allocation and 8.01 → 40%.
+    #   conviction 0.50  →  monster_frac  ≈ 0.05 (5% of balance)
+    #   conviction 0.75  →  monster_frac  ≈ 0.225 (22.5% of balance)
+    #   conviction 1.00  →  monster_frac  ≈ 0.40 (40% of balance, legacy ceiling)
     is_monster = monster_signal and posterior >= 0.90
 
     if is_monster:
-        # Scale monster floor with balance: 40% of balance, clamped to [MIN_TRADE_USD, MAX_TRADE_USD]
-        monster_floor = round(max(Config.MIN_TRADE_USD, min(balance * 0.40, Config.MAX_TRADE_USD)), 2)
+        conv = max(0.5, min(1.0, float(monster_conviction or 0.5)))
+        # Linear ramp: 0.50 → 5%, 1.00 → 40%. This removes the cliff at threshold
+        # 8.0 while still giving full allocation at genuine high-conviction setups.
+        monster_frac = 0.05 + (conv - 0.5) * (0.35 / 0.5)
+        monster_floor = round(
+            max(Config.MIN_TRADE_USD,
+                min(balance * monster_frac, Config.MAX_TRADE_USD)),
+            2,
+        )
         if balance >= Config.MIN_TRADE_USD and monster_floor >= Config.MIN_TRADE_USD:
-            log.info(f"MONSTER_FORCE_MIN: forced ${monster_floor:.2f} on 90%+ conviction (balance=${balance:.2f})")
+            log.info(
+                "MONSTER_FORCE_MIN: forced $%.2f on conviction=%.2f (frac=%.1f%%, bal=$%.2f)",
+                monster_floor, conv, monster_frac * 100, balance,
+            )
             return monster_floor
 
     # Never trade on negative edge — even for monster signals
