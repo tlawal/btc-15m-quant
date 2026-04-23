@@ -69,6 +69,18 @@
         body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); margin:0; padding:0; }
         .mono { font-family:'JetBrains Mono',monospace; }
 
+        /* ── Top nav (Dashboard · Backtest) ── */
+        .top-nav { display:flex; gap:2px; margin-left:10px; padding-left:12px; border-left:1px solid var(--border); }
+        .nav-link {
+            font-size:0.68rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;
+            color:var(--text); text-decoration:none; padding:5px 10px; border-radius:6px;
+            transition:background 0.15s, color 0.15s;
+        }
+        .nav-link:hover { background:rgba(56,189,248,0.08); color:var(--text-bright); }
+        .nav-active { background:rgba(56,189,248,0.15); color:#38bdf8; }
+        body.light .nav-active { background:rgba(14,165,233,0.12); color:#0284c7; }
+        @media (max-width:640px) { .top-nav { display:none; } }
+
         /* ── Top Banner ── */
         #top-banner {
             background: var(--banner-bg);
@@ -487,6 +499,10 @@
                 <div class="text-[0.82rem] font-bold text-white tracking-tight">BTC-15m <span class="text-sky-400">QUANT</span></div>
                 <div class="text-[0.52rem] text-slate-500 uppercase tracking-widest mono" id="build-ver">v2.3</div>
             </div>
+            <nav class="top-nav" aria-label="Primary">
+                <a href="/" class="nav-link nav-active">Dashboard</a>
+                <a href="/backtest" class="nav-link">Backtest</a>
+            </nav>
         </div>
         <div class="flex items-center gap-3">
             <div class="text-right banner-desktop-only">

@@ -2444,6 +2444,133 @@ async def exit_stats():
     return {"records": len(records), "by_reason": summary}
 
 
+# ═══════════════════════════ Backtest UI + API ═══════════════════════════════
+#
+# Unified backtest replay harness for the Backtest page. Runs in a background
+# thread so the dashboard event loop stays responsive; results persist to
+# data/backtests/{run_id}.json for the "recent runs" dropdown.
+
+import uuid as _uuid
+import threading as _threading
+
+_backtest_runs: dict = {}   # run_id -> {"status": "..", "progress": 0-1, "message": "..", "error": None}
+_backtest_lock = _threading.Lock()
+
+
+@app.get("/backtest", response_class=HTMLResponse)
+async def backtest_page(request: Request):
+    try:
+        return templates.TemplateResponse("backtest.html", {"request": request})
+    except Exception as e:
+        log.exception("Failed to render backtest.html")
+        return HTMLResponse(f"<h1>Backtest template error</h1><pre>{e}</pre>", status_code=500)
+
+
+def _run_backtest_bg(run_id: str, payload: dict):
+    """Background worker. Guarded by try/except; always writes final status."""
+    try:
+        from backtest_engine import BacktestParams, run_backtest, save_run
+
+        def _parse_date(s):
+            if not s:
+                return None
+            try:
+                from datetime import datetime
+                return int(datetime.strptime(s, "%Y-%m-%d").timestamp())
+            except Exception:
+                return None
+
+        params = BacktestParams(
+            fill_model=payload.get("fill_model", "synthetic"),
+            source=payload.get("source", "trade_features"),
+            start_ts=_parse_date(payload.get("start_date")),
+            end_ts=_parse_date(payload.get("end_date")),
+            score_offset=float(payload.get("score_offset", 0) or 0),
+            edge_offset=float(payload.get("edge_offset", 0) or 0),
+            flags=payload.get("flags", {}) or {},
+        )
+
+        def _cb(frac, msg):
+            with _backtest_lock:
+                r = _backtest_runs.get(run_id)
+                if r is not None:
+                    r["progress"] = float(frac)
+                    r["message"]  = msg
+
+        result = run_backtest(params, progress_cb=_cb)
+        save_run(run_id, result)
+        with _backtest_lock:
+            _backtest_runs[run_id] = {
+                "status": "done", "progress": 1.0,
+                "message": f"{result['metrics'].get('n_trades', 0)} trades",
+                "error": None,
+            }
+    except Exception as e:
+        log.exception("backtest run failed")
+        with _backtest_lock:
+            _backtest_runs[run_id] = {
+                "status": "error", "progress": 1.0,
+                "message": str(e), "error": str(e),
+            }
+
+
+@app.post("/api/backtest/run")
+async def backtest_run(request: Request):
+    fail = _require_admin(request)
+    if fail:
+        return fail
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    run_id = _uuid.uuid4().hex[:12]
+    with _backtest_lock:
+        _backtest_runs[run_id] = {
+            "status": "running", "progress": 0.0,
+            "message": "queued", "error": None,
+        }
+    t = _threading.Thread(target=_run_backtest_bg, args=(run_id, payload), daemon=True)
+    t.start()
+    return {"run_id": run_id}
+
+
+@app.get("/api/backtest/status/{run_id}")
+async def backtest_status(run_id: str, request: Request):
+    fail = _require_admin(request)
+    if fail:
+        return fail
+    with _backtest_lock:
+        r = _backtest_runs.get(run_id)
+    if r is None:
+        # Completed run that persisted but evicted from in-memory map
+        from backtest_engine import load_run
+        if load_run(run_id) is not None:
+            return {"status": "done", "progress": 1.0, "message": "persisted"}
+        return JSONResponse({"status": "error", "message": "unknown run_id"}, status_code=404)
+    return r
+
+
+@app.get("/api/backtest/result/{run_id}")
+async def backtest_result(run_id: str, request: Request):
+    fail = _require_admin(request)
+    if fail:
+        return fail
+    from backtest_engine import load_run
+    result = load_run(run_id)
+    if result is None:
+        return JSONResponse({"status": "error", "message": "not ready"}, status_code=404)
+    return result
+
+
+@app.get("/api/backtest/list")
+async def backtest_list(request: Request):
+    fail = _require_admin(request)
+    if fail:
+        return fail
+    from backtest_engine import list_runs
+    return {"runs": list_runs(30)}
+
+
 async def run_dashboard(engine_instance, port=8000):
     global engine
     engine = engine_instance

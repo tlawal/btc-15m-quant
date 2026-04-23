@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#07090E">
+    <title>Backtest | BTC-15m Quant</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #07090E;
+            --panel: rgba(13,18,28,0.85);
+            --border: rgba(255,255,255,0.07);
+            --text: #94A3B8;
+            --text-bright: #E2E8F0;
+            --green: #22c55e;
+            --red: #ef4444;
+            --blue: #38bdf8;
+            --amber: #f59e0b;
+            --purple: #a78bfa;
+            --banner-bg: linear-gradient(90deg,rgba(13,18,28,0.98) 0%,rgba(20,28,45,0.98) 100%);
+            --panel-head-bg: rgba(20,28,45,0.9);
+            --input-bg: rgba(0,0,0,0.3);
+            --scrollbar-thumb: #1e293b;
+        }
+        body.light {
+            --bg: #f1f5f9;
+            --panel: rgba(255,255,255,0.92);
+            --border: rgba(0,0,0,0.08);
+            --text: #475569;
+            --text-bright: #0f172a;
+            --banner-bg: linear-gradient(90deg,rgba(241,245,249,0.98) 0%,rgba(226,232,240,0.98) 100%);
+            --panel-head-bg: rgba(226,232,240,0.9);
+            --input-bg: rgba(0,0,0,0.06);
+            --scrollbar-thumb: #cbd5e1;
+        }
+        body { font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); margin:0; padding:0; min-height:100vh; }
+        .mono { font-family:'JetBrains Mono',monospace; }
+
+        /* Top nav */
+        #top-banner {
+            background: var(--banner-bg); border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; z-index: 100; backdrop-filter: blur(12px);
+            padding:0 1.25rem; height:56px; display:flex; align-items:center; justify-content:space-between;
+        }
+        .top-nav { display:flex; gap:2px; margin-left:10px; padding-left:12px; border-left:1px solid var(--border); }
+        .nav-link {
+            font-size:0.68rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase;
+            color:var(--text); text-decoration:none; padding:5px 10px; border-radius:6px;
+            transition:background 0.15s, color 0.15s;
+        }
+        .nav-link:hover { background:rgba(56,189,248,0.08); color:var(--text-bright); }
+        .nav-active { background:rgba(56,189,248,0.15); color:#38bdf8; }
+        body.light .nav-active { background:rgba(14,165,233,0.12); color:#0284c7; }
+
+        /* Panels */
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+        .panel-head {
+            background: var(--panel-head-bg); border-bottom: 1px solid var(--border);
+            padding: 9px 14px; font-size: 0.7rem; font-weight: 600;
+            letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-bright);
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        .panel-body { padding: 14px; }
+
+        /* Form controls */
+        .field-label { font-size:0.58rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; color:var(--text); margin-bottom:4px; display:block; }
+        .field-input {
+            width:100%; background:var(--input-bg); border:1px solid var(--border); border-radius:6px;
+            padding:7px 10px; color:var(--text-bright); font-family:'JetBrains Mono',monospace; font-size:0.8rem;
+            outline:none; transition:border-color 0.15s;
+        }
+        .field-input:focus { border-color:#38bdf8; }
+        .field-input[type="checkbox"] { width:auto; accent-color:#38bdf8; }
+
+        .btn-primary {
+            background: linear-gradient(90deg, #0ea5e9, #3b82f6);
+            color:white; font-weight:600; font-size:0.78rem; letter-spacing:0.04em;
+            padding:8px 18px; border-radius:7px; border:none; cursor:pointer;
+            transition:opacity 0.15s, transform 0.1s;
+        }
+        .btn-primary:hover { opacity:0.92; }
+        .btn-primary:active { transform:translateY(1px); }
+        .btn-primary:disabled { opacity:0.4; cursor:not-allowed; }
+
+        /* Metrics strip */
+        .metric-tile {
+            background:var(--input-bg); border:1px solid var(--border); border-radius:8px;
+            padding:10px 12px; text-align:center;
+        }
+        .metric-label { font-size:0.52rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--text); margin-bottom:3px; }
+        .metric-val { font-family:'JetBrains Mono',monospace; font-size:1.05rem; font-weight:700; color:var(--text-bright); }
+        .metric-val.pos { color:var(--green); }
+        .metric-val.neg { color:var(--red); }
+
+        /* Trade table */
+        .trade-table { width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:0.72rem; }
+        .trade-table th {
+            text-align:left; padding:6px 8px; background:var(--panel-head-bg);
+            font-weight:600; font-size:0.58rem; letter-spacing:0.08em; text-transform:uppercase;
+            color:var(--text); border-bottom:1px solid var(--border); position:sticky; top:0;
+        }
+        .trade-table td { padding:5px 8px; border-bottom:1px solid rgba(255,255,255,0.04); }
+        .trade-table tr:hover td { background:rgba(56,189,248,0.05); }
+        .trade-table tbody { max-height:400px; display:block; overflow-y:auto; }
+        .trade-table thead, .trade-table tbody tr { display:table; width:100%; table-layout:fixed; }
+
+        /* Status badge */
+        .status-badge {
+            font-size:0.6rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
+            padding:3px 9px; border-radius:4px;
+        }
+        .status-idle { background:rgba(148,163,184,0.12); color:#94a3b8; border:1px solid rgba(148,163,184,0.25); }
+        .status-run { background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.3); animation: pulse 1.2s ease-in-out infinite; }
+        .status-done { background:rgba(34,197,94,0.12); color:#22c55e; border:1px solid rgba(34,197,94,0.3); }
+        .status-error { background:rgba(239,68,68,0.12); color:#ef4444; border:1px solid rgba(239,68,68,0.3); }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.55} }
+
+        /* Grid */
+        .backtest-grid { display:grid; grid-template-columns: 320px 1fr; gap:14px; }
+        @media (max-width:900px) { .backtest-grid { grid-template-columns: 1fr; } }
+
+        /* Progress bar */
+        .progress { height:4px; background:rgba(255,255,255,0.05); border-radius:4px; overflow:hidden; margin-top:10px; }
+        .progress-bar { height:100%; background:linear-gradient(90deg,#0ea5e9,#3b82f6); transition:width 0.3s; width:0%; }
+
+        /* Decomposition bars */
+        .decomp-row { display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.04); }
+        .decomp-label { font-size:0.64rem; color:var(--text); width:80px; }
+        .decomp-bar-wrap { flex:1; height:18px; background:rgba(255,255,255,0.03); border-radius:3px; overflow:hidden; display:flex; }
+        .decomp-seg { height:100%; display:flex; align-items:center; justify-content:center; font-size:0.58rem; color:white; font-weight:600; }
+        .decomp-val { font-family:'JetBrains Mono',monospace; font-size:0.7rem; color:var(--text-bright); width:70px; text-align:right; }
+
+        /* Toggles */
+        .toggle-row { display:flex; align-items:center; justify-content:space-between; padding:6px 0; }
+        .toggle-switch { position:relative; width:34px; height:18px; background:rgba(255,255,255,0.08); border-radius:10px; cursor:pointer; transition:background 0.2s; }
+        .toggle-switch.on { background:#38bdf8; }
+        .toggle-switch::after {
+            content:''; position:absolute; top:2px; left:2px; width:14px; height:14px; background:white;
+            border-radius:50%; transition:left 0.2s;
+        }
+        .toggle-switch.on::after { left:18px; }
+
+        /* Empty state */
+        .empty-state { padding:60px 20px; text-align:center; color:var(--text); }
+        .empty-state-icon { font-size:2rem; opacity:0.3; margin-bottom:10px; }
+    </style>
+</head>
+<body>
+
+<div id="top-banner">
+    <div class="flex items-center gap-3">
+        <span style="width:9px;height:9px;border-radius:50%;background:#22c55e;display:inline-block;"></span>
+        <div>
+            <div class="text-[0.82rem] font-bold text-white tracking-tight">BTC-15m <span class="text-sky-400">QUANT</span></div>
+            <div class="text-[0.52rem] text-slate-500 uppercase tracking-widest mono">Backtest</div>
+        </div>
+        <nav class="top-nav" aria-label="Primary">
+            <a href="/" class="nav-link">Dashboard</a>
+            <a href="/backtest" class="nav-link nav-active">Backtest</a>
+        </nav>
+    </div>
+    <div class="flex items-center gap-2">
+        <button id="theme-toggle" onclick="toggleTheme()" title="Toggle theme"
+                style="background:none;border:1px solid var(--border);border-radius:6px;padding:4px 8px;cursor:pointer;color:var(--text);font-size:0.95rem;line-height:1;">
+            <span id="theme-icon">☀️</span>
+        </button>
+    </div>
+</div>
+
+<div class="p-4 md:p-5 max-w-[1800px] mx-auto">
+    <div class="backtest-grid">
+
+        <!-- ━━━ LEFT: Configuration panel ━━━ -->
+        <div class="panel" style="align-self:start;">
+            <div class="panel-head">
+                <span>Run Configuration</span>
+                <span id="run-status" class="status-badge status-idle">IDLE</span>
+            </div>
+            <div class="panel-body space-y-3">
+
+                <div>
+                    <label class="field-label">Fill model</label>
+                    <select id="fill-model" class="field-input">
+                        <option value="clob_replay" selected>CLOB replay (realistic)</option>
+                        <option value="synthetic">Synthetic (legacy)</option>
+                        <option value="perfect">Perfect fills (theoretical max)</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="field-label">Start (UTC)</label>
+                        <input id="start-date" type="date" class="field-input">
+                    </div>
+                    <div>
+                        <label class="field-label">End (UTC)</label>
+                        <input id="end-date" type="date" class="field-input">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="field-label">Source</label>
+                    <select id="source" class="field-input">
+                        <option value="trade_features" selected>trade_features.jsonl (live-recorded)</option>
+                        <option value="clob_snapshots">clob_snapshots/ (full CLOB replay)</option>
+                        <option value="logs">Railway logs (what-if)</option>
+                    </select>
+                </div>
+
+                <div class="border-t border-slate-700/50 pt-3">
+                    <div class="field-label mb-2">Strategy overrides</div>
+
+                    <div class="toggle-row">
+                        <span class="text-[0.7rem]">Tier 1 fixes (Apr 17)</span>
+                        <div id="tog-tier1" class="toggle-switch on" onclick="toggleSwitch('tier1')"></div>
+                    </div>
+                    <div class="toggle-row">
+                        <span class="text-[0.7rem]">Payoff-geometry gate</span>
+                        <div id="tog-payoff" class="toggle-switch" onclick="toggleSwitch('payoff')"></div>
+                    </div>
+                    <div class="toggle-row">
+                        <span class="text-[0.7rem]">Calibration buckets</span>
+                        <div id="tog-calib" class="toggle-switch" onclick="toggleSwitch('calib')"></div>
+                    </div>
+                    <div class="toggle-row">
+                        <span class="text-[0.7rem]">Free-boundary exits</span>
+                        <div id="tog-free" class="toggle-switch" onclick="toggleSwitch('free')"></div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 mt-3">
+                        <div>
+                            <label class="field-label">score offset</label>
+                            <input id="score-offset" type="number" step="0.1" value="0" class="field-input">
+                        </div>
+                        <div>
+                            <label class="field-label">edge offset</label>
+                            <input id="edge-offset" type="number" step="0.001" value="0" class="field-input">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="border-t border-slate-700/50 pt-3 space-y-2">
+                    <label class="field-label">x-admin-token</label>
+                    <input id="admin-token" type="password" class="field-input" placeholder="paste token">
+                </div>
+
+                <button id="run-btn" class="btn-primary w-full" onclick="runBacktest()">Run backtest</button>
+                <div class="progress"><div id="progress-bar" class="progress-bar"></div></div>
+                <div id="progress-text" class="text-[0.6rem] text-center" style="color:var(--text);"></div>
+
+                <div class="border-t border-slate-700/50 pt-3">
+                    <div class="field-label mb-2">Recent runs</div>
+                    <div id="recent-runs" class="space-y-1 text-[0.68rem] mono" style="max-height:180px; overflow-y:auto;">
+                        <div class="text-slate-500 italic text-[0.65rem]">No recent runs.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ━━━ RIGHT: Results ━━━ -->
+        <div class="space-y-4">
+
+            <!-- Summary metrics strip -->
+            <div class="panel">
+                <div class="panel-head">
+                    <span>Performance Metrics</span>
+                    <span id="result-timestamp" class="text-[0.6rem] text-slate-500 mono"></span>
+                </div>
+                <div class="panel-body">
+                    <div class="grid grid-cols-3 md:grid-cols-6 gap-2">
+                        <div class="metric-tile"><div class="metric-label">Trades</div><div class="metric-val" id="m-trades">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Hit rate</div><div class="metric-val" id="m-hitrate">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Total PnL</div><div class="metric-val" id="m-pnl">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Sharpe</div><div class="metric-val" id="m-sharpe">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Sortino</div><div class="metric-val" id="m-sortino">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Max DD</div><div class="metric-val" id="m-maxdd">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Calmar</div><div class="metric-val" id="m-calmar">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Expectancy</div><div class="metric-val" id="m-expect">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Avg win</div><div class="metric-val pos" id="m-avgwin">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Avg loss</div><div class="metric-val neg" id="m-avgloss">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Profit factor</div><div class="metric-val" id="m-pf">—</div></div>
+                        <div class="metric-tile"><div class="metric-label">Slippage avg</div><div class="metric-val" id="m-slip">—</div></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Equity curve chart -->
+            <div class="panel">
+                <div class="panel-head"><span>Equity Curve</span><span class="text-[0.6rem] text-slate-500 mono">cumulative USD</span></div>
+                <div class="panel-body"><div id="chart-equity" style="height:260px;"></div></div>
+            </div>
+
+            <!-- PnL decomposition + drawdown chart -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="panel">
+                    <div class="panel-head"><span>PnL Decomposition</span><span class="text-[0.6rem] text-slate-500 mono">avg per trade</span></div>
+                    <div class="panel-body">
+                        <div id="decomp-body">
+                            <div class="decomp-row"><div class="decomp-label">Signal</div><div class="decomp-bar-wrap"></div><div class="decomp-val" id="dc-signal">—</div></div>
+                            <div class="decomp-row"><div class="decomp-label">Prior</div><div class="decomp-bar-wrap"></div><div class="decomp-val" id="dc-prior">—</div></div>
+                            <div class="decomp-row"><div class="decomp-label">Execution</div><div class="decomp-bar-wrap"></div><div class="decomp-val" id="dc-exec">—</div></div>
+                            <div class="decomp-row"><div class="decomp-label">Residual</div><div class="decomp-bar-wrap"></div><div class="decomp-val" id="dc-resid">—</div></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-head"><span>Drawdown</span><span class="text-[0.6rem] text-slate-500 mono">% from peak</span></div>
+                    <div class="panel-body"><div id="chart-dd" style="height:160px;"></div></div>
+                </div>
+            </div>
+
+            <!-- Exit reason breakdown -->
+            <div class="panel">
+                <div class="panel-head"><span>Exit Reason Breakdown</span><span class="text-[0.6rem] text-slate-500 mono">PnL contribution by rule</span></div>
+                <div class="panel-body"><div id="chart-exits" style="height:200px;"></div></div>
+            </div>
+
+            <!-- Per-trade table -->
+            <div class="panel">
+                <div class="panel-head">
+                    <span>Trade Detail</span>
+                    <span class="text-[0.6rem] text-slate-500 mono" id="trade-count-label"></span>
+                </div>
+                <div class="panel-body p-0">
+                    <table class="trade-table">
+                        <thead>
+                            <tr>
+                                <th style="width:18%">Window / Time</th>
+                                <th style="width:7%">Side</th>
+                                <th style="width:9%">Entry</th>
+                                <th style="width:9%">Exit</th>
+                                <th style="width:10%">Exit reason</th>
+                                <th style="width:8%">PnL %</th>
+                                <th style="width:9%">PnL $</th>
+                                <th style="width:9%">Slippage</th>
+                                <th style="width:10%">Outcome</th>
+                                <th style="width:11%">Fill vs theor.</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trade-tbody">
+                            <tr><td colspan="10"><div class="empty-state"><div class="empty-state-icon">—</div>Run a backtest to see per-trade detail.</div></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<script>
+// ── Theme ──
+function toggleTheme() {
+    document.body.classList.toggle('light');
+    localStorage.setItem('theme', document.body.classList.contains('light') ? 'light' : 'dark');
+    document.getElementById('theme-icon').textContent = document.body.classList.contains('light') ? '🌙' : '☀️';
+}
+if (localStorage.getItem('theme') === 'light') { document.body.classList.add('light'); document.getElementById('theme-icon').textContent='🌙'; }
+
+// ── Toggles ──
+const toggleState = { tier1: true, payoff: false, calib: false, free: false };
+function toggleSwitch(key) {
+    toggleState[key] = !toggleState[key];
+    document.getElementById('tog-' + key).classList.toggle('on', toggleState[key]);
+}
+
+// ── Admin token ──
+(() => {
+    const saved = localStorage.getItem('admin_token');
+    if (saved) document.getElementById('admin-token').value = saved;
+    document.getElementById('admin-token').addEventListener('input', e => localStorage.setItem('admin_token', e.target.value));
+})();
+
+// ── Date defaults ──
+(() => {
+    const end = new Date();
+    const start = new Date(Date.now() - 30 * 86400 * 1000);
+    document.getElementById('end-date').value = end.toISOString().slice(0, 10);
+    document.getElementById('start-date').value = start.toISOString().slice(0, 10);
+})();
+
+// ── Format helpers ──
+const fmtUSD = v => v == null || isNaN(v) ? '—' : (v >= 0 ? '+$' : '-$') + Math.abs(v).toFixed(2);
+const fmtPct = v => v == null || isNaN(v) ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
+const fmtNum = (v, d=2) => v == null || isNaN(v) ? '—' : v.toFixed(d);
+const pnlClass = v => v == null ? '' : (v >= 0 ? 'pos' : 'neg');
+
+// ── Run backtest ──
+let pollHandle = null;
+async function runBacktest() {
+    const token = document.getElementById('admin-token').value.trim();
+    if (!token) { alert('Admin token required.'); return; }
+    const btn = document.getElementById('run-btn');
+    btn.disabled = true;
+    setStatus('running', 'RUNNING');
+    setProgress(0, 'Starting run…');
+
+    const payload = {
+        fill_model: document.getElementById('fill-model').value,
+        source: document.getElementById('source').value,
+        start_date: document.getElementById('start-date').value,
+        end_date: document.getElementById('end-date').value,
+        score_offset: parseFloat(document.getElementById('score-offset').value) || 0,
+        edge_offset: parseFloat(document.getElementById('edge-offset').value) || 0,
+        flags: { ...toggleState },
+    };
+
+    try {
+        const r = await fetch('/api/backtest/run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-admin-token': token },
+            body: JSON.stringify(payload),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`);
+        const { run_id } = await r.json();
+        pollResult(run_id, token);
+    } catch (e) {
+        setStatus('error', 'ERROR');
+        setProgress(100, e.message);
+        btn.disabled = false;
+    }
+}
+
+function pollResult(run_id, token) {
+    if (pollHandle) clearInterval(pollHandle);
+    pollHandle = setInterval(async () => {
+        try {
+            const r = await fetch(`/api/backtest/status/${run_id}`, { headers: { 'x-admin-token': token } });
+            if (!r.ok) throw new Error(`status ${r.status}`);
+            const s = await r.json();
+            setProgress(s.progress * 100, s.message || s.status);
+            if (s.status === 'done') {
+                clearInterval(pollHandle); pollHandle = null;
+                const rr = await fetch(`/api/backtest/result/${run_id}`, { headers: { 'x-admin-token': token } });
+                const data = await rr.json();
+                renderResults(data);
+                setStatus('done', 'DONE');
+                document.getElementById('run-btn').disabled = false;
+                loadRecentRuns();
+            } else if (s.status === 'error') {
+                clearInterval(pollHandle); pollHandle = null;
+                setStatus('error', 'ERROR');
+                document.getElementById('run-btn').disabled = false;
+            }
+        } catch (e) {
+            clearInterval(pollHandle); pollHandle = null;
+            setStatus('error', 'ERROR');
+            setProgress(100, e.message);
+            document.getElementById('run-btn').disabled = false;
+        }
+    }, 1000);
+}
+
+function setStatus(kind, text) {
+    const el = document.getElementById('run-status');
+    el.className = 'status-badge status-' + (kind === 'running' ? 'run' : kind);
+    el.textContent = text;
+}
+function setProgress(pct, msg) {
+    document.getElementById('progress-bar').style.width = Math.max(0, Math.min(100, pct)) + '%';
+    document.getElementById('progress-text').textContent = msg || '';
+}
+
+// ── Render results ──
+function renderResults(data) {
+    const m = data.metrics || {};
+    const set = (id, val, cls) => {
+        const el = document.getElementById(id);
+        el.textContent = val;
+        el.className = 'metric-val' + (cls ? ' ' + cls : '');
+    };
+    set('m-trades',   m.n_trades != null ? m.n_trades : '—');
+    set('m-hitrate',  m.hit_rate != null ? (m.hit_rate * 100).toFixed(1) + '%' : '—');
+    set('m-pnl',      fmtUSD(m.total_pnl_usd), pnlClass(m.total_pnl_usd));
+    set('m-sharpe',   fmtNum(m.sharpe, 2));
+    set('m-sortino',  fmtNum(m.sortino, 2));
+    set('m-maxdd',    m.max_dd != null ? (m.max_dd * 100).toFixed(1) + '%' : '—', 'neg');
+    set('m-calmar',   fmtNum(m.calmar, 2));
+    set('m-expect',   m.expectancy != null ? fmtPct(m.expectancy) : '—', pnlClass(m.expectancy));
+    set('m-avgwin',   fmtPct(m.avg_win), 'pos');
+    set('m-avgloss',  fmtPct(m.avg_loss), 'neg');
+    set('m-pf',       fmtNum(m.profit_factor, 2));
+    set('m-slip',     m.avg_slippage_pct != null ? (m.avg_slippage_pct * 100).toFixed(2) + '%' : '—');
+
+    document.getElementById('result-timestamp').textContent = data.completed_at
+        ? 'Completed ' + new Date(data.completed_at * 1000).toLocaleString()
+        : '';
+
+    // Equity curve
+    const eq = data.equity_curve || [];
+    Plotly.newPlot('chart-equity', [{
+        x: eq.map(p => new Date(p[0] * 1000)),
+        y: eq.map(p => p[1]),
+        type: 'scatter', mode: 'lines', fill: 'tozeroy',
+        line: { color: '#38bdf8', width: 2 }, fillcolor: 'rgba(56,189,248,0.08)',
+        hovertemplate: '%{x|%b %d %H:%M}<br>$%{y:.2f}<extra></extra>',
+    }], plotlyLayout(), { displayModeBar: false, responsive: true });
+
+    // Drawdown
+    const dd = data.drawdown_curve || [];
+    Plotly.newPlot('chart-dd', [{
+        x: dd.map(p => new Date(p[0] * 1000)),
+        y: dd.map(p => p[1] * 100),
+        type: 'scatter', mode: 'lines', fill: 'tozeroy',
+        line: { color: '#ef4444', width: 1.5 }, fillcolor: 'rgba(239,68,68,0.12)',
+        hovertemplate: '%{x|%b %d}<br>%{y:.2f}%<extra></extra>',
+    }], plotlyLayout({ ytitle: '%' }), { displayModeBar: false, responsive: true });
+
+    // Exit reason breakdown
+    const er = data.exit_breakdown || [];
+    Plotly.newPlot('chart-exits', [{
+        x: er.map(r => r.reason), y: er.map(r => r.total_pnl_usd),
+        type: 'bar',
+        marker: { color: er.map(r => r.total_pnl_usd >= 0 ? '#22c55e' : '#ef4444') },
+        hovertemplate: '%{x}<br>$%{y:.2f} (n=%{customdata})<extra></extra>',
+        customdata: er.map(r => r.count),
+    }], plotlyLayout({ showAxis: true }), { displayModeBar: false, responsive: true });
+
+    // PnL decomposition
+    const dc = data.pnl_decomposition || {};
+    const setDc = (id, v) => {
+        const el = document.getElementById(id);
+        el.textContent = v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%';
+        el.style.color = v == null ? '' : (v >= 0 ? '#22c55e' : '#ef4444');
+    };
+    setDc('dc-signal', dc.signal);
+    setDc('dc-prior', dc.prior);
+    setDc('dc-exec', dc.execution);
+    setDc('dc-resid', dc.residual);
+
+    // Trade table
+    const rows = (data.trades || []).slice(0, 1000);
+    document.getElementById('trade-count-label').textContent = `${rows.length} trades`;
+    const tbody = document.getElementById('trade-tbody');
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state">No trades in range.</div></td></tr>';
+    } else {
+        tbody.innerHTML = rows.map(t => {
+            const cls = t.pnl_pct >= 0 ? 'style="color:#22c55e"' : 'style="color:#ef4444"';
+            const outCls = t.outcome === 'WIN' ? 'pos' : 'neg';
+            const theoDelta = t.theoretical_px != null && t.entry_px != null
+                ? ((t.entry_px - t.theoretical_px) * 100).toFixed(2) + '¢' : '—';
+            return `<tr>
+                <td>${t.window_ts ? new Date(t.window_ts * 1000).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '—'}</td>
+                <td>${t.side || '—'}</td>
+                <td>${t.entry_px != null ? t.entry_px.toFixed(3) : '—'}</td>
+                <td>${t.exit_px != null ? t.exit_px.toFixed(3) : '—'}</td>
+                <td style="font-size:0.65rem">${t.exit_reason || '—'}</td>
+                <td ${cls}>${t.pnl_pct != null ? (t.pnl_pct >= 0 ? '+' : '') + (t.pnl_pct*100).toFixed(2)+'%' : '—'}</td>
+                <td ${cls}>${fmtUSD(t.pnl_usd)}</td>
+                <td>${t.slippage_pct != null ? (t.slippage_pct*100).toFixed(2)+'%' : '—'}</td>
+                <td class="${outCls === 'pos' ? 'text-green-400' : 'text-red-400'}">${t.outcome || '—'}</td>
+                <td>${theoDelta}</td>
+            </tr>`;
+        }).join('');
+    }
+}
+
+function plotlyLayout(opts = {}) {
+    const dark = !document.body.classList.contains('light');
+    return {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { t: 10, r: 16, b: 28, l: 45 },
+        font: { family: 'JetBrains Mono', size: 10, color: dark ? '#94A3B8' : '#475569' },
+        xaxis: { gridcolor: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)', linecolor: 'transparent' },
+        yaxis: { gridcolor: dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)', linecolor: 'transparent', title: opts.ytitle || '' },
+        showlegend: false,
+        hovermode: 'x unified',
+    };
+}
+
+// ── Recent runs ──
+async function loadRecentRuns() {
+    const token = document.getElementById('admin-token').value.trim();
+    if (!token) return;
+    try {
+        const r = await fetch('/api/backtest/list', { headers: { 'x-admin-token': token } });
+        if (!r.ok) return;
+        const { runs } = await r.json();
+        const div = document.getElementById('recent-runs');
+        if (!runs || !runs.length) { div.innerHTML = '<div class="text-slate-500 italic text-[0.65rem]">No recent runs.</div>'; return; }
+        div.innerHTML = runs.map(r => {
+            const pnlCls = (r.total_pnl_usd || 0) >= 0 ? 'text-green-400' : 'text-red-400';
+            return `<div class="flex justify-between items-center py-1 border-b border-slate-700/30 cursor-pointer hover:bg-sky-500/5" onclick="loadRun('${r.run_id}')">
+                <span class="text-slate-400">${new Date(r.completed_at * 1000).toLocaleString([], {month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>
+                <span class="${pnlCls}">${fmtUSD(r.total_pnl_usd)}</span>
+            </div>`;
+        }).join('');
+    } catch (e) { /* ignore */ }
+}
+async function loadRun(run_id) {
+    const token = document.getElementById('admin-token').value.trim();
+    try {
+        const r = await fetch(`/api/backtest/result/${run_id}`, { headers: { 'x-admin-token': token } });
+        if (!r.ok) return;
+        renderResults(await r.json());
+        setStatus('done', 'LOADED');
+    } catch (e) { console.error(e); }
+}
+loadRecentRuns();
+</script>
+</body>
+</html>
