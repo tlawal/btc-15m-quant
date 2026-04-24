@@ -18,6 +18,11 @@ from typing import Optional
 
 from config import Config
 
+try:
+    from optimal_stopping import exit_threshold as _free_boundary_threshold
+except Exception:  # pragma: no cover — graceful degrade if module missing
+    _free_boundary_threshold = None
+
 log = logging.getLogger(__name__)
 
 
@@ -587,10 +592,32 @@ def evaluate_exit(
     _REV_CONV_EARLY_MIN_REM = 1.5
     _REV_CONV_SUSTAINED_CYCLES = 3    # must persist for 3 cycles (~15s at 5s cadence)
 
-    _rev_conv_threshold = (
-        _REV_CONV_EARLY_THRESHOLD if minutes_remaining > _REV_CONV_EARLY_MIN_REM
-        else _REV_CONV_BASE_THRESHOLD
+    # Tier 2 #5: free-boundary exit threshold.  Replaces the static 0.85/0.93
+    # pair with a posterior-aware, time-aware boundary derived from the
+    # Carr-Jarrow-Myneni optimal-stopping rule for binary payoffs.
+    # Toggled by Config.REV_CONV_FREE_BOUNDARY_ENABLED (default True).
+    _rev_conv_use_free = (
+        _free_boundary_threshold is not None
+        and bool(getattr(Config, "REV_CONV_FREE_BOUNDARY_ENABLED", True))
+        and posterior is not None
     )
+    if _rev_conv_use_free:
+        try:
+            _rev_conv_threshold = _free_boundary_threshold(
+                posterior=float(posterior),
+                minutes_remaining=float(minutes_remaining),
+                entry_price=entry_price,
+            )
+        except Exception:
+            _rev_conv_threshold = (
+                _REV_CONV_EARLY_THRESHOLD if minutes_remaining > _REV_CONV_EARLY_MIN_REM
+                else _REV_CONV_BASE_THRESHOLD
+            )
+    else:
+        _rev_conv_threshold = (
+            _REV_CONV_EARLY_THRESHOLD if minutes_remaining > _REV_CONV_EARLY_MIN_REM
+            else _REV_CONV_BASE_THRESHOLD
+        )
     _rev_conv_hold_ok = hold_seconds >= _REV_CONV_MIN_HOLD_SEC
 
     _opp_bid = no_bid if held_side == "YES" else yes_bid

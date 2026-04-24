@@ -104,6 +104,12 @@ class SignalOptimizer:
         self._last_retrain_ts: float = 0.0
         self._last_precision: float = 0.0
         self._sharpe: float = 0.0
+        # Tier 2 #10: walk-forward diagnostics
+        self._oos_brier: float = 0.0        # last accepted OOS Brier (lower = better)
+        self._oos_log_loss: float = 0.0
+        self._last_retrain_blocked: bool = False
+        self._last_block_reason: str = ""
+        self._oos_n_folds: int = 0
 
         # Paths
         self.features_path = "/data/trade_features.jsonl" if os.path.exists("/data") else "trade_features.jsonl"
@@ -221,89 +227,192 @@ class SignalOptimizer:
 
     def retrain_and_adjust(self):
         """
-        Reloads trade history, trains a RandomForest, and adjusts offsets 
-        based on feature importance and model precision.
+        Tier 2 #10: walk-forward, purged, embargoed cross-validation.
+
+        Replaces the old shuffled KFold + precision-only scoring, which
+        silently overfit on temporally-contiguous trade samples. The new
+        procedure:
+
+        1. Sort samples by timestamp.
+        2. Build 5 sequential folds; between each fold's train-end and
+           test-start, apply an embargo window (López de Prado) so no
+           sample within the lookback horizon of the test set appears in
+           the training set.
+        3. Score each fold with Brier + log-loss (not precision), so
+           well-calibrated but low-precision models are still rewarded
+           and vice-versa.
+        4. Gate any threshold adjustment on **OOS Brier improving**. If
+           the new model's Brier is worse than the last accepted OOS
+           Brier, block the retrain and keep the prior offsets.
+        5. Require ≥ MIN_RETRAIN_SAMPLES (200) trades before considering
+           any retrain. Below that, freeze offsets at 0.0.
         """
         if not os.path.exists(self.features_path):
             return
+
+        MIN_RETRAIN_SAMPLES = int(getattr(Config, "OPTIMIZER_MIN_RETRAIN_SAMPLES", 200) or 200)
+        N_FOLDS             = int(getattr(Config, "OPTIMIZER_WALK_FORWARD_FOLDS", 5) or 5)
+        EMBARGO_HOURS       = float(getattr(Config, "OPTIMIZER_EMBARGO_HOURS", 24.0) or 24.0)
 
         try:
             data = []
             with open(self.features_path, "r") as f:
                 for line in f:
-                    data.append(json.loads(line))
-            
-            # R10: Anti-learning loop fix.
-            # (1) Gate the retrain behind a meaningful sample size. A 10-row RF is
-            #     noise — with 10 trades the optimizer converged on score_offset=-1.0
-            #     and edge_offset=-0.01 (both floors) because in-sample precision was
-            #     0.984, which is 100% overfit, not signal.
-            # (2) Use cross-validated precision, NOT in-sample precision, so we stop
-            #     rewarding the model for memorizing the training set.
-            _min_samples = 30
-            if len(data) < _min_samples:
+                    try:
+                        data.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+
+            if len(data) < MIN_RETRAIN_SAMPLES:
                 log.info(
-                    f"Not enough trade data for retraining: {len(data)}/{_min_samples} "
-                    f"— holding score_offset/edge_offset at baseline"
+                    "Not enough trade data for retraining: %d/%d — freezing "
+                    "score_offset/edge_offset at 0.0",
+                    len(data), MIN_RETRAIN_SAMPLES,
                 )
-                # Freeze offsets at 0.0 until we have real data. Better to keep the
-                # hand-tuned thresholds than to let an overfit RF relax them.
                 self.score_offset = 0.0
                 self.edge_offset  = 0.0
+                self._last_retrain_blocked = False  # not blocked, just waiting
+                self._last_block_reason    = f"n={len(data)}<{MIN_RETRAIN_SAMPLES}"
                 return
 
-            # Flatten features for DataFrame
+            # Sort by timestamp so fold splits respect temporal order
+            data.sort(key=lambda e: e.get("ts", 0))
+
             rows = []
+            tss  = []
             for entry in data:
-                row = entry["features"].copy()
-                row["target"] = entry["outcome"]
+                feats = entry.get("features", {}) or {}
+                row = feats.copy()
+                row["target"] = int(entry.get("outcome", 0))
                 rows.append(row)
+                tss.append(float(entry.get("ts", 0)))
 
-            df = pd.DataFrame(rows)
-            X = df.drop(columns=["target"])
-            y = df["target"]
+            df = pd.DataFrame(rows).fillna(0.0)
+            feature_cols = [c for c in df.columns if c != "target"]
+            X_all = df[feature_cols].values
+            y_all = df["target"].values
 
-            # Train a shallow RF to find "what works"
-            model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
-            model.fit(X, y)
+            # Walk-forward fold boundaries on sample indices
+            import numpy as np
+            n = len(df)
+            fold_size = n // (N_FOLDS + 1)
+            embargo_sec = EMBARGO_HOURS * 3600.0
+            brier_scores: list[float] = []
+            log_losses: list[float]   = []
 
-            # Save model
-            joblib.dump(model, self.model_path)
+            for k in range(N_FOLDS):
+                train_end = (k + 1) * fold_size
+                test_start = train_end
+                test_end   = min(n, test_start + fold_size)
+                if test_end - test_start < 10:
+                    break
 
-            # Evaluate precision via cross-validation (held-out), not in-sample.
-            from sklearn.model_selection import cross_val_score
-            _cv = max(2, min(5, len(y) // 6))  # cap cv folds to sample size
-            try:
-                cv_scores = cross_val_score(
-                    model, X, y, cv=_cv, scoring="precision"
+                # Purge training samples whose ts is within `embargo_sec` of the test set start
+                test_start_ts = tss[test_start]
+                train_mask = np.array(
+                    [tss[i] < (test_start_ts - embargo_sec) for i in range(train_end)]
                 )
-                precision = float(cv_scores.mean()) if len(cv_scores) else 0.0
-            except Exception as _cv_err:
-                log.warning(f"CV precision failed ({_cv_err}) — skipping threshold adjust")
-                self._last_retrain_ts = time.time()
+                X_train = X_all[:train_end][train_mask]
+                y_train = y_all[:train_end][train_mask]
+                X_test  = X_all[test_start:test_end]
+                y_test  = y_all[test_start:test_end]
+
+                if len(X_train) < 50 or len(np.unique(y_train)) < 2:
+                    continue
+
+                fold_model = RandomForestClassifier(
+                    n_estimators=50, max_depth=5, random_state=42 + k
+                )
+                fold_model.fit(X_train, y_train)
+                proba = fold_model.predict_proba(X_test)
+                # Handle case where test set has only one class
+                if proba.shape[1] == 2:
+                    p_up = proba[:, 1]
+                else:
+                    p_up = proba[:, 0] if fold_model.classes_[0] == 1 else (1 - proba[:, 0])
+
+                brier_scores.append(float(np.mean((p_up - y_test) ** 2)))
+                eps = 1e-9
+                pc = np.clip(p_up, eps, 1 - eps)
+                log_losses.append(float(-np.mean(y_test * np.log(pc) + (1 - y_test) * np.log(1 - pc))))
+
+            if not brier_scores:
+                log.warning("Walk-forward CV produced no valid folds — skipping retrain")
+                self._last_retrain_blocked = True
+                self._last_block_reason    = "no_valid_folds"
                 return
+
+            oos_brier    = float(np.mean(brier_scores))
+            oos_log_loss = float(np.mean(log_losses))
+            self._oos_n_folds = len(brier_scores)
+
+            # Fit final model on all data for serving
+            model = RandomForestClassifier(n_estimators=50, max_depth=5, random_state=42)
+            model.fit(X_all, y_all)
+
+            # OOS Brier improvement gate
+            last_brier = self._oos_brier
+            improved   = (last_brier <= 0.0) or (oos_brier < last_brier - 1e-4)
+            if not improved:
+                log.warning(
+                    "Retrain BLOCKED: OOS Brier %.4f ≥ prior %.4f over %d folds — "
+                    "keeping current offsets (score=%.3f edge=%.4f)",
+                    oos_brier, last_brier, self._oos_n_folds,
+                    self.score_offset, self.edge_offset,
+                )
+                self._last_retrain_blocked = True
+                self._last_block_reason    = f"oos_brier_{oos_brier:.4f}>={last_brier:.4f}"
+                self._last_retrain_ts      = time.time()
+                return
+
+            # Accept: save model, update diagnostics, adjust offsets
+            joblib.dump(model, self.model_path)
+            self._oos_brier    = oos_brier
+            self._oos_log_loss = oos_log_loss
+            self._last_retrain_ts = time.time()
+            self._last_retrain_blocked = False
+            self._last_block_reason    = ""
+
+            # Derive a precision-analogue from OOS posteriors > 0.5
+            # (for legacy dashboard compatibility)
+            proba_all = model.predict_proba(X_all)
+            if proba_all.shape[1] == 2:
+                p_all = proba_all[:, 1]
+            else:
+                p_all = proba_all[:, 0] if model.classes_[0] == 1 else (1 - proba_all[:, 0])
+            pred_pos = p_all >= 0.5
+            tp = int(((pred_pos) & (y_all == 1)).sum())
+            fp = int(((pred_pos) & (y_all == 0)).sum())
+            precision = tp / max(1, tp + fp)
+            self._last_precision = float(precision)
 
             log.info(
-                f"Retrained optimizer model. CV Precision: {precision:.2f} "
-                f"(folds={_cv}, n={len(y)})"
+                "Retrain ACCEPTED: OOS Brier=%.4f (prev %.4f) LogLoss=%.4f folds=%d "
+                "precision≈%.3f n=%d",
+                oos_brier, last_brier, oos_log_loss, self._oos_n_folds, precision, len(y_all),
             )
-            self._last_retrain_ts = time.time()
-            self._last_precision = precision
 
-            # Adjust thresholds using held-out precision
-            if precision < 0.55:
-                # Tighten: increase required thresholds
+            # Adjust thresholds based on OOS Brier quality, not precision alone.
+            # Brier ≤ 0.20 is good; ≥ 0.25 is poor (random is 0.25 for 50/50 outcome).
+            if oos_brier >= 0.25:
                 self.score_offset = min(self.score_offset + 0.5, 2.5)
-                self.edge_offset = min(self.edge_offset + 0.005, 0.02)
-                log.warning(f"Low CV precision ({precision:.2f}) -> Tightening thresholds (score_off={self.score_offset}, edge_off={self.edge_offset})")
-            elif precision > 0.75:
-                # Relax: allow more trades
+                self.edge_offset  = min(self.edge_offset + 0.005, 0.02)
+                log.warning(
+                    "Poor OOS Brier (%.4f) → tightening thresholds "
+                    "(score=%.3f, edge=%.4f)",
+                    oos_brier, self.score_offset, self.edge_offset,
+                )
+            elif oos_brier <= 0.20:
                 self.score_offset = max(self.score_offset - 0.25, -1.0)
-                self.edge_offset = max(self.edge_offset - 0.002, -0.01)
-                log.info(f"High CV precision ({precision:.2f}) -> Relaxing thresholds (score_off={self.score_offset}, edge_off={self.edge_offset})")
+                self.edge_offset  = max(self.edge_offset - 0.002, -0.01)
+                log.info(
+                    "Good OOS Brier (%.4f) → relaxing thresholds "
+                    "(score=%.3f, edge=%.4f)",
+                    oos_brier, self.score_offset, self.edge_offset,
+                )
 
         except Exception as e:
-            log.error(f"Retraining failed: {e}")
+            log.error(f"Retraining failed: {e}", exc_info=True)
 
     def get_adjusted_thresholds(self, base_score: float, base_edge: float):
         """Return thresholds adjusted by learned offsets."""
@@ -396,6 +505,12 @@ class SignalOptimizer:
             "sharpe_ratio": round(self._sharpe, 3),
             "signals": signal_detail,
             "total_features_logged": _total_features,
+            # Tier 2 #10: walk-forward diagnostics
+            "oos_brier":      round(self._oos_brier, 4),
+            "oos_log_loss":   round(self._oos_log_loss, 4),
+            "oos_n_folds":    self._oos_n_folds,
+            "retrain_blocked": self._last_retrain_blocked,
+            "block_reason":    self._last_block_reason,
         }
 
     def get_signal_accuracies(self) -> dict:

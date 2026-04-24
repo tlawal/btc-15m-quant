@@ -2362,6 +2362,100 @@ async def trade_attribution():
     return {"attributions": result}
 
 
+# ── Tier 4 #17/18/19: SHAP + Sharpe-decay + VaR/ES ──────────────────────────
+@app.get("/api/shap")
+async def shap_importance(request: Request, refresh: int = 0):
+    """
+    Return the latest persisted SHAP importance. Pass refresh=1 to recompute
+    from the current model + last 200 trades (heavier — use sparingly).
+    """
+    try:
+        import signal_shap as ss
+    except Exception as e:
+        return JSONResponse({"error": f"signal_shap unavailable: {e}"}, status_code=500)
+    try:
+        if int(refresh or 0) == 1:
+            imp = ss.compute_shap_importance()
+            ss.persist_importance(imp)
+            imp["flagged_negative"] = ss.flag_negative_signals(imp)
+            return imp
+        cached = ss.load_persisted()
+        if not cached:
+            imp = ss.compute_shap_importance()
+            ss.persist_importance(imp)
+            cached = imp
+        cached["flagged_negative"] = ss.flag_negative_signals(cached)
+        return cached
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/risk/sharpe-decay")
+async def risk_sharpe_decay(request: Request,
+                            recent_window: int = 1000,
+                            baseline_window: int = 3000):
+    try:
+        import risk as _risk
+    except Exception as e:
+        return JSONResponse({"error": f"risk module unavailable: {e}"}, status_code=500)
+    try:
+        return _risk.sharpe_decay(
+            recent_window=int(recent_window),
+            baseline_window=int(baseline_window),
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/risk/var")
+async def risk_var(request: Request, window: int = 3000):
+    try:
+        import risk as _risk
+    except Exception as e:
+        return JSONResponse({"error": f"risk module unavailable: {e}"}, status_code=500)
+    try:
+        return _risk.var_es(window=int(window))
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# ── Tier 4 #16: Per-trade alpha decomposition ───────────────────────────────
+# Reads logs/attribution_trade.jsonl populated by trade_attribution.py.
+# Not to be confused with /api/attribution above (signal-level feature importance).
+@app.get("/api/attribution/trades")
+async def trade_attribution_trades(request: Request, limit: int = 500):
+    try:
+        import trade_attribution as _ta
+    except Exception as e:
+        return JSONResponse({"error": f"trade_attribution unavailable: {e}"}, status_code=500)
+    try:
+        limit = max(1, min(int(limit or 500), 5000))
+    except Exception:
+        limit = 500
+    try:
+        rows = list(_ta.iter_records(limit=limit))
+        summary = _ta.summary(last_n=limit)
+        return {"summary": summary, "records": rows}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@app.get("/api/attribution/trades/summary")
+async def trade_attribution_summary(request: Request, last_n: int = 500):
+    try:
+        import trade_attribution as _ta
+    except Exception as e:
+        return JSONResponse({"error": f"trade_attribution unavailable: {e}"}, status_code=500)
+    try:
+        last_n = max(1, min(int(last_n or 500), 5000))
+    except Exception:
+        last_n = 500
+    try:
+        return _ta.summary(last_n=last_n)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 # ── Phase 5 #28: Regime performance breakdown ────────────────────────────────
 @app.get("/api/regime-performance")
 async def regime_performance():

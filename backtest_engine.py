@@ -134,10 +134,22 @@ def _pick_entry_row(rows: list[dict]) -> Optional[dict]:
 
 # ───────────────────────── replay math ─────────────────────────
 
-def _decide_side(row: dict) -> Optional[str]:
+def _post_up(row: dict, apply_calib: bool) -> float:
+    """Return the posterior (optionally passed through bucketed calibration)."""
+    raw = float(row.get("posterior_final_up", row.get("posterior_fair_up", 0.5)))
+    if not apply_calib:
+        return raw
+    try:
+        from calibration import calibrate
+        return calibrate(raw, min_rem=float(row.get("min_rem", 7.0)))
+    except Exception:
+        return raw
+
+
+def _decide_side(row: dict, apply_calib: bool = False) -> Optional[str]:
     """Return 'YES' | 'NO' | None based on signed_score + posterior."""
     ss = float(row.get("signed_score", 0))
-    post_up = float(row.get("posterior_final_up", row.get("posterior_fair_up", 0.5)))
+    post_up = _post_up(row, apply_calib)
     if ss > 0 and post_up > 0.52:
         return "YES"
     if ss < 0 and post_up < 0.48:
@@ -145,9 +157,9 @@ def _decide_side(row: dict) -> Optional[str]:
     return None
 
 
-def _row_edge(row: dict, side: str) -> float:
+def _row_edge(row: dict, side: str, apply_calib: bool = False) -> float:
     """Edge = model_prob - market_prob."""
-    post_up = float(row.get("posterior_final_up", row.get("posterior_fair_up", 0.5)))
+    post_up = _post_up(row, apply_calib)
     yes_mid = float(row.get("yes_mid", 0.5))
     if side == "YES":
         return post_up - yes_mid
@@ -190,13 +202,15 @@ def _gate_passes(row: dict, params: BacktestParams, side: str, edge: float) -> O
     if edge < params.min_edge + params.edge_offset:
         return "EDGE_GATE"
 
-    # Payoff-geometry gate (Tier 2 #6): (1 - entry_px) >= 2 * expected_adverse_move
+    # Payoff-geometry gate (Tier 2 #6): margin_σ = dist / (ATR × √(min_rem/15))
     if params.flags.get("payoff"):
-        entry_px = float(row.get("yes_mid" if side == "YES" else "no_mid", 0.5))
         atr = float(row.get("atr14", 150.0)) or 150.0
-        btc_px = float(row.get("btc_price", 1.0)) or 1.0
-        expected_adverse = atr * math.sqrt(max(0.1, min_rem) / 15.0) / btc_px
-        if (1.0 - entry_px) < 2 * expected_adverse:
+        btc_px = float(row.get("btc_price", 0.0)) or 0.0
+        strike = float(row.get("strike", btc_px)) or btc_px
+        dist = abs(btc_px - strike)
+        adverse = atr * math.sqrt(max(0.1, min_rem) / 15.0)
+        margin_sigma = dist / adverse if adverse > 0 else 99.0
+        if margin_sigma < 1.0:
             return "PAYOFF_GEOMETRY"
 
     return None
@@ -251,6 +265,16 @@ def run_backtest(params: BacktestParams, progress_cb=None) -> dict:
     outcomes = _load_outcomes()
     trades: list[BacktestTrade] = []
     skips: dict[str, int] = {}
+    apply_calib = bool(params.flags.get("calib"))
+
+    # Eagerly load calibration models if the flag is set, so the first lookup
+    # doesn't try to read from disk during the hot loop.
+    if apply_calib:
+        try:
+            from calibration import load_calibration_model
+            load_calibration_model()
+        except Exception:
+            pass
 
     # Pre-count for progress reporting
     windows = list(_group_features_by_window(params))
@@ -271,12 +295,12 @@ def run_backtest(params: BacktestParams, progress_cb=None) -> dict:
         if row is None:
             continue
 
-        side = _decide_side(row)
+        side = _decide_side(row, apply_calib=apply_calib)
         if side is None:
             skips["NO_DIRECTION"] = skips.get("NO_DIRECTION", 0) + 1
             continue
 
-        edge = _row_edge(row, side)
+        edge = _row_edge(row, side, apply_calib=apply_calib)
         skip_reason = _gate_passes(row, params, side, edge)
         if skip_reason:
             skips[skip_reason] = skips.get(skip_reason, 0) + 1

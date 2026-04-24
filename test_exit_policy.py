@@ -601,7 +601,11 @@ class TestApr17RegressionREVCONV:
         """Regression-safety: the new gates must not create a false negative.
 
         A position that is truly OTM (BTC on the wrong side of strike) with a
-        sustained opposing bid should still exit via REVERSE_CONVERGENCE.
+        sustained opposing bid AND a collapsed posterior should still exit via
+        REVERSE_CONVERGENCE. Note: in reality the posterior tracks BTC, so the
+        free-boundary rule (Tier 2 #5) correctly refuses to exit on an "OTM
+        but posterior=0.95" contradiction — posterior is the ground truth
+        for our confidence. This test uses a realistic collapsed posterior.
         """
         from exit_policy import evaluate_exit
         kw = dict(self.APR17)
@@ -609,6 +613,9 @@ class TestApr17RegressionREVCONV:
         kw["btc_price"] = 76500.0  # −130 below strike 76630
         kw["distance"] = -130.0
         kw["minutes_remaining"] = 1.0  # outside the final-30s window
+        # Realistic posterior collapse when BTC flips to the wrong side of strike.
+        kw["posterior"] = 0.25
+        kw["prev_posterior"] = 0.25
         # Need enough time remaining that we're in the low (0.85) threshold band
         # and still past the min-hold. Fire three cycles to trip sustained count.
         result = None

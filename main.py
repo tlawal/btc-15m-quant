@@ -491,6 +491,22 @@ class Engine:
             delete_extra=delete_extra,
         )
         await self.state_mgr.calculate_performance_metrics()
+
+        # Tier 4 #16: per-trade alpha decomposition. Central choke point for all
+        # close paths (redemption, market_sell, dust-writeoff, auto-settle, etc.).
+        # Fire-and-forget — attribution failures must not poison state sync.
+        try:
+            import trade_attribution as _ta
+            _feats = {}
+            if getattr(self, "_last_sig", None) is not None:
+                try:
+                    _feats = self._last_sig.to_feature_dict()
+                except Exception:
+                    _feats = {}
+            _ta.record_closed_trade(tr, features_snapshot=_feats or None)
+        except Exception as _ta_exc:
+            log.debug("trade_attribution.record_closed_trade failed: %s", _ta_exc)
+
         return result
 
     async def _record_redemption(self, size_usd: float):
@@ -591,6 +607,8 @@ class Engine:
                 # Phase 6: Log trade for self-learning (use actual outcome, not always WIN)
                 if self._last_sig:
                     self.optimizer.log_trade(self._last_sig, tr.outcome)
+                # NOTE: Tier 4 #16 per-trade alpha attribution is recorded inside
+                # _sync_closed_trade_from_record (called above) — single choke point.
                 return
                 
         log.warning("Redeemed position but no matching OPEN trade found in history.")
@@ -662,6 +680,19 @@ class Engine:
 
         # Phase 3: Trade Manager (Polymarket)
         await self.pm.start()
+
+        # Phase 3b: Deribit IV feed (Tier 2 #8) — best-effort startup.
+        try:
+            if bool(getattr(Config, "DERIBIT_FEED_ENABLED", True)):
+                from deribit_feed import DeribitIVFeed
+                self._deribit_feed = DeribitIVFeed(
+                    poll_interval=int(getattr(Config, "DERIBIT_POLL_INTERVAL_SEC", 60)),
+                )
+                await self._deribit_feed.start()
+                log.info("Deribit IV feed started (poll=%ds)", self._deribit_feed._poll_interval)
+        except Exception as _dex:
+            log.warning("Deribit IV feed unavailable: %s", _dex)
+            self._deribit_feed = None
 
         # Phase 4: State & Optimizer
         try:
@@ -1008,6 +1039,23 @@ class Engine:
                 wallet_usdc = None
                 positions = []
 
+        # Phase 2 P0.5: persist CLOB snapshot for backtest replay (fire-and-forget)
+        try:
+            from clob_snapshot import record_snapshot as _rec_clob
+            _ws_mkt = getattr(self.pm, "_ws_market", None)
+            _yes_l2 = _ws_mkt.get_book(market_info.yes_token_id) if _ws_mkt else None
+            _no_l2  = _ws_mkt.get_book(market_info.no_token_id)  if _ws_mkt else None
+            _rec_clob(
+                window_ts=int(market_info.start_ts or 0),
+                yes_token=market_info.yes_token_id,
+                no_token=market_info.no_token_id,
+                yes_book=_yes_l2, no_book=_no_l2,
+                yes_bid=getattr(ob, "yes_bid", None), yes_ask=getattr(ob, "yes_ask", None),
+                no_bid=getattr(ob, "no_bid",  None), no_ask=getattr(ob, "no_ask",  None),
+            )
+        except Exception:
+            pass
+
         # Fast unrealized PnL: update current price + PnL each cycle using the latest Polymarket mid.
         try:
             pos = self.state.held_position
@@ -1283,6 +1331,12 @@ class Engine:
             self.state.one_sided_clear_count += 1
         else:
             self.state.one_sided_clear_count = 0
+
+        # Tier 2 #8: attach Deribit IV feed to state so the blend can read it.
+        try:
+            self.state.deribit_feed = getattr(self, "_deribit_feed", None)
+        except Exception:
+            pass
 
         sig = compute_signals(
             indic             = indic,
@@ -3356,6 +3410,33 @@ class Engine:
             _entry_skipped("outside_preferred_hours")
             return
 
+        # Tier 3 #12: economic-calendar block (FOMC, CPI, NFP, PPI).
+        # Monster-conviction trades (≥0.90) bypass; MM spreads and realized vol
+        # around scheduled prints make non-monster entries systematic EV drags.
+        if bool(getattr(Config, "CALENDAR_BLOCK_ENABLED", True)):
+            try:
+                from calendar_block import is_blocked as _cal_is_blocked
+                _monster_conv = float(getattr(sig, "monster_conviction", 0.0) or 0.0)
+                _blocked, _ev = _cal_is_blocked(
+                    pre_min=int(getattr(Config, "CALENDAR_PRE_BLOCK_MIN", 30)),
+                    post_min=int(getattr(Config, "CALENDAR_POST_BLOCK_MIN", 30)),
+                    monster_conviction=_monster_conv,
+                    monster_bypass_threshold=float(
+                        getattr(Config, "CALENDAR_MONSTER_BYPASS", 0.90)
+                    ),
+                )
+                if _blocked:
+                    log.info(
+                        "CALENDAR_BLOCK: %s event %+.1fmin away — skipping entry",
+                        _ev["label"], _ev["minutes_until"],
+                    )
+                    _entry_skipped("calendar_block",
+                                   event=_ev["label"],
+                                   minutes_until=_ev["minutes_until"])
+                    return
+            except Exception as _cal_ex:
+                log.debug("calendar_block error: %s", _cal_ex)
+
         # Daily reset of session_start_balance (tracks equity, not just wallet)
         now = int(time.time())
         today = now // 86400
@@ -3750,6 +3831,54 @@ class Engine:
                 strike_dist=_fc_dist,
             )
             return
+
+        # ── Tier 2 #6: Payoff-geometry entry gate ──────────────────────────────
+        # Asymmetric-payoff discipline: only enter when the position has enough
+        # distance-to-strike margin to absorb normal BTC vol over remaining time.
+        #
+        #   margin_σ = distance_to_strike_USD / (ATR × √(min_rem / 15))
+        #
+        # We require margin_σ ≥ PAYOFF_GEOMETRY_MIN_SIGMA (default 1.0σ of remaining
+        # BTC vol, i.e. a ≤16% probability of adverse cross under a Gaussian
+        # approximation). Exempt high-conviction monster setups (conviction ≥ 0.85)
+        # whose directional posterior already pins the distribution.
+        #
+        # The Apr 17 trade (distance=$298, remaining vol ≈ ATR×√(2.15/15) ≈ $57,
+        # margin_σ ≈ 5.2σ) passes this gate comfortably. Entries at $0.95+ with
+        # ≤0.5σ strike margin — the actual leakage pattern — are rejected.
+        if (
+            getattr(Config, "PAYOFF_GEOMETRY_GATE_ENABLED", True)
+            and entry_px is not None
+            and min_rem is not None
+            and float(getattr(sig, "monster_conviction", 0.0) or 0.0) < 0.85
+        ):
+            try:
+                _pg_atr = float(_atr) if _atr > 0 else float(getattr(Config, "DEFAULT_ATR", 150.0) or 150.0)
+                _pg_mr  = max(0.1, float(min_rem))
+                _pg_dist = abs(float(getattr(sig, "distance", 0.0) or 0.0))
+                _pg_adverse = _pg_atr * math.sqrt(_pg_mr / 15.0)
+                _pg_margin = _pg_dist / _pg_adverse if _pg_adverse > 0 else 99.0
+                _pg_min_sigma = float(getattr(Config, "PAYOFF_GEOMETRY_MIN_SIGMA", 1.0) or 1.0)
+                # Only apply when position is ITM (posterior-side aligned with distance sign).
+                # For near-strike or adverse-direction entries the gate always fires.
+                if _pg_margin < _pg_min_sigma:
+                    log.info(
+                        "PAYOFF_GEOMETRY_BLOCK: margin=%.2fσ < min=%.2fσ "
+                        "(dist=%.1f atr=%.1f min_rem=%.2f adverse=%.1f entry=%.3f)",
+                        _pg_margin, _pg_min_sigma, _pg_dist, _pg_atr, _pg_mr, _pg_adverse, entry_px,
+                    )
+                    _entry_skipped(
+                        "payoff_geometry_block",
+                        entry_px=entry_px,
+                        distance=_pg_dist,
+                        margin_sigma=_pg_margin,
+                        min_sigma=_pg_min_sigma,
+                        atr=_pg_atr,
+                        min_rem=_pg_mr,
+                    )
+                    return
+            except Exception as _pg_ex:
+                log.debug("payoff_geometry_gate error: %s", _pg_ex)
 
         # Phase 8: Strict Edge Gate (Fix #8)
         # Block entry if target_edge is negative, regardless of score (unless monster)

@@ -100,7 +100,50 @@ class Config:
     # ── Entry Strategy ────────────────────────────────────────────────────────
     CONSERVATIVE_ENTRY_OFFSET  = 0.02     # 2-tick discount on standard entries (Fix #8)
     STRICT_EDGE_GATE_ENABLED   = True     # block entries if target_edge <= 0 (unless monster)
-    
+
+    # ── Tier 2 #6: Payoff-geometry entry gate ────────────────────────────────
+    # Margin-σ gate: distance_to_strike must exceed N × (ATR × √(min_rem/15)).
+    # 1.0σ ≈ ≤16% adverse-cross probability under a Gaussian approximation.
+    # Exempt when monster_conviction ≥ 0.85 (directional posterior already pins
+    # the distribution).
+    PAYOFF_GEOMETRY_GATE_ENABLED = True
+    PAYOFF_GEOMETRY_MIN_SIGMA    = 1.0
+
+    # ── Tier 2 #5: Free-boundary optimal-stopping threshold ──────────────────
+    # When enabled, REVERSE_CONVERGENCE consults optimal_stopping.exit_threshold
+    # for the opposing-bid threshold instead of the static 0.85 / 0.93 pair.
+    # The boundary rises with posterior confidence (hardly fires at p≥0.90),
+    # shrinks with time-to-expiry, and adds a leakage margin for high-entry-px
+    # positions. Disable only for A/B comparison.
+    REV_CONV_FREE_BOUNDARY_ENABLED = True
+
+    # ── Tier 2 #8: Deribit IV implied-probability prior (3-input Bayes blend) ─
+    # BAYES_SIGNAL_WEIGHT × signal_lo + BAYES_IV_WEIGHT × iv_lo are added to
+    # logit(mkt_prior). Set BAYES_IV_WEIGHT = 0.0 to disable the IV input.
+    BAYES_SIGNAL_WEIGHT = 0.30
+    BAYES_IV_WEIGHT     = 0.15
+    DERIBIT_FEED_ENABLED = True
+    DERIBIT_POLL_INTERVAL_SEC = 60
+
+    # ── Tier 3 #12: Economic-calendar entry block ────────────────────────────
+    # Pauses NEW entries in the ±N minutes around scheduled high-impact events
+    # (FOMC, CPI, NFP, PPI). Monster-conviction trades >= CALENDAR_MONSTER_BYPASS
+    # slip through the block.
+    CALENDAR_BLOCK_ENABLED      = True
+    CALENDAR_PRE_BLOCK_MIN      = 30
+    CALENDAR_POST_BLOCK_MIN     = 30
+    CALENDAR_MONSTER_BYPASS     = 0.90
+
+    # ── Tier 2 #10: Walk-forward optimizer settings ──────────────────────────
+    # Raised floor: 30 trades is too few for a 30-feature RF (over-fits).
+    # López de Prado's purged K-fold with 24h embargo prevents leakage from
+    # temporally-adjacent samples. OOS Brier must IMPROVE for a retrain to be
+    # accepted — blocks the optimizer from degrading performance.
+    OPTIMIZER_MIN_RETRAIN_SAMPLES = 200
+    OPTIMIZER_WALK_FORWARD_FOLDS  = 5
+    OPTIMIZER_EMBARGO_HOURS       = 24.0
+
+
     # ── Exit parameters ───────────────────────────────────────────────────────
     TAKE_PROFIT_PRICE          = 0.99
     SLIPPAGE_BUFFER_PCT        = 0.008    # Phase 6: 80bps execution buffer

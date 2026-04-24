@@ -89,6 +89,9 @@ class SignalResult:
     spread_pressure_score:float  = 0.0
     oracle_lag_score:     float  = 0.0
     funding_rate_score:   float  = 0.0
+    # Tier 3 #13: order-flow imbalance computed on the Polymarket binary itself
+    # (not on BTC spot). Range [-1, +1]. Positive = YES-side accumulating.
+    clob_ofi_score:       float  = 0.0
 
     # Oracle / Perps info
     oracle_px:            Optional[float] = None
@@ -185,6 +188,7 @@ class SignalResult:
             "spread_pressure_score": self.spread_pressure_score,
             "oracle_lag_score":   self.oracle_lag_score,
             "funding_rate_score": self.funding_rate_score,
+            "clob_ofi_score":     self.clob_ofi_score,
             "funding_rate":       self.funding_rate,
             "perp_basis_pct":     self.perp_basis_pct,
             "basis_edge":         self.basis_edge,
@@ -451,11 +455,38 @@ def compute_signals(
     # Bayesian update: blend fair value with market prior in logit space.
     # Fix #4: Signal weight reduced from 0.50 to 0.30 — market price is the stronger signal
     # (Manski 2004, Nofer 2018: prediction market prices aggregate thousands of traders' info).
+    # Tier 2 #8 (Apr 2026): added Deribit IV implied-probability as a *third* prior.
+    # Weights:   mkt_prior ~ 1.0, signal ~ 0.30, iv_prior ~ 0.15 (when fresh).
+    # The IV prior is theoretically grounded (Black-Scholes N(d1) on ATM vol) and
+    # triangulates the Polymarket CLOB price with a spot-vol-derived fair value.
     _bayes_signal_weight = float(getattr(Config, 'BAYES_SIGNAL_WEIGHT', 0.30))
+    _bayes_iv_weight     = float(getattr(Config, 'BAYES_IV_WEIGHT',     0.15))
+
+    # Fetch Deribit IV implied-P(UP) if the feed is registered on state.
+    _iv_prior: Optional[float] = None
+    _iv_feed = getattr(state, "deribit_feed", None)
+    if (
+        _iv_feed is not None
+        and strike is not None
+        and btc_price is not None
+        and minutes_remaining is not None
+        and _bayes_iv_weight > 0
+    ):
+        try:
+            if _iv_feed.is_fresh():
+                _iv_prior = _iv_feed.implied_p_up(
+                    spot=btc_price, strike=strike, min_rem=minutes_remaining,
+                )
+        except Exception:
+            _iv_prior = None
+
     if res.posterior_fair_up is not None and yes_mid is not None:
         mkt_prior = clamp(yes_mid, 0.01, 0.99)
         signal_lo = logit(res.posterior_fair_up)
         po        = logit(mkt_prior) + _bayes_signal_weight * signal_lo
+        if _iv_prior is not None:
+            iv_lo = logit(clamp(_iv_prior, 0.01, 0.99))
+            po    = po + _bayes_iv_weight * iv_lo
         up        = clamp(inv_logit(po), 1e-6, 1 - 1e-6)
         res.posterior_final_up   = up
         res.posterior_final_down = 1.0 - up
@@ -676,12 +707,33 @@ def compute_signals(
 
     # ── Phase 2: NEW SIGNAL COMPONENTS ────────────────────────────────────────
 
-    # Oracle Lag — removed (unreliable, Polymarket oracle divergence too noisy)
+    # ── Oracle Lag (Tier 3 #7) ────────────────────────────────────────────────
+    # Polymarket 15m-BTC markets resolve on data.chain.link/streams/btc-usd. If
+    # the Chainlink oracle lags Binance spot by > recent 30s realised σ, a
+    # directional oracle update is predictable in the next 10–30s — i.e. the
+    # eventual settlement print is already in motion. Used ONLY as an
+    # auxiliary score (range ±1.5) so it cannot dominate the ensemble.
     res.oracle_lag_score = 0.0
     if oracle_px and oracle_px > 0:
         res.oracle_px = oracle_px
         if oracle_update_ts:
             res.oracle_update_age = now_ts - oracle_update_ts
+
+        # Lag = Binance spot − Chainlink oracle. Positive lag → spot ahead → oracle
+        # will probably update UP in the next tick.
+        _lag = btc_price - oracle_px
+        # Compare against the recent realised volatility (σ over last ~30s) —
+        # approximate via ATR14 × √(30/60) = ATR14 × 0.707 on 1m bars for a
+        # 30-second projection.
+        _ref = max(1.0, float(getattr(indic, "atr14", 0.0) or 0.0) * 0.5)
+        _ratio = _lag / _ref if _ref > 0 else 0.0
+        # Dead-zone: require |ratio| > 1.0 to emit any score (filter noise).
+        if abs(_ratio) > 1.0:
+            # Age gate: stale oracle (> 5m) is worthless.
+            _age = res.oracle_update_age or 0
+            if 0 <= _age <= 300:
+                # Directional score, clipped to ±1.5.
+                res.oracle_lag_score = clamp(_ratio, -1.5, 1.5)
 
     # Spread Pressure
     res.spread_pressure_score = 0.0
@@ -710,6 +762,20 @@ def compute_signals(
         total_depth = bid_depth20 + ask_depth20
         liq_vacuum_score = clamp((bid_depth20 - ask_depth20) / total_depth * 4.0, -2.0, 2.0)
     res.liq_vacuum_score = liq_vacuum_score
+
+    # ── CLOB-OFI on the Polymarket binary itself (Tier 3 #13) ────────────────
+    # Order-flow imbalance measured on the YES side book, not on BTC spot.
+    # Positive = YES-side bid depth exceeds ask depth → informed flow pushing
+    # the binary toward YES. The existing imbalance_score uses BTC spot TOB;
+    # this is orthogonal and captures Polymarket-native flow.
+    res.clob_ofi_score = 0.0
+    try:
+        _tb = float(total_bid_size or 0.0)
+        _ta = float(total_ask_size or 0.0)
+        if _tb + _ta > 0.01:
+            res.clob_ofi_score = clamp((_tb - _ta) / (_tb + _ta), -1.0, 1.0)
+    except Exception:
+        pass
 
     # Bollinger Band position — continuous, centered at 0.5 [-1, 1]
     bb_position_score = 0.0
@@ -834,15 +900,21 @@ def compute_signals(
         res.posterior_final_up = p
         res.posterior_final_down = 1.0 - p
 
-    # Fix #5: Isotonic calibration — correct overconfident/underconfident posteriors.
+    # Fix #5 / Tier 2 #9: Time-bucketed isotonic calibration.
     # Applied AFTER ensemble blend so that the calibration targets the final output.
-    # If no model is loaded, _calibrate_posterior() is a no-op identity function.
+    # Bucketed by minutes_remaining (<2, 2–5, 5–10, ≥10) so late-window sharpness
+    # isn't smeared into early-window regression. Falls back to global model, then
+    # identity, if a bucket model is missing.
     if res.posterior_final_up is not None:
-        _p_cal = _calibrate_posterior(res.posterior_final_up)
+        try:
+            _p_cal = _calibrate_posterior(res.posterior_final_up, minutes_remaining)  # type: ignore[call-arg]
+        except TypeError:
+            # Legacy 1-arg signature (pre-Tier 2 #9)
+            _p_cal = _calibrate_posterior(res.posterior_final_up)
         if abs(_p_cal - res.posterior_final_up) > 1e-6:  # only log when model is active
             log.debug(
-                "calibration: posterior %.4f → %.4f",
-                res.posterior_final_up, _p_cal,
+                "calibration: posterior %.4f → %.4f (min_rem=%.2f)",
+                res.posterior_final_up, _p_cal, minutes_remaining,
             )
         res.posterior_final_up   = _p_cal
         res.posterior_final_down = 1.0 - _p_cal
